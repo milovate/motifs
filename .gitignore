@@ -1,0 +1,10 @@
+node_modules/
+OpenCode Appshots.app/
+.DS_Store
+.idea/
+*.disabled
+.env
+.env.*
+*.png
+latest.json
+status.json

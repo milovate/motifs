@@ -1,0 +1,15 @@
+{
+  "name": "opencode-appshots-local",
+  "version": "0.4.3",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": "./index.js",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "0.0.0-next-17444"
+  }
+}
