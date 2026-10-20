@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+if (process.platform === "win32") {
+  execFileSync("dotnet", ["publish", path.join(root, "windows/Appshots.csproj"), "-c", "Release", "-o", path.join(root, "windows/dist")], { stdio: "inherit" });
+  console.log("Built Windows helper in windows/dist");
+  process.exit(0);
+}
+if (process.platform !== "darwin") throw new Error("Build Appshots on macOS or Windows.");
 const app = path.join(root, "OpenCode Appshots.app");
 mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
 writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>

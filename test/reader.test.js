@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-test("native accessibility traversal retains deep content and semantic formatting", () => {
+test("native accessibility traversal retains deep content and semantic formatting", { skip: process.platform !== "darwin" }, () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const temporary = mkdtempSync(path.join(os.tmpdir(), "appshots-reader-test-"));
   try {

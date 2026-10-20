@@ -1,0 +1,17 @@
+name: Windows
+on: [push, pull_request]
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm test

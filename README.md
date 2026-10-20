@@ -1,9 +1,14 @@
-# OpenCode Appshots for macOS
+# OpenCode Appshots
 
 A plugin for OpenCode V2. Captures one app window and the accessibility
 text from that same window, then returns both as native model-visible tool content.
-Requires macOS 14 or newer and a model that accepts images.
-Built and verified against OpenCode 2.0.24.
+Supports macOS 14+ and an initial Windows 10/11 implementation. Requires a model
+that accepts images. The macOS implementation was verified against OpenCode 2.0.24;
+native Windows behavior still needs validation on a Windows desktop.
+
+**Windows:** see [Windows setup and validation](docs/windows.md). The instructions
+below describe macOS unless noted. Windows supports capture, UI Automation text,
+a tray shortcut, annotation editing, and best-effort draft insertion.
 
 ## Installation
 
@@ -11,7 +16,8 @@ Built and verified against OpenCode 2.0.24.
 
 - macOS 14 or newer on Apple Silicon (the current build targets `arm64`).
 - OpenCode V2 running locally on the Mac; verified against 2.0.24. OpenCode V1
-  and a remote/Linux OpenCode server are not supported.
+  and a remote/Linux OpenCode server are not supported. For a local Windows server,
+  use the separate [Windows instructions](docs/windows.md).
 - Node.js with npm, Git, and Apple's Command Line Tools (`xcode-select --install`).
 - An image-capable model. Use the OpenCode desktop app for automatic draft insertion.
 
@@ -44,7 +50,7 @@ For agent-assisted setup, follow [the setup checklist](docs/agent-setup.md).
 
 ### Known test limitation
 
-Publication validation: the helper builds and 10 of 11 tests pass. The native
+The original macOS publication validation built the helper and passed 10 of 11 tests. The native
 annotation test fails at `native mouse gesture moves selected text in image
 coordinates`, also when run alone. Annotation dragging is not fully validated;
 do not interpret this release as a clean test suite. Run `npm test` to reproduce.
@@ -144,12 +150,14 @@ Without Screen Recording, it fails with setup instructions.
 
 ## Storage and scope
 
-Captures are saved to `$XDG_DATA_HOME/opencode/appshots` or
-`~/.local/share/opencode/appshots`. PNG files and `latest.json` have owner-only
-permissions. A new capture replaces the latest pointer but keeps earlier PNGs.
+Captures are saved to `$XDG_DATA_HOME/opencode/appshots`, or by default
+`~/.local/share/opencode/appshots` on macOS and `%LOCALAPPDATA%\opencode\appshots`
+on Windows. macOS uses owner-only permissions; the Windows helper protects its
+capture directory with an ACL for the current user and SYSTEM. A new capture
+replaces the latest pointer but keeps earlier PNGs.
 Use **Appshot → Open captures folder** to review or remove saved captures.
 
-The reader follows the selected window's accessibility tree in UI order and emits
+The macOS reader follows the selected window's accessibility tree in UI order and emits
 an indented hierarchy with readable roles, link/page URLs, values, placeholders,
 help, and selected/disabled/editable/expanded states when the app exposes them.
 Empty layout branches and redundant single-child anonymous containers are pruned;

@@ -1,7 +1,9 @@
 # Agent-assisted setup
 
 Use this checklist when a user asks you to install or enable Appshots. Read the
-[README](../README.md) and [macOS permissions guide](macos-permissions.md) first.
+[README](../README.md) and the applicable platform guide first. For Windows,
+follow [Windows setup and validation](windows.md) rather than the macOS steps below.
+Do not claim Windows desktop behavior is verified from a build or JavaScript tests.
 
 ## Preconditions
 

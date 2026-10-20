@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import path from "node:path";
+import { platformConfig } from "../platform.js";
 import plugin, { capture, startHotkey, selectedTextGuidance } from "../index.js";
 import { Schema } from "effect";
 import { Tool } from "@opencode-ai/schema/tool";
@@ -35,7 +36,7 @@ test("starts the shortcut as a macOS app with its own permission identity", asyn
   await startHotkey({
     mkdir: async () => {},
     run: async (...args) => { launch = args; },
-  });
+  }, platformConfig("darwin"));
   assert.equal(launch[0], "/usr/bin/open");
   assert.deepEqual(launch[1].slice(0, 2), ["-g", "-a"]);
   assert.match(launch[1][2], /OpenCode Appshots\.app$/);
@@ -65,6 +66,16 @@ test("delivers Codex-style hierarchy without the old 40000-character cutoff", as
   assert.match(truncated.content[0].text, /Accessibility text truncated: exceeded/);
 });
 
+test("annotated capture delivers the exported PNG and labels accessibility text as original", async () => {
+  const io = fixture();
+  io.snapshot.annotatedAt = "2026-10-19T00:00:00Z";
+  io.snapshot.originalScreenshot = "original-is-not-the-delivered-image.png";
+  const result = await capture({}, io);
+  assert.match(result.content[0].text, /includes user annotations\. Accessibility text describes the original capture/);
+  assert.match(result.content[0].text, /AXStaticText: fixture/);
+  assert.equal(result.content[1].uri, `data:image/png;base64,${io.png.toString("base64")}`);
+});
+
 test("app names stay subprocess arguments and imply a live capture", async () => {
   const io = fixture();
   const hostileName = 'Chrome; $(touch /tmp/should-not-exist)';
@@ -82,7 +93,7 @@ test("missing permission surfaces the native error without fake image content", 
 test("a missing latest capture explains the shortcut workflow", async () => {
   const io = fixture();
   io.readFile = async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
-  await assert.rejects(capture({}, io), /Control\+Option\+Command\+A/);
+  await assert.rejects(capture({}, io), /Control\+(Option\+Command|Alt\+Shift)\+A/);
 });
 
 test("refuses a manifest pointing outside the capture directory", async () => {
@@ -100,7 +111,7 @@ test("refuses non-PNG and oversized files", async () => {
 });
 
 function fixture() {
-  const directory = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME, ".local/share"), "opencode/appshots");
+  const directory = platformConfig().captures;
   const io = {
     png: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII=", "base64"),
     snapshot: { app: "Fixture", bundleID: "local.fixture", title: "Test", capturedAt: "2026-10-07T00:00:00Z", text: "AXStaticText: fixture", warnings: [], screenshot: path.join(directory, "fixture.png") },

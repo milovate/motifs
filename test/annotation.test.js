@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-test("annotation coordinates, undo and exported pixels agree", () => {
+test("annotation coordinates, undo and exported pixels agree", { skip: process.platform !== "darwin" }, () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const temporary = mkdtempSync(path.join(os.tmpdir(), "appshots-annotation-test-"));
   try {

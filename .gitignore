@@ -8,3 +8,6 @@ OpenCode Appshots.app/
 *.png
 latest.json
 status.json
+windows/bin/
+windows/obj/
+windows/dist/
