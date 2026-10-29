@@ -1120,7 +1120,7 @@ internal static class ComposerTests
         var session = new MentionSession();
         session.Update("@re", 3, 0, skills);
         Check(session.Open && session.Candidates[0].Id == "report", "@ prefix opens matching completion with report first");
-        Check(MentionPopup.RowText("report", "Report") == "@report   Report" && MentionPopup.RowText("report", "report") == "@report" && MentionPopup.HintText == "↑↓ navigate · ↵ select · esc close", "a suggestion shows the skill name and the keyboard hint");
+        Check(MentionPopup.RowText("report", "Report") == "@report" && MentionPopup.RowText("report", "Write a report") == "@report   Write a report" && MentionPopup.HintText == "↑↓ navigate · ↵ select · esc close", "a suggestion shows the skill name when it differs and the keyboard hint");
         var picker = SkillChoice.ForPicker(new[] { new SkillChoice { Id = "zeta", Name = "Z" }, new SkillChoice { Id = "alpha", Name = "A" }, new SkillChoice { Id = "report", Name = "Report" } }, "  ");
         Check(string.Join(",", picker.Select(skill => skill.Id)) == "report,alpha,zeta" && SkillChoice.ForPicker(picker, "alp").Count == 1 && SkillChoice.ForPicker(picker, "nope").Count == 0, "the skill list puts report first and filters by id or name");
         var chosen = session.Query!.Value;
