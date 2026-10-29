@@ -69,13 +69,15 @@ needed, warn about interrupting active work before `opencode service restart`.
    going. Reopening a saved capture does not read either source again.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
-   one. Escape closes that list before it closes the composer. Once those skills
+   one. A note that is only @mentions does not enable Send until a screenshot or
+   recording is attached. Escape closes that list before it closes the composer. Once those skills
    have loaded, each known **@mention** is drawn in the accent color on a rounded
    tint. The composer grows with the note. **Prefix** saves a
    reusable opening, puts it at the start of the note, and removes it when chosen
    again. Nothing is sent while you edit.
 4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
    **Ctrl+Enter** or the action button prepares the bundle through the bridge.
+   The note and the other controls stay locked until that finishes.
    OpenCode opens a new unsent session and pastes the screenshots and draft.
    Clipboard copies Markdown and returns to the previous app. Save to folder
    writes the bundle and reveals it. Closing the composer without one of those

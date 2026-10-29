@@ -680,6 +680,7 @@ internal sealed class RecordingControls : Form
     readonly Button restart = new() { Text = "Restart" };
     readonly Button pause = new() { Text = "Pause" };
     readonly Button stop = new() { Text = "Stop" };
+    readonly ToolTip tips = new() { ShowAlways = true };
     bool closing;
     internal event Action? Restarted;
     internal event Action? PauseToggled;
@@ -716,6 +717,9 @@ internal sealed class RecordingControls : Form
         }
         stop.BackColor = Color.FromArgb(232, 232, 234);
         stop.ForeColor = Color.FromArgb(20, 20, 20);
+        tips.SetToolTip(restart, restart.AccessibleName);
+        tips.SetToolTip(pause, pause.AccessibleName);
+        tips.SetToolTip(stop, stop.AccessibleName);
         restart.Click += (_, _) => Restarted?.Invoke();
         pause.Click += (_, _) => PauseToggled?.Invoke();
         stop.Click += (_, _) => Stopped?.Invoke();
@@ -743,6 +747,13 @@ internal sealed class RecordingControls : Form
         time.ForeColor = ReplayMath.RecordingLimit - seconds <= 30 ? Color.Orange : Color.White;
         pause.Text = paused ? "Resume" : "Pause";
         pause.AccessibleName = paused ? "Resume recording" : "Pause recording";
+        tips.SetToolTip(pause, pause.AccessibleName);
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        tips.Dispose();
+        base.OnFormClosed(e);
     }
 
     internal void CloseFromSession()

@@ -157,9 +157,13 @@ internal sealed class ComposerForm : Form
     readonly ComboBox targetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
     readonly Button contextButton = new() { Text = "Context", AutoSize = true };
     readonly ToolTip tips = new() { ShowAlways = true };
+    readonly Button addButton = MakeButton("Add");
     readonly Button recordButton = MakeButton("Record");
+    readonly Button recentsButton = MakeButton("Recents");
+    readonly Button skillsButton = MakeButton("@");
     readonly Button prefixButton = MakeButton("Prefix");
     readonly Button dictateButton = MakeButton("Dictate");
+    readonly Button closeButton = MakeButton("Close");
     readonly Button send = new() { Text = "Review in OpenCode", AutoSize = true, Enabled = false };
     readonly Label status = new() { AutoSize = true, MaximumSize = new Size(600, 0) };
     readonly System.Windows.Forms.Timer autosave = new() { Interval = 600 };
@@ -230,22 +234,25 @@ internal sealed class ComposerForm : Form
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var actions = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Dock = DockStyle.Fill };
         contextButton.Click += (_, _) => EditContext();
-        var add = MakeButton("Add");
-        add.Click += async (_, _) => await AddShot();
-        add.AccessibleName = "Add a screenshot";
+        contextButton.AccessibleName = "Review context sent with this capture";
+        addButton.Click += async (_, _) => await AddShot();
+        addButton.AccessibleName = "Add a screenshot of a region";
         recordButton.Click += async (_, _) => await RecordClip();
-        recordButton.AccessibleName = "Record the screen";
-        var recents = MakeButton("Recents");
-        recents.Click += (_, _) => ShowRecents();
-        var skillsButton = MakeButton("@");
+        recordButton.AccessibleName = "Add a screen recording";
+        recentsButton.Click += (_, _) => ShowRecents();
+        recentsButton.AccessibleName = "Show recent captures";
+        tips.SetToolTip(recentsButton, "Recent captures");
         skillsButton.AccessibleName = "Choose skills";
         skillsButton.Click += (_, _) => ChooseSkills();
         prefixButton.Click += (_, _) => ShowPrefixes(prefixButton);
         dictateButton.AccessibleName = "Start dictation";
+        tips.SetToolTip(dictateButton, "On-device voice-to-text. Review the transcript before sending.");
         dictateButton.Click += (_, _) => ToggleDictation();
-        var close = MakeButton("Close");
-        close.Click += (_, _) => Close();
-        actions.Controls.AddRange(new Control[] { contextButton, add, recordButton, recents, skillsButton, prefixButton, dictateButton, close });
+        closeButton.Click += (_, _) => Close();
+        closeButton.AccessibleName = "Close without sending";
+        tips.SetToolTip(closeButton, "Close without sending (Escape)");
+        tips.SetToolTip(destinationBox, "Where to send this capture");
+        actions.Controls.AddRange(new Control[] { contextButton, addButton, recordButton, recentsButton, skillsButton, prefixButton, dictateButton, closeButton });
         top.Controls.Add(thumbs, 0, 0);
         top.Controls.Add(actions, 1, 0);
         note.Dock = DockStyle.Fill;
@@ -506,8 +513,28 @@ internal sealed class ComposerForm : Form
     {
         var target = CurrentTarget;
         send.Text = target?.ActionLabel ?? "Continue";
-        send.Enabled = !sending && !submitted && !dictating && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
-        recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/3";
+        var skillIds = skills.Select(skill => skill.Id).ToList();
+        bool hasNote = ComposerFiles.HasNote(note.Text, skillIds);
+        bool locked = sending || submitted;
+        note.ReadOnly = locked || dictating;
+        destinationBox.Enabled = !locked;
+        targetBox.Enabled = !locked;
+        contextButton.Enabled = !locked;
+        addButton.Enabled = !locked && shots.Count < 8;
+        recentsButton.Enabled = !locked;
+        skillsButton.Enabled = !locked && skillsReady;
+        prefixButton.Enabled = !locked;
+        dictateButton.Enabled = !locked || dictating;
+        closeButton.Enabled = !sending;
+        tips.SetToolTip(addButton, shots.Count < 8 ? "Add a screenshot of a region" : "Up to 8 screenshots per capture");
+        tips.SetToolTip(recordButton, videos.Count >= ReplayMath.MaxClips
+            ? "Up to " + ReplayMath.MaxClips.ToString(CultureInfo.InvariantCulture) + " recordings per capture"
+            : "Record the display, a window or an area; the clip is added here (Ctrl+Alt+Shift+R)" + (videos.Count == 0 ? "" : " · " + videos.Count.ToString(CultureInfo.InvariantCulture) + " of " + ReplayMath.MaxClips.ToString(CultureInfo.InvariantCulture) + " used"));
+        tips.SetToolTip(skillsButton, ComposerFiles.SkillsTip(skillIds.Where(id => ComposerFiles.Mentions(note.Text, id))));
+        tips.SetToolTip(targetBox, target?.Detail ?? target?.Label ?? "Project for the new session");
+        tips.SetToolTip(send, (target?.ActionLabel ?? "Continue") + " (Ctrl+Enter). " + (target?.Hint ?? ""));
+        send.Enabled = !locked && !dictating && skillsReady && Current?.Status == "ready" && target != null && (hasNote || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
+        recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/" + ReplayMath.MaxClips.ToString(CultureInfo.InvariantCulture);
         recordButton.Enabled = CanRecord;
         int available = ComposerFiles.Sources.Count(source => ContextReview.Count(source, shots, context) > 0);
         int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && ContextReview.Count(source, shots, context) > 0);
@@ -540,6 +567,8 @@ internal sealed class ComposerForm : Form
             child.Dispose();
         }
         thumbs.Controls.Clear();
+        if (shots.Count == 0 && videos.Count == 0)
+            thumbs.Controls.Add(new Label { Text = "No attachments · Add a screenshot or recording ↗", AutoSize = true, ForeColor = Color.FromArgb(170, 170, 176), Margin = new Padding(0, 18, 8, 0) });
         for (int index = 0; index < shots.Count; index++)
         {
             int current = index;
@@ -917,6 +946,7 @@ internal sealed class ComposerForm : Form
         string? active = ComposerFiles.ActivePrefix(ComposerFiles.Prefixes(settings), note.Text);
         prefixButton.Text = active == null ? "Prefix" : "Prefix on";
         prefixButton.AccessibleName = active == null ? "Choose a saved prefix" : "Prefix: " + MenuTitle(active);
+        tips.SetToolTip(prefixButton, active == null ? "Prefixes" : "Prefix: " + (active.Length <= 80 ? active : active[..80]) + " — click to switch");
     }
 
     void RememberPrefix(string prefix)
@@ -939,7 +969,7 @@ internal sealed class ComposerForm : Form
 
     void Persist()
     {
-        if (note.Text.Length == 0 && shots.Count == 0 && videos.Count == 0) return;
+        if (!ComposerFiles.HasNote(note.Text, skills.Select(skill => skill.Id).ToList()) && shots.Count == 0 && videos.Count == 0) return;
         manifest = ComposerFiles.WriteBundle(output, bundleId, created, note.Text, shots, context, include, videos);
     }
 

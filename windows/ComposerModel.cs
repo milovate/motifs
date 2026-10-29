@@ -101,6 +101,20 @@ internal static class ComposerFiles
 
     internal static string RemoveMention(string text, string id) => Regex.Replace(text, MentionPattern(id), "");
 
+    internal static bool HasNote(string text, IReadOnlyList<string> skills)
+    {
+        string stripped = text ?? "";
+        foreach (string id in skills.Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).OrderByDescending(id => id.Length))
+            stripped = RemoveMention(stripped, id);
+        return stripped.Trim().Length > 0;
+    }
+
+    internal static string SkillsTip(IEnumerable<string> mentioned)
+    {
+        var ids = mentioned.Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        return ids.Count == 0 ? "Add a skill" : "Skills: " + string.Join(", ", ids.Select(id => "@" + id)) + " — click to add or remove";
+    }
+
     static string MentionPattern(string id) => $@"(?<![\p{{L}}\p{{N}}_@/])@{Regex.Escape(id)}(?![\p{{L}}\p{{N}}_-])";
 
     internal static JsonObject Device()
@@ -834,6 +848,8 @@ internal static class ComposerTests
         Check(highlighted.Count == 2 && highlighted[0] == new ComposerFiles.MentionSpan(4, 7, "report") && highlighted[1].Id == "other", "known mentions are highlighted and email-like text is not");
         Check(ComposerFiles.MentionSpans("@report-long", new[] { "report", "report-long" }) is { Count: 1 } longer && longer[0].Id == "report-long", "the longer skill name is the highlighted mention");
         Check(ComposerFiles.MentionSpans("mail@report.com", new[] { "report" }).Count == 0 && ComposerFiles.MentionSpans("/@report", new[] { "report" }).Count == 0, "email addresses and paths are not highlighted");
+        Check(!ComposerFiles.HasNote("@report ", new[] { "report" }) && !ComposerFiles.HasNote("@other @report", new[] { "report", "other" }) && ComposerFiles.HasNote("@report broken", new[] { "report" }) && ComposerFiles.HasNote("user@report.com", new[] { "report" }), "a skill mention alone is not a note");
+        Check(ComposerFiles.SkillsTip(Array.Empty<string>()) == "Add a skill" && ComposerFiles.SkillsTip(new[] { "report", "other" }) == "Skills: @other, @report — click to add or remove", "the skill button names the mentions in the note");
         Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
         Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)) == Color.FromArgb(20, 39, 56), "the mention tint keeps some of the accent color");
         Check(ShotSelection.AfterRemove(1, 0, 1) == 0, "removing an earlier thumbnail keeps the later screenshot selected");
