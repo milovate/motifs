@@ -61,7 +61,20 @@ needed, warn about interrupting active work before `opencode service restart`.
 5. Review the result and send it yourself. If handoff fails, the bundle remains
    in the captures folder. `/capture-studio` can still read the latest window capture.
 
-The tray can also open an empty composer, annotate or insert the latest capture,
+**Control+Alt+Shift+R** starts a screen recording. The same chooser appears: drag a
+region, click a window, or press Enter for the display under the pointer. Escape
+cancels before anything is written. There is no audio. A floating bar shows the
+time, **Restart**, **Pause**, and **Stop**. The time turns orange in the last 30
+seconds, and the recording stops at 5 minutes. Pause time is kept out of the clip.
+Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
+key-frame PNGs into the captures folder and attaches the clip to the open composer,
+or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
+The bar sets display affinity and is hidden while each frame is grabbed. A window
+recording follows that window's rectangle; unlike a still window capture, it is the
+visible pixels there, so overlapping windows can appear. Instant replay and clip
+trim are still macOS-only.
+
+The tray can also open an empty composer, start or stop a recording, annotate or insert the latest capture,
 annotate a clipboard image, open the captures folder, or quit the watcher.
 `/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
@@ -117,6 +130,9 @@ error rather than replacing the saved capture.
   fallback, so overlapping windows stay out of the image. A dragged region or
   Enter captures the visible pixels in that rectangle, which can include
   whatever is on screen there. The composer says which kind you took.
+- Screen recording also captures visible pixels, including a clicked window's
+  rectangle, and does not record audio. It stops at 5 minutes. The control bar is
+  hidden for each frame grab. Instant replay is not available.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -169,4 +185,8 @@ from the macOS development environment. Before calling Windows support verified:
   Open Context, compare the preview with the captured window, switch a source off,
   and confirm the switch sticks after reopening a recent capture. Type `@` and
   confirm Enter inserts a skill mention instead of sending.
+- Record a short display clip with **Control+Alt+Shift+R**. Pause, restart, and
+  stop. Confirm the MP4 and key frames appear in the composer and the control bar
+  is absent from those frames. Escape on the bar discards the clip. Confirm nothing
+  is sent. Reopen the capture from Recents.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

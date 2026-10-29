@@ -316,6 +316,7 @@ internal static class ContextReview
 internal sealed class ContextDialog : Form
 {
     readonly IReadOnlyList<JsonObject> shots;
+    readonly IReadOnlyList<JsonObject> videos;
     readonly JsonObject context;
     readonly JsonObject include;
     readonly ListView sources = new() { View = View.Details, CheckBoxes = true, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.None, MultiSelect = false, HideSelection = false };
@@ -328,9 +329,10 @@ internal sealed class ContextDialog : Form
     bool filling;
     string selected = ComposerFiles.Sources[0];
 
-    internal ContextDialog(IReadOnlyList<JsonObject> shots, JsonObject context, JsonObject include)
+    internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include)
     {
         this.shots = shots;
+        this.videos = videos;
         this.context = context;
         this.include = include;
         Text = "Context";
@@ -426,7 +428,7 @@ internal sealed class ContextDialog : Form
         banner.Visible = !included;
         detail.ForeColor = included ? Color.FromArgb(236, 236, 238) : Color.FromArgb(140, 140, 146);
         string text = markdown.Checked
-            ? ContextReview.Markdown(selected, shots, Array.Empty<JsonObject>(), context)
+            ? ContextReview.Markdown(selected, shots, videos, context)
             : ContextReview.Preview(selected, shots, context);
         if (text.Length == 0) text = ContextReview.EmptyText(selected);
         int limit = markdown.Checked ? ContextReview.MarkdownLimit : ContextReview.PreviewLimit;
@@ -436,7 +438,7 @@ internal sealed class ContextDialog : Form
 
     void CopyMarkdown()
     {
-        string text = ContextReview.Markdown(selected, shots, Array.Empty<JsonObject>(), context);
+        string text = ContextReview.Markdown(selected, shots, videos, context);
         if (text.Length == 0) return;
         Clipboard.SetText(text);
         copy.Text = "Copied";

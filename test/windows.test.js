@@ -25,6 +25,15 @@ test("Windows composer bundle, destinations, and region geometry", { skip: proce
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("Windows screen recording writes an MP4", { skip: process.platform !== "win32" }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "appshots-recording-test-"));
+  try {
+    const helper = fileURLToPath(new URL("../windows/dist/Appshots.exe", import.meta.url));
+    const { stdout } = await promisify(execFile)(helper, ["--test-recording", "--output", directory], { windowsHide: true, timeout: 60_000 });
+    assert.match(stdout, /Windows recording regressions passed/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("Windows helper rejects invalid requests without producing capture content", { skip: process.platform !== "win32" }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "appshots-windows-test-"));
   const helper = fileURLToPath(new URL("../windows/dist/Appshots.exe", import.meta.url));

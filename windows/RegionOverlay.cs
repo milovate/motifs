@@ -14,14 +14,16 @@ internal sealed record CaptureChoice(CaptureKind Kind, nint Window, Rectangle Bo
 internal sealed class RegionOverlay : Form
 {
     const string HintText = "Drag an area or click a window    ·    Enter full screen    ·    Esc cancel";
+    readonly string hint;
     Point? anchor;
     Rectangle selection;
     nint hovered;
     Rectangle hoveredBounds;
     internal CaptureChoice? Choice;
 
-    internal RegionOverlay()
+    internal RegionOverlay(string? hint = null)
     {
+        this.hint = hint ?? HintText;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         Bounds = SystemInformation.VirtualScreen;
@@ -123,11 +125,11 @@ internal sealed class RegionOverlay : Form
             e.Graphics.DrawRectangle(pen, hoveredBounds);
         }
         var font = new Font("Segoe UI", 11, FontStyle.Regular, GraphicsUnit.Point);
-        var size = e.Graphics.MeasureString(HintText, font);
+        var size = e.Graphics.MeasureString(hint, font);
         var pill = new RectangleF((ClientSize.Width - size.Width) / 2 - 16, ClientSize.Height - 78, size.Width + 32, size.Height + 14);
         using var background = new SolidBrush(Color.FromArgb(210, 20, 20, 20));
         e.Graphics.FillRectangle(background, pill);
-        e.Graphics.DrawString(HintText, font, Brushes.White, pill.X + 16, pill.Y + 7);
+        e.Graphics.DrawString(hint, font, Brushes.White, pill.X + 16, pill.Y + 7);
         font.Dispose();
     }
 

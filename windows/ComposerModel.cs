@@ -25,6 +25,7 @@ internal sealed class LoadedBundle
     internal string? Id;
     internal DateTimeOffset? Created;
     internal List<JsonObject> Shots = new();
+    internal List<JsonObject> Videos = new();
     internal string Note = "";
     internal JsonObject Context = new();
     internal JsonObject Include = new();
@@ -193,14 +194,24 @@ internal static class ComposerFiles
         return body.Length == 0 ? prefix : prefix + " " + body;
     }
 
-    internal static string WriteBundle(string output, string id, DateTimeOffset created, string note, IReadOnlyList<JsonObject> shots, JsonObject context, JsonObject include)
+    internal static string WriteBundle(string output, string id, DateTimeOffset created, string note, IReadOnlyList<JsonObject> shots, JsonObject context, JsonObject include, IReadOnlyList<JsonObject>? videos = null)
     {
         if (shots.Count > 8) throw new Exception("A draft can contain up to 8 screenshots.");
+        if (videos != null && videos.Count > ReplayMath.MaxClips) throw new Exception("A draft can contain up to 3 screen recordings.");
         var media = new JsonArray();
         foreach (var shot in shots)
         {
             var copy = Clone(shot);
             copy["kind"] = "image";
+            media.Add(copy);
+        }
+        if (videos != null) foreach (var video in videos)
+        {
+            var copy = Clone(video);
+            copy["kind"] = "video";
+            string? file = copy["video"]?.GetValue<string>();
+            if (file == null) throw new Exception("Invalid screen recording.");
+            ValidateVideo(file, output);
             media.Add(copy);
         }
         var bundle = new JsonObject
@@ -228,15 +239,25 @@ internal static class ComposerFiles
         if (!string.Equals(Path.GetDirectoryName(full), output, StringComparison.OrdinalIgnoreCase) || !name.StartsWith("bundle-", StringComparison.Ordinal) || !name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
             throw new Exception("Bundles must be in the Capture Studio captures folder.");
         if (new FileInfo(full).Length > 2_000_000) throw new Exception("This capture bundle is invalid or from a newer version.");
-        if (JsonNode.Parse(File.ReadAllText(full)) is not JsonObject raw || raw["schema"]?.GetValue<string>() != Schema || raw["media"] is not JsonArray media || media.Count > 8)
+        if (JsonNode.Parse(File.ReadAllText(full)) is not JsonObject raw || raw["schema"]?.GetValue<string>() != Schema || raw["media"] is not JsonArray media || media.Count > 11)
             throw new Exception("This capture bundle is invalid or from a newer version.");
         var loaded = new LoadedBundle { Path = full, Id = raw["id"]?.GetValue<string>(), Note = raw["note"]?.GetValue<string>() ?? "" };
         if (DateTimeOffset.TryParse(raw["createdAt"]?.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var created)) loaded.Created = created;
         loaded.Context = raw["context"] as JsonObject ?? new JsonObject();
         loaded.Include = raw["include"] as JsonObject ?? DefaultInclude();
+        int images = 0;
+        int clips = 0;
         foreach (var entry in media)
         {
-            if (entry is not JsonObject shot || shot["kind"]?.GetValue<string>() == "video") continue;
+            if (entry is not JsonObject shot) continue;
+            if (shot["kind"]?.GetValue<string>() == "video")
+            {
+                if (++clips > ReplayMath.MaxClips) throw new Exception("This capture bundle is invalid or from a newer version.");
+                try { loaded.Videos.Add(AcceptedVideo(shot, output)); }
+                catch { loaded.Missing++; }
+                continue;
+            }
+            if (++images > 8) throw new Exception("This capture bundle is invalid or from a newer version.");
             string? screenshot = shot["screenshot"]?.GetValue<string>();
             try
             {
@@ -247,6 +268,44 @@ internal static class ComposerFiles
             catch { loaded.Missing++; }
         }
         return loaded;
+    }
+
+    internal static void ValidateVideo(string file, string output)
+    {
+        string full = Path.GetFullPath(file);
+        if (!string.Equals(Path.GetDirectoryName(full), output, StringComparison.OrdinalIgnoreCase) || !full.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+            throw new Exception("Screen recordings must be MP4 files in the capture folder.");
+        long length = new FileInfo(full).Length;
+        if (length < 12 || length > 200_000_000) throw new Exception(length > 200_000_000 ? "Screen recording is larger than 200 MB." : "Invalid screen recording.");
+        using var stream = File.OpenRead(full);
+        Span<byte> header = stackalloc byte[8];
+        if (stream.Read(header) != 8 || header[4] != (byte)'f' || header[5] != (byte)'t' || header[6] != (byte)'y' || header[7] != (byte)'p')
+            throw new Exception("Invalid screen recording.");
+    }
+
+    static JsonObject AcceptedVideo(JsonObject shot, string output)
+    {
+        string? video = shot["video"]?.GetValue<string>();
+        if (video == null) throw new Exception("Invalid screen recording.");
+        ValidateVideo(video, output);
+        var copy = Clone(shot);
+        copy["kind"] = "video";
+        var frames = new JsonArray();
+        if (shot["frames"] is JsonArray rawFrames) foreach (var node in rawFrames)
+        {
+            if (frames.Count >= 6 || node is not JsonObject frame) continue;
+            string? screenshot = frame["screenshot"]?.GetValue<string>();
+            try
+            {
+                if (screenshot == null) continue;
+                Program.ValidateImage(screenshot, output);
+                frames.Add(Clone(frame));
+            }
+            catch { /* A missing key frame stays out of the reopened clip. */ }
+        }
+        copy["frames"] = frames;
+        return copy;
     }
 
     internal static List<RecentCapture> Recents(string output, int limit = 8)
@@ -262,9 +321,11 @@ internal static class ComposerFiles
                 var createdText = raw["createdAt"]?.GetValue<string>();
                 var updatedText = raw["updatedAt"]?.GetValue<string>() ?? createdText;
                 if (!DateTimeOffset.TryParse(updatedText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var updated)) continue;
-                var media = (raw["media"] as JsonArray ?? new JsonArray()).Where(item => item?["kind"]?.GetValue<string>() != "video").ToList();
+                var entries = raw["media"] as JsonArray ?? new JsonArray();
+                var media = entries.Where(item => item?["kind"]?.GetValue<string>() != "video").ToList();
+                bool recorded = entries.Any(item => item?["kind"]?.GetValue<string>() == "video");
                 string note = (raw["note"]?.GetValue<string>() ?? "").Split('\n')[0].Trim();
-                string fallback = media.Count > 0 ? media[0]?["app"]?.GetValue<string>() ?? "Capture" : "Capture";
+                string fallback = media.Count > 0 ? media[0]?["app"]?.GetValue<string>() ?? "Capture" : recorded ? "Screen recording" : "Capture";
                 string title = note.Length == 0 ? fallback : note.Length > 48 ? note[..45] + "…" : note;
                 found.Add(new RecentCapture { Path = file, Title = title, Updated = updated, Screenshots = media.Count });
             }
@@ -539,6 +600,47 @@ internal static class ComposerTests
         Check(ContextReview.PressureName(10) == "normal" && ContextReview.PressureName(80) == "warning" && ContextReview.PressureName(95) == "critical" && ContextReview.PressureName(-1) == "unknown", "memory load maps to a pressure name");
         var facts = ComposerFiles.SystemFacts();
         Check(facts["memory"]?["pressure"] != null && facts["storage"]?["availableBytes"] != null, "Windows reports memory pressure and free storage");
+
+        var offsets = ReplayMath.Offsets(30, 6).Select(value => Math.Round(value, 2, MidpointRounding.AwayFromZero)).Select(value => value.ToString("0.00", CultureInfo.InvariantCulture));
+        Check(string.Join(",", offsets) == "0.00,5.98,11.96,17.94,23.92,29.90", "six evenly spaced key frames");
+        Check(ReplayMath.Offsets(0, 6).SequenceEqual(new[] { 0d }), "a single frame for an instant recording");
+        Check(new[] { 1, 2, 3, 4 }.Select(ReplayMath.FramesPerClip).SequenceEqual(new[] { 6, 3, 2, 2 }), "six frames are split across up to three clips");
+        Check(ReplayMath.OutputSize(100, 51) == (100, 50) && ReplayMath.OutputSize(3000, 1000).Width == 1280 && ReplayMath.OutputSize(3000, 1000).Height % 2 == 0, "recording dimensions stay even");
+        Check(ReplayMath.ClockLabel(10, 300) == "00:10" && ReplayMath.ClockLabel(280, 300) == "04:40 · 20s left", "the last 30 seconds show the time left");
+        var timeline = new RecordingTimeline();
+        timeline.Start(0);
+        timeline.Pause(10);
+        Check(timeline.Seconds(14) == 10, "a pause freezes the recorded time");
+        timeline.Resume(15);
+        Check(timeline.Seconds(20) == 15 && timeline.Pauses.Count == 1 && timeline.Pauses[0].At == 10 && timeline.Pauses[0].Duration == 5, "paused time stays out of the recording");
+
+        string movie = Path.Combine(output, "recording-test.mp4");
+        File.WriteAllBytes(movie, new byte[] { 0, 0, 0, 24, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+        string frame = Path.Combine(output, "recording-test-frame-1.png");
+        File.Copy(image, frame, true);
+        var clip = new JsonObject
+        {
+            ["kind"] = "video",
+            ["video"] = movie,
+            ["source"] = "recording",
+            ["area"] = "display",
+            ["startedAt"] = "2026-10-29T00:00:00Z",
+            ["durationSeconds"] = 5,
+            ["frames"] = new JsonArray(new JsonObject { ["screenshot"] = frame, ["offsetSeconds"] = 0 }),
+            ["pauses"] = new JsonArray(new JsonObject { ["atSeconds"] = 1, ["durationSeconds"] = 0.5 }),
+        };
+        string withVideo = ComposerFiles.WriteBundle(output, "33333333-3333-3333-3333-333333333333", DateTimeOffset.Parse("2026-10-29T00:00:00Z"), "Clip note", new[] { shot }, context, include, new[] { clip });
+        var reopened = ComposerFiles.LoadBundle(withVideo, output);
+        Check(reopened.Shots.Count == 1 && reopened.Videos.Count == 1 && reopened.Videos[0]["source"]?.GetValue<string>() == "recording" && reopened.Videos[0]["frames"] is JsonArray kept && kept.Count == 1, "a recording reopens beside its screenshots");
+        string onlyVideo = ComposerFiles.WriteBundle(output, "55555555-5555-5555-5555-555555555555", DateTimeOffset.Parse("2026-10-29T00:00:01Z"), "", Array.Empty<JsonObject>(), context, include, new[] { clip });
+        Check(ComposerFiles.LoadBundle(onlyVideo, output).Videos.Count == 1 && ComposerFiles.Recents(output).Any(item => item.Title == "Screen recording"), "a clip without a screenshot still appears in Recents");
+        var outsideClip = ComposerFiles.Clone(clip);
+        outsideClip["video"] = Path.Combine(Path.GetTempPath(), "outside-recording.mp4");
+        string outsideBundle = Path.Combine(output, "bundle-44444444-4444-4444-4444-444444444444.json");
+        File.WriteAllText(outsideBundle, new JsonObject { ["schema"] = ComposerFiles.Schema, ["id"] = "44444444-4444-4444-4444-444444444444", ["createdAt"] = "2026-10-29T00:00:00Z", ["note"] = "", ["media"] = new JsonArray(outsideClip), ["context"] = new JsonObject(), ["include"] = ComposerFiles.DefaultInclude() }.ToJsonString());
+        var rejected = ComposerFiles.LoadBundle(outsideBundle, output);
+        Check(rejected.Videos.Count == 0 && rejected.Missing == 1, "recordings outside the captures folder are not reopened");
+        Check(ComposerFiles.Recents(output).Any(item => item.Title == "Screen recording"), "a clip without a screenshot still appears in Recents");
         Console.WriteLine("Windows composer regressions passed");
     }
 

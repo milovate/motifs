@@ -15,8 +15,8 @@ behavior still needs validation on a Windows desktop.
 
 **Windows:** see [Windows setup and validation](windows.md). The instructions
 below describe macOS unless noted. Windows has the capture picker, composer,
-destinations, context review, skill mentions, recent captures, annotation editing, and
-best-effort draft handoff. Screen recording and instant replay remain on macOS.
+destinations, context review, skill mentions, recent captures, annotation editing,
+screen recording, and best-effort draft handoff. Instant replay remains on macOS.
 
 ## Installation
 
@@ -357,8 +357,8 @@ Plugin cleanup closes the endpoint and removes its descriptor. Stale descriptors
 left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
-context review, prefixes, skill mentions, recent captures, and best-effort draft handoff. Screen
-recording, instant replay, dictation, and the macOS visual treatment stay on macOS.
+context review, prefixes, skill mentions, recent captures, screen recording, and best-effort
+draft handoff. Instant replay, clip trim, dictation, and the macOS visual treatment stay on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
 contract tests or a successful build does not verify native interaction.
 

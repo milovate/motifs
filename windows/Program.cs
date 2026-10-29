@@ -30,7 +30,7 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
-        bool capture = args.Contains("--capture") || args.Contains("--test-annotations") || args.Contains("--test-composer");
+        bool capture = args.Contains("--capture") || args.Contains("--test-annotations") || args.Contains("--test-composer") || args.Contains("--test-recording");
         try
         {
             Forms.Application.SetHighDpiMode(Forms.HighDpiMode.PerMonitorV2);
@@ -40,6 +40,7 @@ internal static class Program
             PrivateDirectory(output);
             if (args.Contains("--test-annotations")) AnnotationTests.Run(output);
             else if (args.Contains("--test-composer")) ComposerTests.Run(output);
+            else if (args.Contains("--test-recording")) RecordingTests.Run(output);
             else if (capture)
             {
                 int delay = int.Parse(Option(args, "--delay") ?? "0");
@@ -60,7 +61,7 @@ internal static class Program
                 using var preview = new Preview(args.Contains("--annotate-clipboard") ? ClipboardSnapshot(output) : Latest(output), output);
                 Forms.Application.Run(preview);
             }
-            else throw new Exception("Expected --watch, --capture, --insert-latest, --annotate-latest, --annotate-clipboard, or --test-composer.");
+            else throw new Exception("Expected --watch, --capture, --insert-latest, --annotate-latest, --annotate-clipboard, --test-composer, or --test-recording.");
             return 0;
         }
         catch (Exception error)
@@ -281,6 +282,10 @@ internal sealed class Tray : Forms.Form
         ShowInTaskbar = false;
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Capture and compose (Ctrl+Alt+Shift+A)", null, async (_, _) => await TakeShot());
+        var recordItem = new Forms.ToolStripMenuItem("Start screen recording (Ctrl+Alt+Shift+R)");
+        recordItem.Click += async (_, _) => await ToggleRecording();
+        menu.Items.Add(recordItem);
+        menu.Opening += (_, _) => recordItem.Text = RecordingSession.Active ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording (Ctrl+Alt+Shift+R)";
         menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
         menu.Items.Add("Insert latest capture into OpenCode", null, (_, _) => {
             try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
@@ -297,24 +302,29 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add("Open captures folder", null, (_, _) => Process.Start(new ProcessStartInfo(output) { UseShellExecute = true }));
         menu.Items.Add("Quit Appshots", null, (_, _) => Close());
         icon = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Capture Studio — Ctrl+Alt+Shift+A", ContextMenuStrip = menu, Visible = true };
+        RecordingSession.StateChanged += () => icon.Text = RecordingSession.Active ? "Capture Studio — recording (Ctrl+Alt+Shift+R)" : "Capture Studio — Ctrl+Alt+Shift+A";
         _ = Handle; // The hidden form still needs an HWND for WM_HOTKEY delivery.
     }
     protected override void SetVisibleCore(bool value) { base.SetVisibleCore(false); }
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        bool registered = Native.RegisterHotKey(Handle, 1, 0x4000 | 0x1 | 0x2 | 0x4, 0x41);
-        Program.Save(output, "status.json", new { phase = registered ? "ready" : "hotkey_failed", hotkeyRegistered = registered });
+        const uint modifiers = 0x4000 | 0x1 | 0x2 | 0x4;
+        bool registered = Native.RegisterHotKey(Handle, 1, modifiers, 0x41);
+        bool recordRegistered = Native.RegisterHotKey(Handle, 2, modifiers, 0x52);
+        Program.Save(output, "status.json", new { phase = registered ? "ready" : "hotkey_failed", hotkeyRegistered = registered, recordHotkeyRegistered = recordRegistered });
         if (!registered) Forms.MessageBox.Show("Control+Alt+Shift+A is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
+        else if (!recordRegistered) Forms.MessageBox.Show("Control+Alt+Shift+R is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
     }
     protected override void WndProc(ref Forms.Message m)
     {
         if (m.Msg == 0x312 && m.WParam == 1) _ = TakeShot();
+        else if (m.Msg == 0x312 && m.WParam == 2) _ = ToggleRecording();
         base.WndProc(ref m);
     }
     async Task TakeShot()
     {
-        if (busy) return;
+        if (busy || RecordingSession.Busy) return;
         busy = true;
         try
         {
@@ -333,15 +343,37 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { Error(e); }
         finally { busy = false; }
     }
-    void OpenComposer(IReadOnlyList<Snapshot> shots)
+    async Task ToggleRecording()
     {
-        try { using var composer = new ComposerForm(output, shots); composer.ShowDialog(); }
+        if (RecordingSession.Active) { RecordingSession.RequestStop(); return; }
+        if (RecordingSession.Busy || busy) return;
+        if (ComposerForm.Open is { } composer)
+        {
+            if (composer.CanRecord) await composer.RecordClip();
+            else composer.ShowRecordingLimit();
+            return;
+        }
+        if (busy) return;
+        busy = true;
+        try
+        {
+            var clip = await RecordingSession.Capture(output, 0);
+            if (clip == null) return;
+            Program.Save(output, "status.json", new { phase = "composing" });
+            OpenComposer(Array.Empty<Snapshot>(), new[] { clip });
+        }
+        catch (Exception e) { Error(e); }
+        finally { busy = false; }
+    }
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null)
+    {
+        try { using var composer = new ComposerForm(output, shots, clips); composer.ShowDialog(); }
         catch (Exception e) { Error(e); }
     }
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { Native.UnregisterHotKey(Handle, 1); icon.Dispose(); }
+        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); icon.Dispose(); }
         base.Dispose(disposing);
     }
 }
@@ -455,6 +487,7 @@ internal static class Native
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowTextLength(nint window);
     [DllImport("user32.dll")] internal static extern bool PrintWindow(nint window, nint dc, uint flags);
     [DllImport("user32.dll")] internal static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
+    [DllImport("user32.dll")] internal static extern bool SetWindowDisplayAffinity(nint window, uint affinity);
     [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(nint window, int id);
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);

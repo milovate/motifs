@@ -62,6 +62,7 @@ internal sealed class ComposerForm : Form
 {
     readonly string output;
     readonly List<JsonObject> shots = new();
+    readonly List<JsonObject> videos = new();
     readonly List<ComposerEndpoint> endpoints = new();
     readonly List<SkillChoice> skills = new();
     readonly FlowLayoutPanel thumbs = new() { AutoSize = true, WrapContents = false, Height = 64, Dock = DockStyle.Fill };
@@ -69,6 +70,7 @@ internal sealed class ComposerForm : Form
     readonly ComboBox destinationBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     readonly ComboBox targetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
     readonly Button contextButton = new() { Text = "Context", AutoSize = true };
+    readonly Button recordButton = MakeButton("Record");
     readonly Button prefixButton = MakeButton("Prefix");
     readonly Button send = new() { Text = "Review in OpenCode", AutoSize = true, Enabled = false };
     readonly Label status = new() { AutoSize = true, MaximumSize = new Size(600, 0) };
@@ -90,14 +92,17 @@ internal sealed class ComposerForm : Form
     readonly MentionSession mentions = new();
     readonly MentionPopup mentionPopup = new();
     bool updatingMentions;
+    internal static ComposerForm? Open { get; private set; }
+    internal bool CanRecord => !sending && !submitted && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
 
-    internal ComposerForm(string output, IEnumerable<Snapshot> initial)
+    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null)
     {
         this.output = output;
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
         context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
         foreach (var shot in initial) shots.Add(ComposerFiles.Media(shot));
+        if (clips != null) videos.AddRange(clips.Take(ReplayMath.MaxClips));
         Text = "Capture Studio";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -117,6 +122,8 @@ internal sealed class ComposerForm : Form
         var add = MakeButton("Add");
         add.Click += async (_, _) => await AddShot();
         add.AccessibleName = "Add a screenshot";
+        recordButton.Click += async (_, _) => await RecordClip();
+        recordButton.AccessibleName = "Record the screen";
         var recents = MakeButton("Recents");
         recents.Click += (_, _) => ShowRecents();
         var skillsButton = MakeButton("@");
@@ -125,7 +132,7 @@ internal sealed class ComposerForm : Form
         prefixButton.Click += (_, _) => ShowPrefixes(prefixButton);
         var close = MakeButton("Close");
         close.Click += (_, _) => Close();
-        actions.Controls.AddRange(new Control[] { contextButton, add, recents, skillsButton, prefixButton, close });
+        actions.Controls.AddRange(new Control[] { contextButton, add, recordButton, recents, skillsButton, prefixButton, close });
         top.Controls.Add(thumbs, 0, 0);
         top.Controls.Add(actions, 1, 0);
         note.Dock = DockStyle.Fill;
@@ -166,6 +173,7 @@ internal sealed class ComposerForm : Form
         RefreshPrefix();
         mentionPopup.Choose = InsertMention;
         Shown += async (_, _) => await Discover();
+        Open = this;
     }
 
     static Button MakeButton(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(4, 16, 0, 0) };
@@ -185,8 +193,15 @@ internal sealed class ComposerForm : Form
         note.Focus();
     }
 
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        if (Open == this) Open = null;
+        base.OnFormClosed(e);
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        if (RecordingSession.Active && Open == this) { e.Cancel = true; return; }
         if (sending && !submitted) { e.Cancel = true; return; }
         mentions.Dismiss();
         mentionPopup.Hide();
@@ -312,7 +327,9 @@ internal sealed class ComposerForm : Form
     {
         var target = CurrentTarget;
         send.Text = target?.ActionLabel ?? "Continue";
-        send.Enabled = !sending && !submitted && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0) && note.Text.Length <= 16_000;
+        send.Enabled = !sending && !submitted && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
+        recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/3";
+        recordButton.Enabled = CanRecord;
         int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && ContextReview.Count(source, shots, context) > 0);
         contextButton.Text = included == 0 ? "No context" : "Context " + included;
         contextButton.AccessibleDescription = ContextReview.TokenEstimate(ContextReview.IncludedCharacters(shots, context, include));
@@ -355,6 +372,34 @@ internal sealed class ComposerForm : Form
             panel.Controls.Add(remove);
             thumbs.Controls.Add(panel);
         }
+        for (int index = 0; index < videos.Count; index++)
+        {
+            int current = index;
+            var panel = new Panel { Size = new Size(84, 60), Margin = new Padding(0, 4, 6, 0) };
+            var picture = new PictureBox { Size = new Size(72, 52), SizeMode = PictureBoxSizeMode.Zoom, Location = new Point(0, 6), BackColor = Color.FromArgb(20, 20, 22) };
+            string? framePath = (videos[index]["frames"] as JsonArray)?.FirstOrDefault()?["screenshot"]?.GetValue<string>();
+            if (framePath != null)
+            {
+                try
+                {
+                    var image = Image.FromFile(framePath);
+                    picture.Image = image;
+                    panel.Tag = image;
+                }
+                catch { /* The duration label still identifies the clip. */ }
+            }
+            double duration = 0;
+            try { if (videos[index]["durationSeconds"] is JsonNode seconds) duration = seconds.GetValue<double>(); } catch { duration = 0; }
+            picture.AccessibleName = "Screen recording " + (index + 1) + ", " + ContextReview.ClipTime(duration);
+            var caption = new Label { Text = ContextReview.ClipTime(duration), AutoSize = false, Size = new Size(72, 16), Location = new Point(0, 40), ForeColor = Color.White, BackColor = Color.FromArgb(160, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter };
+            var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
+            remove.AccessibleName = "Remove recording " + (index + 1);
+            remove.Click += (_, _) => { videos.RemoveAt(current); RefreshThumbs(); Touch(); };
+            panel.Controls.Add(picture);
+            panel.Controls.Add(caption);
+            panel.Controls.Add(remove);
+            thumbs.Controls.Add(panel);
+        }
     }
 
     void Annotate(int index)
@@ -372,7 +417,7 @@ internal sealed class ComposerForm : Form
 
     async Task AddShot()
     {
-        if (sending || shots.Count >= 8) { if (shots.Count >= 8) status.Text = "A draft can contain up to 8 screenshots."; return; }
+        if (sending || RecordingSession.Busy || shots.Count >= 8) { if (shots.Count >= 8) status.Text = "A draft can contain up to 8 screenshots."; return; }
         Hide();
         try
         {
@@ -391,7 +436,7 @@ internal sealed class ComposerForm : Form
     {
         mentions.Dismiss();
         mentionPopup.Hide();
-        using var dialog = new ContextDialog(shots, context, include);
+        using var dialog = new ContextDialog(shots, videos, context, include);
         dialog.ShowDialog(this);
         settings["include"] = ComposerFiles.Clone(include);
         try { ComposerFiles.SaveSettings(output, settings); } catch (Exception error) { status.Text = error.Message; }
@@ -414,13 +459,15 @@ internal sealed class ComposerForm : Form
             var bundle = ComposerFiles.LoadBundle(recent[list.SelectedIndex].Path, output);
             shots.Clear();
             shots.AddRange(bundle.Shots);
+            videos.Clear();
+            videos.AddRange(bundle.Videos);
             note.Text = bundle.Note;
             context = bundle.Context.Count == 0 ? context : bundle.Context;
             include = ComposerFiles.Clone(bundle.Include);
             bundleId = bundle.Id ?? bundleId;
             created = bundle.Created ?? created;
             manifest = bundle.Path;
-            if (bundle.Missing > 0) status.Text = bundle.Missing + (bundle.Missing == 1 ? " screenshot was" : " screenshots were") + " deleted since this capture was saved.";
+            if (bundle.Missing > 0) status.Text = bundle.Missing + (bundle.Missing == 1 ? " file was" : " files were") + " deleted since this capture was saved.";
             RefreshThumbs();
             RefreshContext();
         }
@@ -547,11 +594,11 @@ internal sealed class ComposerForm : Form
 
     void Persist()
     {
-        if (note.Text.Length == 0 && shots.Count == 0) return;
-        manifest = ComposerFiles.WriteBundle(output, bundleId, created, note.Text, shots, context, include);
+        if (note.Text.Length == 0 && shots.Count == 0 && videos.Count == 0) return;
+        manifest = ComposerFiles.WriteBundle(output, bundleId, created, note.Text, shots, context, include, videos);
     }
 
-    string Fingerprint() => string.Join("\u001f", new[] { Current?.Id ?? "", CurrentTarget?.Id ?? "", note.Text, string.Join("|", shots.Select(shot => shot["screenshot"]?.GetValue<string>() ?? "")) });
+    string Fingerprint() => string.Join("\u001f", new[] { Current?.Id ?? "", CurrentTarget?.Id ?? "", note.Text, string.Join("|", shots.Select(shot => shot["screenshot"]?.GetValue<string>() ?? "")), string.Join("|", videos.Select(video => video["video"]?.GetValue<string>() ?? "")) });
 
     async Task Send()
     {
@@ -618,7 +665,7 @@ internal sealed class ComposerForm : Form
                 if (id == null || title == null || draft == null) throw new Exception("OpenCode returned an invalid draft handoff.");
                 status.Text = "Opening the new session in OpenCode…";
                 Hide();
-                await SessionDraft.Open(id, title, shots.Select(shot => shot["screenshot"]!.GetValue<string>()).ToList(), draft, output);
+                await SessionDraft.Open(id, title, AttachmentImages(), draft, output);
                 Program.Save(output, "status.json", new { phase = "composer_draft_inserted", sessionID = id });
                 break;
             case "copy-text":
@@ -639,6 +686,59 @@ internal sealed class ComposerForm : Form
         submitted = true;
         sending = false;
         Close();
+    }
+
+    List<string> AttachmentImages()
+    {
+        var images = new List<string>();
+        foreach (var shot in shots)
+        {
+            string? path = shot["screenshot"]?.GetValue<string>();
+            if (path != null) images.Add(path);
+        }
+        foreach (var video in videos)
+        {
+            if (video["frames"] is not JsonArray frames) continue;
+            foreach (var node in frames)
+            {
+                string? path = node?["screenshot"]?.GetValue<string>();
+                if (path != null) images.Add(path);
+            }
+        }
+        return images;
+    }
+
+    internal void ShowRecordingLimit() => status.Text = videos.Count >= ReplayMath.MaxClips ? "A draft can contain up to 3 recordings." : "Finish the current draft before recording.";
+
+    internal async Task RecordClip()
+    {
+        if (!CanRecord) { ShowRecordingLimit(); return; }
+        mentions.Dismiss();
+        mentionPopup.Hide();
+        var parked = Location;
+        Location = new Point(-32000, -32000);
+        try
+        {
+            var clip = await RecordingSession.Capture(output, videos.Count);
+            if (clip != null && !IsDisposed) Attach(clip);
+        }
+        catch (Exception error) { if (!IsDisposed) status.Text = error.Message; }
+        finally { if (!IsDisposed) { Location = parked; Activate(); } }
+    }
+
+    void Attach(JsonObject clip)
+    {
+        if (videos.Count >= ReplayMath.MaxClips) return;
+        videos.Add(clip);
+        int each = ReplayMath.FramesPerClip(videos.Count);
+        foreach (var video in videos)
+        {
+            if (video["frames"] is not JsonArray frames) continue;
+            while (frames.Count > each) frames.RemoveAt(frames.Count - 1);
+        }
+        RefreshThumbs();
+        RefreshContext();
+        Touch();
     }
 
     void UpdateMentions()
