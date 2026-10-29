@@ -51,6 +51,7 @@ internal sealed class RegionOverlay : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        ActiveSurface.Push(this);
         Activate();
         Focus();
         UpdateHover(PointToClient(Cursor.Position));
@@ -71,6 +72,12 @@ internal sealed class RegionOverlay : Form
         settings["showBubble"] = false;
         ComposerFiles.SaveSettings(captures, settings, false);
         bubble?.Hide();
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        ActiveSurface.Pop(this);
+        base.OnFormClosed(e);
     }
 
     protected override void Dispose(bool disposing)

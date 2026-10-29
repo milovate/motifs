@@ -43,7 +43,10 @@ needed, warn about interrupting active work before `opencode service restart`.
 2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
    window, or press **Enter** for the whole display. Escape cancels. A window
    capture uses `PrintWindow` and UI Automation for that window. A region or full
-   screen capture is the visible pixels in that rectangle.
+   screen capture is the visible pixels in that rectangle. Pressing the shortcut
+   again while the chooser, composer, or annotation editor is open brings that
+   window forward. **Control+Alt+Shift+R** still starts or stops a recording
+   while the composer is open.
 3. The composer opens at the bottom of the screen. Add a note, click a thumbnail
    to annotate it, and use **Add** for another capture (up to 8). **Context**
    reviews window text, device, console, network, steps, and logs. Each source

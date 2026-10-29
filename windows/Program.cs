@@ -293,6 +293,26 @@ internal static class Reader
     }
 }
 
+// The capture shortcut brings the open chooser, composer, or annotation editor forward.
+internal static class ActiveSurface
+{
+    static readonly List<Forms.Form> forms = new();
+    internal static void Push(Forms.Form form) { forms.Remove(form); forms.Add(form); }
+    internal static void Pop(Forms.Form form) => forms.Remove(form);
+    internal static bool Raise()
+    {
+        for (int index = forms.Count - 1; index >= 0; index--)
+        {
+            var form = forms[index];
+            if (form.IsDisposed || !form.Visible) continue;
+            if (form.WindowState == Forms.FormWindowState.Minimized) form.WindowState = Forms.FormWindowState.Normal;
+            form.Activate();
+            return true;
+        }
+        return false;
+    }
+}
+
 internal sealed class Tray : Forms.Form
 {
     readonly string output;
@@ -421,6 +441,8 @@ internal sealed class Tray : Forms.Form
 
     void EditLatest(bool clipboard)
     {
+        if (Occupied()) return;
+        busy = true;
         try
         {
             using var preview = new Preview(clipboard ? Program.ClipboardSnapshot(output) : Program.Latest(output), output);
@@ -428,6 +450,14 @@ internal sealed class Tray : Forms.Form
             if (preview.Inserted) SetStatusIcon(StatusGlyph.Success);
         }
         catch (Exception e) { Error(e); }
+        finally { busy = false; }
+    }
+
+    bool Occupied()
+    {
+        if (!busy && !RecordingSession.Busy) return false;
+        if (busy) ActiveSurface.Raise();
+        return true;
     }
 
     void FillRecents(Forms.ToolStripMenuItem menu)
@@ -503,7 +533,7 @@ internal sealed class Tray : Forms.Form
 
     void ReopenBundle(string path)
     {
-        if (busy || RecordingSession.Busy) return;
+        if (Occupied()) return;
         busy = true;
         try
         {
@@ -517,7 +547,7 @@ internal sealed class Tray : Forms.Form
 
     async Task InsertLatest()
     {
-        if (busy || RecordingSession.Busy) return;
+        if (Occupied()) return;
         busy = true;
         string? notice = null;
         try
@@ -533,7 +563,7 @@ internal sealed class Tray : Forms.Form
 
     async Task CaptureAndInsert(bool annotate)
     {
-        if (busy || RecordingSession.Busy) return;
+        if (Occupied()) return;
         busy = true;
         string? notice = null;
         bool captured = false;
@@ -734,7 +764,7 @@ internal sealed class Tray : Forms.Form
 
     async Task TakeShot()
     {
-        if (busy || RecordingSession.Busy) return;
+        if (Occupied()) return;
         busy = true;
         replay.Paused = true;
         var replayFrames = replay.Snapshot();
@@ -771,14 +801,14 @@ internal sealed class Tray : Forms.Form
     async Task ToggleRecording()
     {
         if (RecordingSession.Active) { RecordingSession.RequestStop(); return; }
-        if (RecordingSession.Busy || busy) return;
-        if (ComposerForm.Open is { } composer)
+        if (RecordingSession.Busy) return;
+        if (ComposerForm.Open is { } composer && composer.Visible)
         {
             if (composer.CanRecord) await composer.RecordClip();
             else composer.ShowRecordingLimit();
             return;
         }
-        if (busy) return;
+        if (busy) { ActiveSurface.Raise(); return; }
         busy = true;
         try
         {

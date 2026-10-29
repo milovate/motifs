@@ -211,6 +211,7 @@ internal sealed class ComposerForm : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        ActiveSurface.Push(this);
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
         note.Focus();
@@ -219,6 +220,7 @@ internal sealed class ComposerForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         if (Open == this) Open = null;
+        ActiveSurface.Pop(this);
         base.OnFormClosed(e);
     }
 

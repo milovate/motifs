@@ -190,6 +190,14 @@ internal static class AnnotationTests
         catch (Exception e) when (e.Message == "Crop must contain at least 2 × 2 image pixels.") { }
         using (var fresh = new AnnotationCanvas(new Bitmap(20, 20), null))
             Check(fresh.Tool == "Arrow", "Arrow is the starting tool");
+        Check(!ActiveSurface.Raise(), "nothing to bring forward");
+        using (var hidden = new Forms.Form())
+        {
+            ActiveSurface.Push(hidden);
+            Check(!ActiveSurface.Raise(), "a hidden window is not brought forward");
+            ActiveSurface.Pop(hidden);
+        }
+        Check(!ActiveSurface.Raise(), "a closed window is forgotten");
         var parked = ToolbarPlacement.Move(new ToolbarOffset(0, 16), new Size(800, 600), new Size(200, 40), 0, 0);
         Check(parked == new ToolbarOffset(0, 16), "the toolbar starts just above the bottom edge");
         var dragged = ToolbarPlacement.Move(parked, new Size(800, 600), new Size(200, 40), 50, -20);

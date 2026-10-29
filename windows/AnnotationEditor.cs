@@ -589,6 +589,7 @@ internal sealed class Preview : Forms.Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        ActiveSurface.Push(this);
         var area = Forms.Screen.FromPoint(Forms.Cursor.Position).WorkingArea;
         int maxW = Math.Max(320, area.Width - 24);
         int maxH = Math.Max(240, area.Height - 24);
@@ -612,6 +613,7 @@ internal sealed class Preview : Forms.Form
 
     protected override void OnFormClosed(Forms.FormClosedEventArgs e)
     {
+        ActiveSurface.Pop(this);
         tips.Dispose();
         base.OnFormClosed(e);
     }
