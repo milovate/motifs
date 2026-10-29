@@ -118,10 +118,12 @@ enum ContextText {
 
 // Included context as delivered. Roughly 4 characters per token.
 func contextCharacterCount(shots: [[String: Any]], context: [String: Any], include: BundleInclude) -> Int {
-    BundleInclude.sources.filter { include[$0] }.reduce(0) { total, source in
-        let length = ContextText.render(source, shots: shots, context: context).count
-        return total + (source == "windowText" ? length : min(length, 60_000))
-    }
+    BundleInclude.sources.filter { include[$0] }.reduce(0) { $0 + contextCharacterCount($1, shots: shots, context: context) }
+}
+
+func contextCharacterCount(_ source: String, shots: [[String: Any]], context: [String: Any]) -> Int {
+    let length = ContextText.render(source, shots: shots, context: context).count
+    return source == "windowText" ? length : min(length, 60_000)
 }
 
 func formatTokenEstimate(characters: Int) -> String {

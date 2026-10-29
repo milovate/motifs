@@ -19,6 +19,7 @@ import AppKit
     var context: [String: Any] = [:]
     var collecting = false
     var include = BundleInclude()
+    private var lengths: [String: Int] = [:]
     var onChange: ((BundleInclude) -> Void)?
 
     final class FlippedStack: NSStackView {
@@ -125,6 +126,7 @@ import AppKit
         self.shots = shots
         self.context = context
         collecting = false
+        lengths = [:]
         if isViewLoaded { refresh() }
     }
 
@@ -136,15 +138,29 @@ import AppKit
 
     func setIncluded(_ source: String, _ on: Bool) {
         include[source] = on
-        refresh()
+        refreshSummary()
         onChange?(include)
     }
 
-    func refresh() {
+    // Rows, estimate and the off banner; cheap enough to run on every switch flip.
+    func refreshSummary() {
         for source in BundleInclude.sources {
             rows[source]?.update(count: ContextText.count(source, shots: shots, context: context), errors: errorCount(source), included: include[source], selected: source == selectedSource)
         }
-        estimate.stringValue = formatTokenEstimate(characters: contextCharacterCount(shots: shots, context: context, include: include))
+        estimate.stringValue = formatTokenEstimate(characters: BundleInclude.sources.filter { include[$0] }.reduce(0) { $0 + length($1) })
+        banner.isHidden = include[selectedSource]
+        detail.alphaValue = include[selectedSource] ? 1 : 0.45
+    }
+
+    func length(_ source: String) -> Int {
+        if let cached = lengths[source] { return cached }
+        let length = contextCharacterCount(source, shots: shots, context: context)
+        lengths[source] = length
+        return length
+    }
+
+    func refresh() {
+        refreshSummary()
         for view in detail.arrangedSubviews { detail.removeArrangedSubview(view); view.removeFromSuperview() }
         var views: [NSView] = []
         view.effectiveAppearance.performAsCurrentDrawingAppearance { views = rowViews(selectedSource) }
@@ -152,8 +168,6 @@ import AppKit
             detail.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: detail.widthAnchor).isActive = true
         }
-        banner.isHidden = include[selectedSource]
-        detail.alphaValue = include[selectedSource] ? 1 : 0.45
     }
 
     // Plain text of what the detail pane shows, for accessibility and tests.
