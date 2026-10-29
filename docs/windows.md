@@ -41,14 +41,18 @@ needed, warn about interrupting active work before `opencode service restart`.
    The plugin also starts a private loopback bridge, the same one macOS uses, so
    the helper can list destinations and prepare a draft.
 2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
-   window, or press **Enter** for the whole display. Escape cancels. A window
+   window, or press **Enter** for the whole display. Escape cancels and returns
+   to the app that was in front. A window
    capture uses `PrintWindow` and UI Automation for that window. A region or full
    screen capture is the visible pixels in that rectangle. Pressing the shortcut
    again while the chooser, composer, or annotation editor is open brings that
    window forward. **Control+Alt+Shift+R** still starts or stops a recording
    while the composer is open.
 3. The composer opens at the bottom of the screen. Add a note, click a thumbnail
-   to annotate it, and use **Add** for another capture (up to 8). **Context**
+   to annotate it, and use **Add** for another capture (up to 8). Adding a
+   screenshot selects it. When more than one screenshot is attached, that
+   thumbnail is outlined. Removing one keeps the selection on the screenshot
+   that remains in its place. **Context**
    reviews window text, device, console, network, steps, and logs. Each source
    has an include switch, a preview, Markdown, and a rough token estimate.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
@@ -59,14 +63,17 @@ needed, warn about interrupting active work before `opencode service restart`.
 4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
    **Ctrl+Enter** or the action button prepares the bundle through the bridge.
    OpenCode opens a new unsent session and pastes the screenshots and draft.
-   Clipboard copies Markdown. Save to folder writes the bundle and reveals it.
-   None of these presses Enter or clicks Send.
+   Clipboard copies Markdown and returns to the previous app. Save to folder
+   writes the bundle and reveals it. Closing the composer without one of those
+   handoffs also returns to the previous app. None of these presses Enter or
+   clicks Send.
 5. Review the result and send it yourself. If handoff fails, the bundle remains
    in the captures folder. `/capture-studio` can still read the latest window capture.
 
 **Control+Alt+Shift+R** starts a screen recording. The same chooser appears: drag a
 region, click a window, or press Enter for the display under the pointer. Escape
-cancels before anything is written. There is no audio. A floating bar shows the
+cancels before anything is written and returns to the app that was in front.
+There is no audio. A floating bar shows the
 time, **Restart**, **Pause**, and **Stop**. The time turns orange in the last 30
 seconds, and the recording stops at 5 minutes. Pause time is kept out of the clip.
 Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
@@ -197,8 +204,11 @@ separate: drag a rectangle, then apply it.
   annotated and cropped PNG. It does not insert a draft. Right-clicking a mark
   offers edit, duplicate, and delete.
 - V selects; A, R, P, T, and C choose Arrow, Box, Draw, Text, and Crop. Escape first
-  cancels a pending crop, then clears a selection; with neither, it closes the editor
-  without saving current edits.
+   cancels a pending crop, then clears a selection; with neither, it closes the editor
+   without saving current edits. Cancelling the editor opened from the tray or
+   from **Capture, annotate, and insert** returns to the previous app. Cancelling
+   the editor opened from the composer returns to the composer. Save and Insert
+   leave focus with that result.
 - **Save only** saves the annotated image and editable objects without inserting.
   **Insert into OpenCode** saves and then pastes, leaving the draft unsent. Neither
    action sends a message. Cancel discards unsaved changes. If an earlier Insert
@@ -302,7 +312,11 @@ from the macOS development environment. Before calling Windows support verified:
   from the draft. Reset Crop and confirm the text returns. Copy image, then paste
   somewhere other than OpenCode. Test Cancel and clipboard-image annotation, and
   confirm handles are absent from the PNG.
-- Open the composer from the shortcut. Send the same capture to Clipboard and
+- Open the composer from the shortcut. Add a second screenshot and confirm the
+  new thumbnail is outlined; remove the first and confirm the outline stays on
+  the remaining one. Escape from the chooser, and close the composer without
+  sending, and confirm the previous app is in front. Copy does the same.
+  OpenCode and Save to folder leave those windows in front. Send the same capture to Clipboard and
   Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
   Open Context, compare the preview with the captured window, switch a source off,
   and confirm the switch sticks after reopening a recent capture. Type `@` and

@@ -445,9 +445,11 @@ internal sealed class Tray : Forms.Form
         busy = true;
         try
         {
+            nint returnTo = ExternalWindow();
             using var preview = new Preview(clipboard ? Program.ClipboardSnapshot(output) : Program.Latest(output), output);
             preview.ShowDialog();
             if (preview.Inserted) SetStatusIcon(StatusGlyph.Success);
+            if (FocusReturn.AfterAnnotation(preview.Completed)) FocusReturn.TryActivate(returnTo);
         }
         catch (Exception e) { Error(e); }
         finally { busy = false; }
@@ -537,7 +539,9 @@ internal sealed class Tray : Forms.Form
         busy = true;
         try
         {
+            nint returnTo = ExternalWindow();
             using var composer = new ComposerForm(output, Array.Empty<Snapshot>());
+            composer.ReturnTo = returnTo;
             composer.LoadSaved(path);
             composer.ShowDialog();
         }
@@ -587,6 +591,7 @@ internal sealed class Tray : Forms.Form
                 using var preview = new Preview(shot, output);
                 preview.ShowDialog();
                 if (!preview.Inserted && !preview.Saved) Program.Save(output, "status.json", new { phase = "ready", lastAction = "annotation_cancelled" });
+                if (FocusReturn.AfterAnnotation(preview.Completed)) FocusReturn.TryActivate(window);
                 else if (preview.Inserted) notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
             }
         }
@@ -768,6 +773,7 @@ internal sealed class Tray : Forms.Form
         busy = true;
         replay.Paused = true;
         var replayFrames = replay.Snapshot();
+        nint returnTo = ExternalWindow();
         try
         {
             Program.Save(output, "status.json", new { phase = "choosing" });
@@ -775,7 +781,8 @@ internal sealed class Tray : Forms.Form
             if (overlay.ShowDialog() != Forms.DialogResult.OK || overlay.Choice is not CaptureChoice choice)
             {
                 Program.Save(output, "status.json", new { phase = overlay.OpenComposerInstead ? "composing" : "cancelled" });
-                if (overlay.OpenComposerInstead) OpenComposer(Array.Empty<Snapshot>());
+                if (overlay.OpenComposerInstead) OpenComposer(Array.Empty<Snapshot>(), returnTo: returnTo);
+                else if (FocusReturn.AfterChooser(false)) FocusReturn.TryActivate(returnTo);
                 return;
             }
             Program.Save(output, "status.json", new { phase = "capturing" });
@@ -793,7 +800,8 @@ internal sealed class Tray : Forms.Form
                 catch { clip = null; }
             }
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page);
+            if (choice.Kind == CaptureKind.Window && FocusReturn.Usable(choice.Window)) returnTo = choice.Window;
+            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page, returnTo: returnTo);
         }
         catch (Exception e) { Error(e); SetStatusIcon(StatusGlyph.Warning); }
         finally { replay.Paused = false; busy = false; }
@@ -809,14 +817,19 @@ internal sealed class Tray : Forms.Form
             return;
         }
         if (busy) { ActiveSurface.Raise(); return; }
+        nint returnTo = ExternalWindow();
         busy = true;
         try
         {
             var clip = await RecordingSession.Capture(output, 0);
             var recorded = ClickHistory.Shared.TakePublished();
-            if (clip == null) return;
+            if (clip == null)
+            {
+                if (FocusReturn.AfterChooser(false)) FocusReturn.TryActivate(returnTo);
+                return;
+            }
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded);
+            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded, returnTo: returnTo);
         }
         catch (Exception e) { ClickHistory.Shared.TakePublished(); Error(e); }
         finally { busy = false; }
@@ -836,9 +849,14 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { Error(e); }
     }
 
-    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null)
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, nint returnTo = 0)
     {
-        try { using var composer = new ComposerForm(output, shots, clips, events, browser); composer.ShowDialog(); }
+        try
+        {
+            using var composer = new ComposerForm(output, shots, clips, events, browser);
+            composer.ReturnTo = returnTo != 0 ? returnTo : ExternalWindow();
+            composer.ShowDialog();
+        }
         catch (Exception e) { Error(e); }
     }
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }

@@ -729,6 +729,42 @@ internal readonly struct MentionQuery
     }
 }
 
+// The selected screenshot is the one Annotate edits. A highlight is drawn only
+// when another screenshot is attached, matching the macOS thumbnail border.
+internal static class ShotSelection
+{
+    internal static int AfterRemove(int selected, int removed, int remaining)
+    {
+        if (removed < selected) selected -= 1;
+        return Math.Min(selected, Math.Max(0, remaining - 1));
+    }
+
+    internal static bool Highlight(int count, int index, int selected) => count > 1 && index == selected;
+}
+
+// Cancelled capture UI returns to the app that was in front. A finished handoff
+// keeps the window it opened, except Copy, which does not open one.
+internal static class FocusReturn
+{
+    internal static bool AfterComposer(bool submitted, string? action) => !submitted || action == "copy-text";
+    internal static bool AfterChooser(bool openedComposer) => !openedComposer;
+    internal static bool AfterAnnotation(bool produced) => !produced;
+
+    internal static bool Usable(nint window)
+    {
+        if (window == 0 || !Native.IsWindow(window) || !Native.IsWindowVisible(window) || Native.IsIconic(window)) return false;
+        Native.GetWindowThreadProcessId(window, out uint pid);
+        return pid != (uint)Environment.ProcessId && Native.GetWindowTextLength(window) > 0;
+    }
+
+    internal static bool TryActivate(nint window)
+    {
+        if (!Usable(window)) return false;
+        Native.ShowWindow(window, 9);
+        return Native.SetForegroundWindow(window);
+    }
+}
+
 internal static class ComposerTests
 {
     static void Check(bool condition, string message) { if (!condition) throw new Exception("Composer regression: " + message); }
@@ -740,6 +776,14 @@ internal static class ComposerTests
         Check(selected == new Rectangle(10, 10, 30, 40), "region uses the drag bounds");
         Check(ComposerFiles.Selection(new Point(-10, -10), new Point(20, 25), new Rectangle(0, 0, 100, 100)) == new Rectangle(0, 0, 20, 25), "region stays on the display");
         Check(ComposerFiles.Mentions("see @report next", "report") && !ComposerFiles.Mentions("mail@report.com", "report"), "skill mentions ignore email addresses");
+        Check(ShotSelection.AfterRemove(1, 0, 1) == 0, "removing an earlier thumbnail keeps the later screenshot selected");
+        Check(ShotSelection.AfterRemove(1, 1, 2) == 1, "removing the selected thumbnail selects the screenshot that slides into its place");
+        Check(ShotSelection.AfterRemove(0, 2, 2) == 0, "removing a later thumbnail leaves the selection");
+        Check(!ShotSelection.Highlight(1, 0, 0) && ShotSelection.Highlight(2, 1, 1) && !ShotSelection.Highlight(2, 0, 1), "the selection outline appears only when another screenshot is attached");
+        Check(FocusReturn.AfterComposer(false, null) && FocusReturn.AfterComposer(true, "copy-text") && !FocusReturn.AfterComposer(true, "opencode-draft") && !FocusReturn.AfterComposer(true, "reveal-folder") && !FocusReturn.AfterComposer(true, null), "closing the composer returns to the previous app unless OpenCode or a folder already took focus");
+        Check(FocusReturn.AfterChooser(false) && !FocusReturn.AfterChooser(true), "cancelling the chooser returns to the previous app");
+        Check(FocusReturn.AfterAnnotation(false) && !FocusReturn.AfterAnnotation(true), "cancelling annotation returns to the previous app");
+        Check(!FocusReturn.Usable(0), "there is no window to restore");
 
         var merged = ComposerFiles.Merge(new (int, JsonArray)[]
         {

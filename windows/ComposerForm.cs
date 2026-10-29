@@ -64,6 +64,7 @@ internal sealed class ComposerForm : Form
 {
     readonly string output;
     readonly List<JsonObject> shots = new();
+    int selectedShotIndex;
     readonly List<JsonObject> videos = new();
     readonly List<ComposerEndpoint> endpoints = new();
     readonly List<SkillChoice> skills = new();
@@ -90,6 +91,9 @@ internal sealed class ComposerForm : Form
     JsonObject? prepared;
     bool sending;
     bool submitted;
+    string? handoffAction;
+    nint returnWindow;
+    internal nint ReturnTo { get => returnWindow; set => returnWindow = value; }
     bool filling;
     bool skillsReady;
     readonly MentionSession mentions = new();
@@ -221,6 +225,7 @@ internal sealed class ComposerForm : Form
     {
         if (Open == this) Open = null;
         ActiveSurface.Pop(this);
+        if (FocusReturn.AfterComposer(submitted, handoffAction)) FocusReturn.TryActivate(returnWindow);
         base.OnFormClosed(e);
     }
 
@@ -404,8 +409,16 @@ internal sealed class ComposerForm : Form
         for (int index = 0; index < shots.Count; index++)
         {
             int current = index;
+            bool marked = ShotSelection.Highlight(shots.Count, index, selectedShotIndex);
             var panel = new Panel { Size = new Size(84, 60), Margin = new Padding(0, 4, 6, 0) };
-            var picture = new PictureBox { Size = new Size(72, 52), SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, Location = new Point(0, 6) };
+            var frame = new Panel
+            {
+                Size = new Size(76, 56),
+                Location = new Point(0, 4),
+                BackColor = marked ? SystemColors.Highlight : Color.FromArgb(90, 90, 94),
+                Padding = new Padding(marked ? 2 : 1),
+            };
+            var picture = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BackColor = Color.FromArgb(20, 20, 22) };
             try
             {
                 var image = Image.FromFile(shots[index]["screenshot"]!.GetValue<string>());
@@ -413,12 +426,22 @@ internal sealed class ComposerForm : Form
                 panel.Tag = image;
             }
             catch { picture.BackColor = Color.DimGray; }
-            picture.AccessibleName = "Annotate screenshot " + (index + 1);
+            string app = shots[index]["app"]?.GetValue<string>() ?? "Image";
+            picture.AccessibleName = "Annotate screenshot " + (index + 1) + " — " + app + (marked ? ", selected" : "");
             picture.Click += (_, _) => Annotate(current);
+            frame.Controls.Add(picture);
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
             remove.AccessibleName = "Remove screenshot " + (index + 1);
-            remove.Click += (_, _) => { shots.RemoveAt(current); RefreshThumbs(); RefreshContext(); Touch(); };
-            panel.Controls.Add(picture);
+            remove.Click += (_, _) =>
+            {
+                if (sending || submitted || current < 0 || current >= shots.Count) return;
+                shots.RemoveAt(current);
+                selectedShotIndex = ShotSelection.AfterRemove(selectedShotIndex, current, shots.Count);
+                RefreshThumbs();
+                RefreshContext();
+                Touch();
+            };
+            panel.Controls.Add(frame);
             panel.Controls.Add(remove);
             thumbs.Controls.Add(panel);
         }
@@ -459,7 +482,8 @@ internal sealed class ComposerForm : Form
 
     void Annotate(int index)
     {
-        if (sending || index < 0 || index >= shots.Count) return;
+        if (sending || submitted || index < 0 || index >= shots.Count) return;
+        selectedShotIndex = index;
         Hide();
         try
         {
@@ -479,6 +503,8 @@ internal sealed class ComposerForm : Form
             using var overlay = new RegionOverlay();
             if (overlay.ShowDialog() != DialogResult.OK || overlay.Choice is not CaptureChoice choice) return;
             shots.Add(ComposerFiles.Media(await CaptureSelector.Take(choice, output)));
+            selectedShotIndex = shots.Count - 1;
+            status.Text = "Screenshot added · Click a thumbnail to annotate.";
             RefreshThumbs();
             RefreshContext();
             Touch();
@@ -519,6 +545,7 @@ internal sealed class ComposerForm : Form
             var bundle = ComposerFiles.LoadBundle(path, output);
             shots.Clear();
             shots.AddRange(bundle.Shots);
+            selectedShotIndex = 0;
             videos.Clear();
             videos.AddRange(bundle.Videos);
             RedistributeFrames();
@@ -744,6 +771,7 @@ internal sealed class ComposerForm : Form
             default:
                 throw new Exception("This destination returned an unsupported handoff.");
         }
+        handoffAction = action;
         submitted = true;
         sending = false;
         Close();

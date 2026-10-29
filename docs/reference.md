@@ -357,9 +357,10 @@ Plugin cleanup closes the endpoint and removes its descriptor. Stale descriptors
 left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
-context review, prefixes, skill mentions, recent captures, annotation editing with
+context review, prefixes, skill mentions, recent captures, a selected-screenshot
+outline when more than one image is attached, annotation editing with
 a floating toolbar, inline text, crop, and copy, screen recording, instant replay, clip trim, and best-effort draft
-handoff. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. The tray's **Context sources**
+handoff. Cancelling the chooser, composer, or a standalone annotation returns to the previous app. Copy does too. OpenCode and Save to folder keep those windows in front. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. The tray's **Context sources**
 menu can keep the last 10 minutes of clicks and app switches, and can tail up to
 4 log files (64 KB each) when you capture. Both are off until you choose them.
 **Recent bundles** reopens a saved capture, and **Default destination** is the

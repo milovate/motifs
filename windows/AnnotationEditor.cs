@@ -426,6 +426,7 @@ internal sealed class Preview : Forms.Form
     internal Snapshot? Result { get; private set; }
     internal bool Inserted { get; private set; }
     internal bool Saved { get; private set; }
+    internal bool Completed { get; private set; }
     internal Preview(Snapshot shot, string output, bool returnOnly = false)
     {
         this.returnOnly = returnOnly;
@@ -656,6 +657,7 @@ internal sealed class Preview : Forms.Form
             if (canvas.Tool == "Crop") canvas.ApplyCrop();
             var exported = AnnotationDocument.Export(shot, canvas.Document, output);
             Saved = true;
+            Completed = true;
             if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
             Close();
         }
@@ -675,6 +677,7 @@ internal sealed class Preview : Forms.Form
             Saved = true;
             await Inserter.Insert(annotated, output);
             Inserted = true;
+            Completed = true;
             Close();
         }
         catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Appshot saved — insertion failed"); }
