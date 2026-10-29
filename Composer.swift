@@ -545,8 +545,10 @@ struct ComposerEndpoint: Decodable {
     }
 
     func refreshSendAvailability() {
-        sendButton.isEnabled = !sending && !submitted && !speech.isRunning && !preparingFrames && !recordingClip && !reviewingClip && selectedEndpoint != nil && skillsButton.isEnabled && hasDescription
+        sendButton.isEnabled = !sending && !submitted && !speech.isRunning && !preparingFrames && !recordingClip && !reviewingClip && selectedEndpoint != nil && skillsButton.isEnabled && hasContent
     }
+
+    var hasContent: Bool { hasDescription || !shots.isEmpty || !videos.isEmpty }
 
     var hasDescription: Bool {
         let text = NSMutableString(string: textView.string)
@@ -872,8 +874,8 @@ struct ComposerEndpoint: Decodable {
 
     @objc func send() {
         guard !sending, !submitted, !speech.isRunning, !preparingFrames, !recordingClip, !reviewingClip, let endpoint = selectedEndpoint else { return }
-        guard hasDescription else {
-            status.stringValue = "Describe the problem before continuing."
+        guard hasContent else {
+            status.stringValue = "Add a note or a capture before continuing."
             window?.makeFirstResponder(textView)
             return
         }

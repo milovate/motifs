@@ -51,7 +51,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition((composer.window!.contentView as! NSVisualEffectView).maskImage != nil, "behind-window blur is rounded, not a rectangle")
         precondition(composer.selectedSkills == ["report"], "Report is selected by its inline mention")
         precondition(composer.textView.string == "@report ", "Report is prefilled into the editable draft")
-        precondition(!composer.sendButton.isEnabled, "skill-only drafts cannot continue")
+        precondition(composer.sendButton.isEnabled, "a capture can continue without a note")
         let compactHeight = composer.window!.frame.height
         composer.textView.string = "@report The button does not respond when I click it."
         composer.updateInputSize()
@@ -92,7 +92,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(composer.handleMentionKey(36), "Enter selects the skill instead of submitting")
         precondition(composer.textView.string == "@report ", "completion replaces the query")
         precondition(composer.selectedSkills == ["report"], "recognized mention drives attachments")
-        precondition(!composer.sendButton.isEnabled, "selecting a skill alone cannot continue")
+        precondition(composer.sendButton.isEnabled == !composer.shots.isEmpty, "a skill alone continues only with a capture attached")
         let attributes = composer.textView.layoutManager!.temporaryAttributes(atCharacterIndex: 1, effectiveRange: nil)
         precondition(composer.textView.mentionRanges == [NSRange(location: 0, length: 7)], "recognized mentions have a custom rounded highlight")
         precondition(attributes[.font] == nil, "skill mentions inherit the exact body font instead of switching weight")
@@ -369,7 +369,40 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
                 picker.select("events")
                 try render(picker.view, "context-clicks-\(dark ? "dark" : "light")", dark: dark)
             }
+            picker.shots = [["app": "Cursor", "text": (0..<30).map { String(repeating: "    ", count: $0 % 4) + "container button (expanded) text opencode-appshots-fork New Agent \($0)" }.joined(separator: "\n")]]
+            picker.select("windowText")
+            try render(picker.view, "context-window-text", dark: true)
         }
+        let tree = (0..<40).map { String(repeating: "    ", count: $0 % 5) + "container button (expanded) text opencode-appshots-fork New Agent content list \($0)" }.joined(separator: "\n")
+        let clickPicker = ComposerContextPicker()
+        clickPicker.shots = [["app": "Cursor", "text": tree]]
+        clickPicker.context = markerContext
+        let clickWindow = NSWindow(contentRect: NSRect(origin: .zero, size: ComposerContextPicker.size), styleMask: [.titled], backing: .buffered, defer: false)
+        clickWindow.contentViewController = clickPicker
+        clickWindow.setContentSize(ComposerContextPicker.size)
+        clickWindow.orderFront(nil)
+        clickWindow.layoutIfNeeded()
+        var changed: BundleInclude?
+        clickPicker.onChange = { changed = $0 }
+        let deviceToggle = clickPicker.rows["device"]!.toggle
+        let togglePoint = deviceToggle.convert(NSPoint(x: deviceToggle.bounds.midX, y: deviceToggle.bounds.midY), to: nil)
+        func mouse(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: togglePoint, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: clickWindow.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        NSApp.postEvent(mouse(.leftMouseUp), atStart: false)
+        clickWindow.sendEvent(mouse(.leftMouseDown))
+        precondition(changed?["device"] == false && deviceToggle.state == .off, "clicking a source switch turns it off (state \(deviceToggle.state.rawValue), changed \(String(describing: changed?["device"])))")
+        let consoleRow = clickPicker.rows["console"]!
+        precondition(deviceToggle.acceptsFirstMouse(for: nil) && consoleRow.acceptsFirstMouse(for: nil), "the switch and row respond in a popover that never becomes key")
+        let nameCenter = consoleRow.convert(NSPoint(x: consoleRow.name.frame.midX + 8, y: consoleRow.bounds.midY), to: consoleRow.superview)
+        precondition(consoleRow.hitTest(nameCenter) === consoleRow && consoleRow.hitTest(consoleRow.toggle.convert(NSPoint(x: consoleRow.toggle.bounds.midX, y: consoleRow.toggle.bounds.midY), to: consoleRow.superview)) === consoleRow.toggle, "clicking a row's name selects it; its switch still toggles")
+        consoleRow.mouseDown(with: mouse(.leftMouseDown))
+        precondition(clickPicker.selectedSource == "console", "clicking a row shows its source")
+        clickPicker.select("windowText")
+        clickWindow.layoutIfNeeded()
+        let visible = clickPicker.detailScroll.contentView.bounds
+        precondition(clickPicker.detail.frame.width <= visible.width + 0.5 && visible.minX == 0, "window text fits the pane instead of scrolling sideways (\(clickPicker.detail.frame.width) vs \(visible))")
+        clickWindow.close()
         precondition(appshotStatusImage(.recording).isTemplate && appshotStatusImage(.replay).tiffRepresentation != appshotStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
         let settingsMode = try mode(output + "/settings.json")
         precondition(settingsMode == 0o600, "settings are owner-only")

@@ -67,6 +67,7 @@ import AppKit
         detail.translatesAutoresizingMaskIntoConstraints = false
         detailScroll.drawsBackground = false
         detailScroll.hasVerticalScroller = true
+        detailScroll.hasHorizontalScroller = false
         detailScroll.scrollerStyle = .overlay
         detailScroll.borderType = .noBorder
         detailScroll.documentView = detail
@@ -74,6 +75,7 @@ import AppKit
             detail.leadingAnchor.constraint(equalTo: detailScroll.contentView.leadingAnchor),
             detail.trailingAnchor.constraint(equalTo: detailScroll.contentView.trailingAnchor),
             detail.topAnchor.constraint(equalTo: detailScroll.contentView.topAnchor),
+            detail.widthAnchor.constraint(equalTo: detailScroll.contentView.widthAnchor),
         ])
         banner.font = .systemFont(ofSize: 11, weight: .medium)
         banner.textColor = .systemOrange
@@ -324,7 +326,8 @@ import AppKit
         label.textColor = .labelColor
         label.isSelectable = true
         label.maximumNumberOfLines = 6
-        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakMode = .byWordWrapping
+        label.cell?.truncatesLastVisibleLine = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }
@@ -390,7 +393,7 @@ import AppKit
     let icon = NSImageView()
     let name = NSTextField(labelWithString: "")
     let count = NSTextField(labelWithString: "")
-    let toggle = NSSwitch()
+    let toggle = FirstClickSwitch()
     var onSelect: (() -> Void)?
     var onToggle: ((Bool) -> Void)?
     private var selected = false
@@ -424,7 +427,6 @@ import AppKit
             row.bottomAnchor.constraint(equalTo: bottomAnchor),
             icon.widthAnchor.constraint(equalToConstant: 18),
         ])
-        addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
         setAccessibilityRole(.button)
         setAccessibilityLabel("Show \(label.lowercased())")
     }
@@ -445,6 +447,18 @@ import AppKit
         layer?.backgroundColor = selected ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor
     }
 
-    @objc func clicked() { onSelect?() }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === toggle || hit.isDescendant(of: toggle) ? hit : self
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onSelect?() }
+    override func accessibilityPerformPress() -> Bool { onSelect?(); return true }
     @objc func toggled() { onToggle?(toggle.state == .on) }
+}
+
+// The picker lives in a popover of a non-activating panel, which never becomes key;
+// a plain NSSwitch ignores clicks in a window that is not key.
+final class FirstClickSwitch: NSSwitch {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

@@ -48,9 +48,13 @@ test("composer prepares a fresh root session and an unsent draft, never invokes 
 
 test("validates the draft, skills and exact capture before creating any session", async (t) => {
   const f = await fixture(t);
-  for (const change of [{ text: " " }, { skills: ["missing"] }, { skills: "report" }, { manifest: path.join(f.directory, "latest.json") }]) {
+  for (const change of [{ text: "x".repeat(16_001) }, { skills: ["missing"] }, { skills: "report" }, { manifest: path.join(f.directory, "latest.json") }]) {
     await assert.rejects(submitComposer(f.ctx, f.directory, { ...f.input, ...change }));
   }
+  assert.equal(f.created.length, 0);
+  const noteless = await submitComposer(f.ctx, f.directory, { ...f.input, text: " " });
+  assert.match(noteless.title, /^Appshot: Capture \[/, "a screenshot can be sent without a note");
+  f.created.length = 0;
   await writeFile(f.manifest, JSON.stringify({ screenshot: path.join(f.directory, "../outside.png") }));
   await assert.rejects(submitComposer(f.ctx, f.directory, f.input));
   assert.equal(f.created.length, 0);

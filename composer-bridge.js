@@ -82,11 +82,12 @@ export async function startComposerBridge(ctx, captures, destinations = builtinD
 }
 
 export async function submitComposer(ctx, captures, input, destinations = builtinDestinations(ctx, ctx.options)) {
-  if (typeof input.text !== "string" || !input.text.trim() || input.text.length > 16_000) throw new Error("Describe the problem before sending (up to 16000 characters).");
+  if (typeof input.text !== "string" || input.text.length > 16_000) throw new Error("Keep the note under 16000 characters.");
   const destinationID = input.destination ?? "opencode";
   const destination = destinations.find((candidate) => candidate.id === destinationID);
   if (!destination) throw new Error("That destination is not available. Reopen the composer.");
   const bundle = await readBundle(captures, input.manifest);
+  if (!input.text.trim() && !bundle.media.length && !bundle.videos.length) throw new Error("Add a note or a capture before sending.");
   const available = (await ctx.skill.list()).data;
   if (!Array.isArray(input.skills) || !input.skills.every((id) => typeof id === "string" && available.some((skill) => skill.id === id))) throw new Error("A selected skill is no longer available. Reopen the composer.");
   if ((await destination.status()) !== "ready") throw new Error(`${destination.label} is not ready.`);
