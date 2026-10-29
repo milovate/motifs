@@ -376,6 +376,44 @@ internal static class ClipTrimmer
             throw;
         }
     }
+
+    // Six key frames are shared across the clips. A different count is read from the MP4 again
+    // so the frames stay spread across the clip instead of keeping only the first ones.
+    internal static JsonObject Reframe(JsonObject video, int count)
+    {
+        int share = Math.Max(1, count);
+        if (video["frames"] is JsonArray existing && existing.Count == share) return video;
+        string? path = video["video"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return video;
+        double duration = 0;
+        try { if (video["durationSeconds"] is JsonNode seconds) duration = seconds.GetValue<double>(); } catch { duration = 0; }
+        if (duration <= 0.05) return video;
+        string? folder = Path.GetDirectoryName(path);
+        string stem = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrWhiteSpace(folder) || stem.Length == 0) return video;
+        string named = share == 6 ? stem : stem + "-" + share.ToString(CultureInfo.InvariantCulture);
+        var frames = new JsonArray();
+        using (var reader = new FrameReader(path))
+        {
+            foreach (double offset in ReplayMath.Offsets(Math.Max(0, duration), share))
+            {
+                using var bitmap = reader.ReadAt(offset);
+                if (bitmap == null) continue;
+                using var small = KeyShelf.Scale(bitmap, 480);
+                string file = Path.Combine(folder, named + "-frame-" + (frames.Count + 1).ToString(CultureInfo.InvariantCulture) + ".png");
+                small.Save(file, ImageFormat.Png);
+                frames.Add(new JsonObject
+                {
+                    ["screenshot"] = file,
+                    ["offsetSeconds"] = Math.Round(Math.Max(0, offset), 1, MidpointRounding.AwayFromZero),
+                });
+            }
+        }
+        if (frames.Count == 0) return video;
+        var updated = (JsonObject)video.DeepClone();
+        updated["frames"] = frames;
+        return updated;
+    }
 }
 
 // Filmstrip, yellow handles, and the dots for clicks, steps, errors, and warnings.

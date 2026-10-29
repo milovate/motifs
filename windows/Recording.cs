@@ -348,7 +348,7 @@ sealed class KeyShelf
         return saved;
     }
 
-    static Bitmap Scale(Bitmap source, int maxSide)
+    internal static Bitmap Scale(Bitmap source, int maxSide)
     {
         double scale = Math.Min(1, maxSide / (double)Math.Max(source.Width, source.Height));
         int width = Math.Max(2, (int)Math.Round(source.Width * scale));
@@ -1149,6 +1149,22 @@ internal static class RecordingTests
         var outlined = RecordingOutline.FrameFor(new Rectangle(100, 200, 300, 400));
         if (outlined != new Rectangle(96, 196, 308, 408)) throw new Exception("Recording regression: the area outline sits outside the captured rectangle.");
         if (trimmed["frames"] is not JsonArray frames || frames.Count == 0) throw new Exception("Recording regression: trimming writes key frames.");
+        var unchanged = new JsonObject { ["video"] = file, ["durationSeconds"] = 0.2, ["frames"] = new JsonArray(new JsonObject(), new JsonObject()) };
+        if (!ReferenceEquals(ClipTrimmer.Reframe(unchanged, 2), unchanged)) throw new Exception("Recording regression: an unchanged frame count is left alone.");
+        var missing = new JsonObject { ["video"] = Path.Combine(output, "no-such-recording.mp4"), ["durationSeconds"] = 1, ["frames"] = new JsonArray() };
+        if (!ReferenceEquals(ClipTrimmer.Reframe(missing, 2), missing)) throw new Exception("Recording regression: a missing movie keeps its frames.");
+        var source = new JsonObject { ["video"] = file, ["durationSeconds"] = 0.2, ["frames"] = new JsonArray(new JsonObject { ["screenshot"] = "placeholder" }) };
+        var reframed = ClipTrimmer.Reframe(source, 2);
+        if (reframed["frames"] is not JsonArray shared || shared.Count != 2) throw new Exception("Recording regression: a clip is read again for its share of the key frames.");
+        var expected = ReplayMath.Offsets(0.2, 2);
+        for (int index = 0; index < shared.Count; index++)
+        {
+            var frame = shared[index] as JsonObject ?? throw new Exception("Recording regression: a key frame is missing.");
+            string? picture = frame["screenshot"]?.GetValue<string>();
+            if (picture == null || !File.Exists(picture)) throw new Exception("Recording regression: the extracted key frame was not written.");
+            if (Math.Abs((frame["offsetSeconds"]?.GetValue<double>() ?? -1) - Math.Round(expected[index], 1)) > 0.001)
+                throw new Exception("Recording regression: key frames stay spread across the clip.");
+        }
         Console.WriteLine("Windows recording regressions passed");
     }
 }

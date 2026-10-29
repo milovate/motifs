@@ -69,6 +69,8 @@ seconds, and the recording stops at 5 minutes. Pause time is kept out of the cli
 Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
 key-frame PNGs into the captures folder and attaches the clip to the open composer,
 or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
+Six key frames are sent in total: six for one clip, three each for two, and two
+each for three. Adding or removing a clip reads that share from each MP4 again.
 The bar and the dashed area outline set display affinity and are hidden while each
 frame is grabbed. An area recording shows that outline just outside the rectangle. A window
 recording follows that window's rectangle; unlike a still window capture, it is the

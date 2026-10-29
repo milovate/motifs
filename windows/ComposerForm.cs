@@ -184,6 +184,7 @@ internal sealed class ComposerForm : Form
         autosave.Tick += (_, _) => { autosave.Stop(); Persist(); };
         foreach (var button in actions.Controls) StyleQuiet((Button)button);
         StyleQuiet(contextButton);
+        RedistributeFrames();
         RefreshThumbs();
         RefreshContext();
         RefreshPrefix();
@@ -446,7 +447,7 @@ internal sealed class ComposerForm : Form
             caption.Click += (_, _) => Review(current);
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
             remove.AccessibleName = "Remove recording " + (index + 1);
-            remove.Click += (_, _) => { videos.RemoveAt(current); RefreshThumbs(); Touch(); };
+            remove.Click += (_, _) => RemoveVideo(current);
             panel.Controls.Add(picture);
             panel.Controls.Add(caption);
             panel.Controls.Add(remove);
@@ -518,6 +519,7 @@ internal sealed class ComposerForm : Form
             shots.AddRange(bundle.Shots);
             videos.Clear();
             videos.AddRange(bundle.Videos);
+            RedistributeFrames();
             note.Text = bundle.Note;
             context = bundle.Context.Count == 0 ? context : bundle.Context;
             include = ComposerFiles.Clone(bundle.Include);
@@ -809,6 +811,7 @@ internal sealed class ComposerForm : Form
         {
             videos.RemoveAt(index);
             status.Text = "Clip removed. The MP4 stays in the captures folder.";
+            RedistributeFrames();
             RefreshThumbs();
             RefreshContext();
             Touch();
@@ -824,17 +827,33 @@ internal sealed class ComposerForm : Form
         }
     }
 
+    void RemoveVideo(int index)
+    {
+        if (sending || submitted || index < 0 || index >= videos.Count) return;
+        videos.RemoveAt(index);
+        RedistributeFrames();
+        RefreshThumbs();
+        RefreshContext();
+        Touch();
+    }
+
+    void RedistributeFrames()
+    {
+        if (videos.Count == 0) return;
+        int share = ReplayMath.FramesPerClip(videos.Count);
+        for (int index = 0; index < videos.Count; index++)
+        {
+            try { videos[index] = ClipTrimmer.Reframe(videos[index], share); }
+            catch { /* Keep the frames already saved with this clip. */ }
+        }
+    }
+
     void Attach(JsonObject clip)
     {
         if (videos.Count >= ReplayMath.MaxClips) return;
         videos.Add(clip);
         status.Text = "Recording added. Click it to review or trim.";
-        int each = ReplayMath.FramesPerClip(videos.Count);
-        foreach (var video in videos)
-        {
-            if (video["frames"] is not JsonArray frames) continue;
-            while (frames.Count > each) frames.RemoveAt(frames.Count - 1);
-        }
+        RedistributeFrames();
         RefreshThumbs();
         RefreshContext();
         Touch();
