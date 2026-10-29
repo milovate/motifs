@@ -219,6 +219,31 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(recents.map { URL(fileURLWithPath: $0.path).lastPathComponent } == [path, missingPath].map { URL(fileURLWithPath: $0).lastPathComponent }, "recent bundles are newest first")
         precondition(recents[0].title == "Checkout overlaps" && recents[1].title == "Gone" && recents[0].screenshots == 1, "recent titles use the note, then the app")
 
+        let saving = try AppshotComposer(shots: shots, note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        saving.autosave()
+        let saved = output + "/bundle-\(saving.bundleID.uuidString.lowercased()).json"
+        precondition(saving.manifest == saved && FileManager.default.fileExists(atPath: saved), "a capture is saved as a bundle as soon as it opens")
+        saving.textView.string = "Draft in progress"
+        saving.textDidChange(Notification(name: NSText.didChangeNotification))
+        precondition(saving.manifest == nil && saving.autosaveTimer != nil, "edits schedule a save")
+        saving.autosave()
+        let draftNote = try loadCaptureBundle(path: saved, output: output).note
+        precondition(saving.manifest == saved && draftNote == "Draft in progress", "the same bundle is updated in place")
+        let savedEntry = recentBundles(output: output).first { URL(fileURLWithPath: $0.path).lastPathComponent == URL(fileURLWithPath: saved).lastPathComponent }
+        precondition(savedEntry?.title == "Draft in progress" && savedEntry!.updatedAt >= savedEntry!.createdAt, "the saved draft is listed in Recents with its edit time")
+        saving.openRecent(path)
+        precondition(saving.manifest == path && saving.textView.string.hasPrefix("Checkout overlaps") && !saving.include.windowText && saving.bundleID == id, "Recents reopens a saved bundle in the composer")
+        saving.textView.string = "Checkout overlaps, edited"
+        saving.textDidChange(Notification(name: NSText.didChangeNotification))
+        saving.autosave()
+        let reopenedNote = try loadCaptureBundle(path: path, output: output).note
+        let previousNote = try loadCaptureBundle(path: saved, output: output).note
+        precondition(reopenedNote == "Checkout overlaps, edited" && previousNote == "Draft in progress", "edits go to the reopened bundle and leave the previous one intact")
+        let recentsList = ComposerRecents(output: output, current: path)
+        _ = recentsList.view
+        precondition(recentsList.rows.count >= 3 && recentsList.rows.filter(\.current).count == 1, "Recents lists saved bundles and marks the open one")
+        precondition(ComposerRecents.thumbnail(screenshot, root: URL(fileURLWithPath: output).resolvingSymlinksInPath()) != nil && ComposerRecents.thumbnail(outside.path, root: URL(fileURLWithPath: output).resolvingSymlinksInPath()) == nil, "thumbnails come only from the captures folder")
+
         var settings = CaptureSettings.load(output: output)
         precondition(settings.defaultDestination == "opencode" && settings.knownDestinations.map(\.id) == ["opencode", "clipboard", "folder"], "settings default to OpenCode")
         settings.defaultDestination = "clipboard"
@@ -372,6 +397,9 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             picker.shots = [["app": "Cursor", "text": (0..<30).map { String(repeating: "    ", count: $0 % 4) + "container button (expanded) text opencode-appshots-fork New Agent \($0)" }.joined(separator: "\n")]]
             picker.select("windowText")
             try render(picker.view, "context-window-text", dark: true)
+            let recentsPreview = ComposerRecents(output: output, current: path)
+            recentsPreview.view.frame = NSRect(origin: .zero, size: ComposerRecents.size)
+            try render(recentsPreview.view, "recents", dark: false)
         }
         let tree = (0..<40).map { String(repeating: "    ", count: $0 % 5) + "container button (expanded) text opencode-appshots-fork New Agent content list \($0)" }.joined(separator: "\n")
         let clickPicker = ComposerContextPicker()

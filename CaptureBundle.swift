@@ -131,11 +131,13 @@ func formatTokenEstimate(characters: Int) -> String {
     return tokens >= 1000 ? String(format: "≈%.1fk tokens", Double(tokens) / 1000) : "≈\(tokens) tokens"
 }
 
-func writeCaptureBundle(shots: [[String: Any]], videos: [[String: Any]] = [], note: String, context: [String: Any], include: BundleInclude, output: String, id: UUID = UUID(), now: Date = Date()) throws -> String {
+func writeCaptureBundle(shots: [[String: Any]], videos: [[String: Any]] = [], note: String, context: [String: Any], include: BundleInclude, output: String, id: UUID = UUID(), createdAt: Date? = nil, now: Date = Date()) throws -> String {
+    let formatter = ISO8601DateFormatter()
     let bundle: [String: Any] = [
         "schema": captureBundleSchema,
         "id": id.uuidString.lowercased(),
-        "createdAt": ISO8601DateFormatter().string(from: now),
+        "createdAt": formatter.string(from: createdAt ?? now),
+        "updatedAt": formatter.string(from: now),
         "note": note,
         "media": shots.map { $0.merging(["kind": "image"]) { current, _ in current } } + videos.prefix(3).map { $0.merging(["kind": "video"]) { _, new in new } },
         "context": context,
@@ -149,6 +151,8 @@ func writeCaptureBundle(shots: [[String: Any]], videos: [[String: Any]] = [], no
 
 struct LoadedBundle {
     let path: String
+    let id: UUID?
+    let createdAt: Date?
     let shots: [[String: Any]]
     let videos: [[String: Any]]
     let note: String
@@ -192,14 +196,17 @@ func loadCaptureBundle(path: String, output: String) throws -> LoadedBundle {
         restored.removeValue(forKey: "kind")
         shots.append(restored)
     }
-    return LoadedBundle(path: file.path, shots: shots, videos: videos, note: raw["note"] as? String ?? "", context: raw["context"] as? [String: Any] ?? [:], include: BundleInclude(raw["include"] as? [String: Any]), missingScreenshots: media.count - shots.count + videoEntries.count - videos.count)
+    return LoadedBundle(path: file.path, id: (raw["id"] as? String).flatMap(UUID.init(uuidString:)), createdAt: (raw["createdAt"] as? String).flatMap(ISO8601DateFormatter().date(from:)), shots: shots, videos: videos, note: raw["note"] as? String ?? "", context: raw["context"] as? [String: Any] ?? [:], include: BundleInclude(raw["include"] as? [String: Any]), missingScreenshots: media.count - shots.count + videoEntries.count - videos.count)
 }
 
 struct RecentBundle {
     let path: String
     let title: String
     let createdAt: Date
+    let updatedAt: Date
     let screenshots: Int
+    let videos: Int
+    let thumbnail: String?
 }
 
 func recentBundles(output: String, limit: Int = 8) -> [RecentBundle] {
@@ -210,13 +217,17 @@ func recentBundles(output: String, limit: Int = 8) -> [RecentBundle] {
         guard let data = try? Data(contentsOf: file), data.count <= 2_000_000,
               let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any], raw["schema"] as? String == captureBundleSchema,
               let created = (raw["createdAt"] as? String).flatMap(parser.date(from:)) else { return nil }
-        let media = (raw["media"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String != "video" }
+        let allMedia = raw["media"] as? [[String: Any]] ?? []
+        let media = allMedia.filter { $0["kind"] as? String != "video" }
+        let videos = allMedia.filter { $0["kind"] as? String == "video" }
+        let thumbnail = media.first?["screenshot"] as? String ?? (videos.first?["frames"] as? [[String: Any]])?.first?["screenshot"] as? String
         let note = (raw["note"] as? String ?? "").split(separator: "\n").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-        let fallback = media.first?["app"] as? String ?? "Capture"
+        let fallback = media.first?["app"] as? String ?? (videos.isEmpty ? "Capture" : "Screen recording")
         let title = note.isEmpty ? fallback : (note.count > 48 ? String(note.prefix(45)) + "…" : note)
-        return RecentBundle(path: file.path, title: title, createdAt: created, screenshots: media.count)
+        let updated = (raw["updatedAt"] as? String).flatMap(parser.date(from:)) ?? created
+        return RecentBundle(path: file.path, title: title, createdAt: created, updatedAt: updated, screenshots: media.count, videos: videos.count, thumbnail: thumbnail)
     }
-    return Array(bundles.sorted { $0.createdAt > $1.createdAt }.prefix(limit))
+    return Array(bundles.sorted { $0.updatedAt > $1.updatedAt }.prefix(limit))
 }
 
 struct CaptureSettings: Equatable {

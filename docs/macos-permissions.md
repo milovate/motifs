@@ -118,7 +118,8 @@ Captures are stored locally under `$XDG_DATA_HOME/opencode/capture-studio`, or
 review/remove them through **Appshot → Open captures folder**. Captures pasted
 into OpenCode also enter its attachment store. The composer only prepares a handoff:
 an unsent OpenCode draft, Markdown on the clipboard, or an owner-only export folder.
-Dictation never sends. Each send saves an owner-only `bundle-*.json` holding your
+Dictation never sends. The composer keeps an owner-only `bundle-*.json` for each
+capture, saved as you edit so Recents can reopen it, holding your
 description, window text, collected context (device and system state, console and
 failed-request entries, recent clicks if enabled, custom log tails; never location
 or keystrokes) and include flags; delete these files to remove recent bundles.

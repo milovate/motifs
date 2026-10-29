@@ -33,6 +33,7 @@ struct ComposerEndpoint: Decodable {
 @MainActor func composeBundle(path: String, output: String, returnTo: NSRunningApplication?) async throws {
     let bundle = try loadCaptureBundle(path: path, output: output)
     let composer = try AppshotComposer(shots: bundle.shots, videos: bundle.videos, note: bundle.note, context: bundle.context, include: bundle.include, output: output, returnTo: returnTo)
+    composer.adopt(bundle)
     if bundle.missingScreenshots > 0 { composer.status.stringValue = "\(bundle.missingScreenshots) screenshot\(bundle.missingScreenshots == 1 ? " was" : "s were") deleted since this bundle was saved." }
     await presentComposer(composer)
 }
@@ -41,6 +42,7 @@ struct ComposerEndpoint: Decodable {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
         composer.completion = { continuation.resume() }
         AppshotComposer.current = composer
+        composer.autosave()
         composer.positionNearBottom()
         composer.window?.present { composer.window?.makeKeyAndOrderFront(nil) }
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -74,6 +76,8 @@ struct ComposerEndpoint: Decodable {
     let projects = ComposerProjectButton()
     let contextButton = ComposerButton("Context", symbol: "info.circle", treatment: .chip)
     let contextPopover = NSPopover()
+    let recentsButton = ComposerButton(symbol: "clock.arrow.circlepath", treatment: .chip)
+    let recentsPopover = NSPopover()
     let shortcut = NSTextField(labelWithString: "Review in OpenCode  ·  ⌘↵")
     let skillsButton = ComposerButton(symbol: "at")
     let microphone = ComposerButton(symbol: "mic")
@@ -105,6 +109,9 @@ struct ComposerEndpoint: Decodable {
     var returnAfterHandoff = false
     var requestID = UUID().uuidString
     var manifest: String?
+    var bundleID = UUID()
+    var bundleCreated = Date()
+    var autosaveTimer: Timer?
     var preparedSession: [String: Any]?
     var skillLoadID = UUID()
     var dictationBase = ""
@@ -188,8 +195,13 @@ struct ComposerEndpoint: Decodable {
         contextButton.action = #selector(showContext)
         contextButton.compact = true
         contextButton.setAccessibilityLabel("Review context sent with this capture")
+        recentsButton.target = self
+        recentsButton.action = #selector(showRecents)
+        recentsButton.compact = true
+        recentsButton.toolTip = "Recent captures"
+        recentsButton.setAccessibilityLabel("Show recent captures")
         refreshContextSummary()
-        let attachment = NSStackView(views: [attachmentScroll, contextButton, addScreenshotButton, addRecordingButton, closeButton])
+        let attachment = NSStackView(views: [attachmentScroll, contextButton, addScreenshotButton, addRecordingButton, recentsButton, closeButton])
         attachment.alignment = .centerY
         attachment.spacing = 10
 
@@ -410,10 +422,15 @@ struct ComposerEndpoint: Decodable {
     func collect(_ pending: Task<[String: Any], Never>) {
         collecting = true
         refreshContextSummary()
+        let id = bundleID
         Task { @MainActor in
             let slow = await pending.value
+            guard bundleID == id else { return }
             collecting = false
-            if manifest == nil { context.merge(slow) { _, new in new } }
+            if !sending, preparedSession == nil {
+                context.merge(slow) { _, new in new }
+                stateChanged()
+            }
             refreshContextSummary()
             (contextPopover.contentViewController as? ComposerContextPicker)?.update(shots: shots, context: context)
         }
@@ -440,7 +457,7 @@ struct ComposerEndpoint: Decodable {
         picker.onChange = { [weak self] include in
             guard let self, self.textView.isEditable, self.preparedSession == nil else { return }
             self.include = include
-            self.manifest = nil
+            self.stateChanged()
             self.refreshContextSummary()
         }
         contextPopover.contentViewController = picker
@@ -449,7 +466,74 @@ struct ComposerEndpoint: Decodable {
         contextPopover.show(relativeTo: contextButton.bounds, of: contextButton, preferredEdge: .maxY)
     }
 
-    func textDidChange(_ notification: Notification) { updateInputSize() }
+    func textDidChange(_ notification: Notification) {
+        updateInputSize()
+        stateChanged()
+    }
+
+    // Every change is saved to this composer's bundle shortly after it happens, so the
+    // capture can be reopened from Recents in exactly this state.
+    func stateChanged() {
+        manifest = nil
+        autosaveTimer?.invalidate()
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.autosave() }
+        }
+    }
+
+    func autosave() {
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
+        guard manifest == nil, !shots.isEmpty || !videos.isEmpty || hasDescription else { return }
+        manifest = try? writeCaptureBundle(shots: shots, videos: videos, note: textView.string, context: context, include: include, output: output, id: bundleID, createdAt: bundleCreated)
+    }
+
+    @objc func showRecents() {
+        if recentsPopover.isShown { recentsPopover.close(); return }
+        guard canEditAttachments, let content = window?.contentView else { return }
+        autosave()
+        let recents = ComposerRecents(output: output, current: manifest)
+        recents.onOpen = { [weak self] path in self?.openRecent(path) }
+        recentsPopover.contentViewController = recents
+        recentsPopover.contentSize = ComposerRecents.size
+        recentsPopover.behavior = .transient
+        recentsPopover.show(relativeTo: content.bounds, of: content, preferredEdge: .minX)
+    }
+
+    // Swaps the composer to a saved bundle; the current state was saved when Recents opened.
+    func openRecent(_ path: String) {
+        recentsPopover.close()
+        let resolved = { (file: String?) in file.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } }
+        guard canEditAttachments, !preparingFrames, resolved(path) != resolved(manifest) else { return }
+        do {
+            let bundle = try loadCaptureBundle(path: path, output: output)
+            speech.cancel()
+            contextPopover.close()
+            mentionCompletion.dismiss()
+            shots = bundle.shots
+            videos = bundle.videos
+            context = bundle.context
+            include = bundle.include
+            collecting = false
+            selectedShotIndex = 0
+            requestID = UUID().uuidString
+            didPrefillReport = true
+            adopt(bundle)
+            textView.string = bundle.note
+            updateInputSize()
+            refreshAttachments()
+            refreshContextSummary()
+            redistributeFrames()
+            refreshSendAvailability()
+            status.stringValue = bundle.missingScreenshots > 0 ? "Reopened · \(bundle.missingScreenshots) file\(bundle.missingScreenshots == 1 ? " was" : "s were") deleted since it was saved." : "Reopened a saved capture."
+        } catch { status.stringValue = error.localizedDescription }
+    }
+
+    func adopt(_ bundle: LoadedBundle) {
+        bundleID = bundle.id ?? UUID()
+        bundleCreated = bundle.createdAt ?? Date()
+        manifest = bundle.id == nil ? nil : bundle.path
+    }
     func textViewDidChangeSelection(_ notification: Notification) { updateMentionCompletion() }
 
     func updateMentionCompletion() {
@@ -647,7 +731,7 @@ struct ComposerEndpoint: Decodable {
         if let video, videos.count < ReplayWriter.maxClips {
             videos.append(video)
             if !events.isEmpty { context["events"] = ["entries": events] }
-            manifest = nil
+            stateChanged()
             status.stringValue = "Recording added · Click it to review or trim."
         }
         refreshAttachments()
@@ -673,7 +757,7 @@ struct ComposerEndpoint: Decodable {
             guard frameGeneration == generation else { return }
             videos = updated
             preparingFrames = false
-            manifest = nil
+            stateChanged()
             refreshAttachments()
             refreshSendAvailability()
         }
@@ -694,7 +778,7 @@ struct ComposerEndpoint: Decodable {
             case let .replace(trimmed):
                 if videos.indices.contains(index) {
                     videos[index] = trimmed
-                    manifest = nil
+                    stateChanged()
                     status.stringValue = "Clip trimmed to \(Int(((trimmed["durationSeconds"] as? NSNumber)?.doubleValue ?? 0).rounded())) s."
                 }
             }
@@ -710,14 +794,14 @@ struct ComposerEndpoint: Decodable {
         shots.remove(at: index)
         if index < selectedShotIndex { selectedShotIndex -= 1 }
         selectedShotIndex = min(selectedShotIndex, max(0, shots.count - 1))
-        manifest = nil
+        stateChanged()
         refreshAttachments()
     }
 
     func removeVideo(at index: Int) {
         guard canEditAttachments, videos.indices.contains(index) else { return }
         videos.remove(at: index)
-        manifest = nil
+        stateChanged()
         refreshAttachments()
         redistributeFrames()
     }
@@ -741,7 +825,7 @@ struct ComposerEndpoint: Decodable {
                 if let captured = try await captureScreenRegion(output: output) {
                     shots.append(captured)
                     selectedShotIndex = shots.count - 1
-                    manifest = nil
+                    stateChanged()
                     status.stringValue = "Screenshot added · Click a thumbnail to annotate."
                 }
             } catch { status.stringValue = error.localizedDescription }
@@ -865,7 +949,7 @@ struct ComposerEndpoint: Decodable {
             do {
                 if let edited = try await annotateScreenshot(shot, output: output, confirmationTitle: "Done") {
                     shot = edited
-                    manifest = nil
+                    stateChanged()
                     refreshAttachments()
                 }
             } catch { status.stringValue = error.localizedDescription }
@@ -889,9 +973,9 @@ struct ComposerEndpoint: Decodable {
         Task { @MainActor in
             defer { sending = false }
             do {
+                autosaveTimer?.invalidate()
                 if manifest == nil {
-                    // The bundle, including the note, is saved only now, on an explicit handoff.
-                    manifest = try writeCaptureBundle(shots: shots, videos: videos, note: text, context: context, include: include, output: output)
+                    manifest = try writeCaptureBundle(shots: shots, videos: videos, note: text, context: context, include: include, output: output, id: bundleID, createdAt: bundleCreated)
                 }
                 body["manifest"] = manifest!
                 if preparedSession == nil {
@@ -955,11 +1039,13 @@ struct ComposerEndpoint: Decodable {
         skillsButton.isEnabled = enabled
         microphone.isEnabled = enabled
         annotateButton.isEnabled = enabled
+        recentsButton.isEnabled = enabled
         refreshAddButtons(enabled: enabled)
         for case let thumbnail as ScreenshotThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for case let thumbnail as VideoThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         skillPopover.close()
         contextPopover.close()
+        recentsPopover.close()
         mentionCompletion.dismiss()
         sendButton.isEnabled = enabled
     }
@@ -967,9 +1053,11 @@ struct ComposerEndpoint: Decodable {
     func windowShouldClose(_ sender: NSWindow) -> Bool { !sending && !addingScreenshot && !recordingClip && !reviewingClip }
 
     func windowWillClose(_ notification: Notification) {
+        if autosaveTimer != nil { autosave() }
         if AppshotComposer.current === self { AppshotComposer.current = nil }
         skillPopover.close()
         contextPopover.close()
+        recentsPopover.close()
         mentionCompletion.dismiss()
         speech.cancel()
         skillLoadID = UUID()

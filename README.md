@@ -193,12 +193,18 @@ plugin loaded.
 
 ### Bundles and recent captures
 
-Each send saves a **bundle**: `bundle-<id>.json` in the captures folder, owner-only.
-It is the single local record of that capture: screenshot paths and window text,
-your note, device context, and the include flags you chose. It is written only
-when you send, never while you type. **Appshot → Recent bundles** lists the latest
-eight and reopens one in the composer, for example to send it to a different
-destination. Screenshots deleted since then are reported and left out.
+Every capture is saved as a **bundle**: `bundle-<id>.json` in the captures folder,
+owner-only. It is the single local record of that capture: screenshot and recording
+paths, annotations, window text, your note, device context, and the include flags you
+chose. The composer saves it when it opens and again shortly after each change
+(typing, annotating, adding, trimming or removing a clip, flipping a context source),
+always to the same file. Nothing leaves your Mac until you send.
+
+The **clock** button in the composer opens **Recents** beside it: the last 30 bundles,
+most recently edited first, with a thumbnail. Click one to reopen it in exactly that
+state, for example to keep annotating or to send it to a different destination; the
+capture you were on stays saved. **Appshot → Recent bundles** in the menu bar lists
+the latest eight. Screenshots deleted since then are reported and left out.
 **Appshot → Default destination** sets which destination the composer preselects.
 This is stored in an owner-only `settings.json` in the captures folder.
 
@@ -470,8 +476,8 @@ Prompt input and sends Command+Down and Command+V to that app. It never sends
 Return or clicks Send. Pasted attachments enter OpenCode's local attachment store;
 the selected model receives the draft when you send it.
 
-Composer drafts are held in memory while you type. Sending saves an owner-only
-bundle alongside the retained PNGs. It contains screenshot paths, accessibility text,
+The composer saves its draft as an owner-only bundle alongside the retained PNGs while
+you work, so it can be reopened from Recents. It contains screenshot paths, accessibility text,
 **your description**, the collected context (device, system, console, network, clicks,
 custom log tails) and include flags, so recent bundles can be
 reopened. Sending to OpenCode also writes the included context to an owner-only
