@@ -159,9 +159,11 @@ without an app captures the foreground window, which may be OpenCode itself.
 ## Annotation editing
 
 Choose **Arrow**, **Box**, **Draw**, or **Text**, then drag over the image (click for
-Text). Text opens a multiline dialog; use its OK button to accept. Color and stroke
-width apply to new marks and the selected object. The editor switches to Select
-after creating a mark. **Crop** is separate: drag a rectangle, then apply it.
+Text). Text puts a caret on the image. Type there; Enter commits, Shift+Enter adds
+a line, and Escape cancels. Clicking elsewhere commits the text. Color and stroke
+width apply to new marks and the selected object. Arrow, Box, Draw, and Text stay
+active, so the next gesture draws again. Press V to select a mark. **Crop** is
+separate: drag a rectangle, then apply it.
 
 - **Select** an object by clicking its stroke, or the body of a text label. Drag to
   move it. Drag corner handles to resize a box, freehand path, or text label; arrow

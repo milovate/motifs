@@ -25,12 +25,19 @@ internal sealed class AnnotationCanvas : Forms.Control
     int handle = -1;
     bool dragging;
     internal Mark? Selection => Document.Marks.FirstOrDefault(m => m.Id == Selected);
+    Forms.TextBox? inline;
+    Font? inlineFont;
+    Mark? editing;
+    bool closingInline;
+    internal bool IsEditing => inline != null;
+    internal Forms.TextBox? InlineEditor => inline;
     internal string Tool
     {
         get => tool;
         set
         {
             if (tool == value) return;
+            CommitInline();
             tool = value;
             CropSelection = null;
             cropStart = null;
@@ -99,7 +106,7 @@ internal sealed class AnnotationCanvas : Forms.Control
         e.Graphics.DrawImage(image, originX, originY, image.Width * scale, image.Height * scale);
         e.Graphics.TranslateTransform(originX, originY); e.Graphics.ScaleTransform(scale, scale);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        foreach (var mark in Document.Marks) (draft?.Id == mark.Id ? draft : mark).Draw(e.Graphics);
+        foreach (var mark in Document.Marks) if (editing?.Id != mark.Id) (draft?.Id == mark.Id ? draft : mark).Draw(e.Graphics);
         if (draft != null && !Document.Marks.Any(m => m.Id == draft.Id)) draft.Draw(e.Graphics);
         var selection = draft ?? Selection;
         if (selection != null && Tool == "Select")
@@ -130,7 +137,8 @@ internal sealed class AnnotationCanvas : Forms.Control
     protected override void OnMouseDown(Forms.MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button == Forms.MouseButtons.Right) { ShowMenu(e.Location); return; }
+        if (e.Button == Forms.MouseButtons.Right) { CommitInline(); ShowMenu(e.Location); return; }
+        CommitInline();
         if (e.Button != Forms.MouseButtons.Left || !ImageRect.Contains(e.Location)) return;
         Focus(); start = ToImage(e.Location); handle = -1;
         if (Tool == "Crop")
@@ -138,12 +146,7 @@ internal sealed class AnnotationCanvas : Forms.Control
             cropStart = start; CropSelection = null; draft = null; startingMark = null;
             dragging = true; Capture = true; RefreshState(); return;
         }
-        if (Tool == "Text")
-        {
-            string? text = TextDialog.Ask(FindForm(), "");
-            if (!string.IsNullOrWhiteSpace(text)) Apply(() => { var mark = Mark.Create("Text", start, Ink, Stroke, text); Document.Add(mark); Selected = mark.Id; Tool = "Select"; });
-            return;
-        }
+        if (Tool == "Text") { Selected = null; BeginText(start, null); return; }
         if (Tool == "Select")
         {
             float tolerance = Tolerance;
@@ -215,7 +218,7 @@ internal sealed class AnnotationCanvas : Forms.Control
         var finished = draft; var original = startingMark;
         dragging = false; draft = null; startingMark = null; Capture = false;
         if (finished != null && (original == null || !finished.Equivalent(original)) && (original != null || (Tool == "Draw" && finished.Points.Length > 2) || Math.Abs(ToImage(e.Location).X - start.X) + Math.Abs(ToImage(e.Location).Y - start.Y) > 1))
-            Apply(() => { if (original != null) Document.Replace(finished); else Document.Add(finished); Selected = finished.Id; Tool = "Select"; });
+            Apply(() => { if (original != null) Document.Replace(finished); else { Document.Add(finished); Selected = null; } });
         RefreshState();
     }
 
@@ -224,18 +227,122 @@ internal sealed class AnnotationCanvas : Forms.Control
         base.OnMouseCaptureChanged(e);
         if (!Capture && dragging) { dragging = false; draft = null; startingMark = null; cropStart = null; Invalidate(); }
     }
-    protected override void OnMouseDoubleClick(Forms.MouseEventArgs e) { base.OnMouseDoubleClick(e); if (Tool == "Select" && Selection?.Kind == "Text") EditText(); }
+    protected override void OnMouseDoubleClick(Forms.MouseEventArgs e)
+    {
+        base.OnMouseDoubleClick(e);
+        if (Tool != "Select" || Selection?.Kind != "Text") return;
+        dragging = false; draft = null; startingMark = null; Capture = false;
+        EditText();
+    }
+    protected override void OnResize(EventArgs e) { base.OnResize(e); LayoutInline(); }
     internal void EditText()
     {
         var selected = Selection;
         if (selected?.Kind != "Text") return;
-        string? text = TextDialog.Ask(FindForm(), selected.Text);
-        if (!string.IsNullOrWhiteSpace(text) && text != selected.Text) Apply(() => Document.Replace(selected with { Text = text }));
+        BeginText(selected.Points[0].Point, selected);
+    }
+    void BeginText(PointF point, Mark? existing)
+    {
+        CommitInline();
+        float size = existing?.FontSize ?? Math.Clamp(Math.Max(22, 18f * image.Width / Math.Max(1, ImageRect.Width)), 6, 400);
+        var mark = existing ?? Mark.Create("Text", point, Ink, Stroke) with { FontSize = size, Points = new[] { Vec.From(point) } };
+        editing = mark;
+        inline = new Forms.TextBox
+        {
+            Multiline = true,
+            AcceptsReturn = true,
+            MaxLength = 10000,
+            WordWrap = false,
+            BorderStyle = Forms.BorderStyle.None,
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(mark.Color),
+            Text = mark.Text,
+            AccessibleName = "Edit annotation text directly on the image",
+            ScrollBars = Forms.ScrollBars.None,
+        };
+        Controls.Add(inline);
+        LayoutInline();
+        inline.TextChanged += (_, _) => LayoutInline();
+        inline.LostFocus += (_, _) => { if (!closingInline) CommitInline(); };
+        inline.KeyDown += (_, args) =>
+        {
+            if (args.KeyCode == Forms.Keys.Escape) { args.SuppressKeyPress = true; CancelInline(); }
+            else if (args.KeyCode == Forms.Keys.Enter && !args.Shift) { args.SuppressKeyPress = true; CommitInline(); }
+        };
+        inline.SelectionStart = inline.TextLength;
+        inline.Focus();
+        Invalidate();
+    }
+    void LayoutInline()
+    {
+        if (inline == null || editing is not Mark mark) return;
+        float scale = ImageRect.Width / Math.Max(1, ShownPixels.Width);
+        var next = new Font("Segoe UI", Math.Max(1, mark.FontSize * scale), FontStyle.Bold, GraphicsUnit.Pixel);
+        var previous = inlineFont;
+        inline.Font = next;
+        inlineFont = next;
+        if (!ReferenceEquals(previous, next)) previous?.Dispose();
+        var origin = new PointF(ImageRect.X + (mark.Points[0].X - ShownPixels.X) * scale, ImageRect.Y + (mark.Points[0].Y - ShownPixels.Y) * scale);
+        var measured = Forms.TextRenderer.MeasureText(string.IsNullOrEmpty(inline.Text) ? " " : inline.Text, inline.Font, new Size(10000, 10000), Forms.TextFormatFlags.NoPadding);
+        int width = (int)Math.Max(30, Math.Min(Math.Max(140, measured.Width + 12), Math.Max(30, ImageRect.Right - origin.X)));
+        int height = Math.Max(26, measured.Height + 6);
+        inline.Bounds = new Rectangle(Point.Round(origin), new Size(width, height));
+    }
+    internal void CommitInline()
+    {
+        if (inline == null || editing is not Mark mark) return;
+        string text = inline.Text;
+        CloseInline();
+        var updated = mark with { Text = text };
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            if (Document.Marks.Any(m => m.Id == mark.Id)) Apply(() => Document.Delete(mark.Id));
+            else RefreshState();
+        }
+        else if (Document.Marks.Any(m => m.Id == mark.Id))
+        {
+            if (!Document.Marks.First(m => m.Id == mark.Id).Equivalent(updated)) Apply(() => Document.Replace(updated));
+            else RefreshState();
+        }
+        else Apply(() => Document.Add(updated));
+        Selected = Tool == "Select" && Document.Marks.Any(m => m.Id == mark.Id) ? mark.Id : null;
+        RefreshState();
+    }
+    internal void CancelInline()
+    {
+        if (inline == null) return;
+        CloseInline();
+        RefreshState();
+    }
+    void CloseInline()
+    {
+        var box = inline;
+        if (box == null) { inlineFont?.Dispose(); inlineFont = null; editing = null; return; }
+        closingInline = true;
+        var font = inlineFont;
+        inline = null;
+        editing = null;
+        inlineFont = null;
+        try
+        {
+            if (!IsDisposed && IsHandleCreated && CanFocus && !Focused) Focus();
+            // The text box disposes the font it still holds. Detach ours first so it is released once.
+            if (font != null) box.Font = DefaultFont;
+            box.Dispose();
+            font?.Dispose();
+        }
+        finally { closingInline = false; }
     }
     internal void Style(Color? color = null, float? width = null)
     {
         if (color.HasValue) Ink = color.Value;
         if (width.HasValue) Stroke = width.Value;
+        if (editing is Mark current)
+        {
+            editing = current with { Color = color?.ToArgb() ?? current.Color, Width = width ?? current.Width };
+            if (inline != null && color.HasValue) inline.ForeColor = color.Value;
+            return;
+        }
         var mark = Selection;
         if (mark != null) Apply(() => Document.Replace(mark with { Color = color?.ToArgb() ?? mark.Color, Width = width ?? mark.Width }));
     }
@@ -248,6 +355,9 @@ internal sealed class AnnotationCanvas : Forms.Control
     internal bool Key(Forms.Keys key)
     {
         if (dragging) return false;
+        if (IsEditing && key == Forms.Keys.Escape) { CancelInline(); return true; }
+        if (IsEditing && key == Forms.Keys.Enter) { CommitInline(); return true; }
+        if (IsEditing) return false;
         if (key == (Forms.Keys.Control | Forms.Keys.C)) { CopyRequested?.Invoke(); return true; }
         if (key == (Forms.Keys.Control | Forms.Keys.Z)) { Document.Undo(); CropSelection = null; RefreshState(); return true; }
         if (key == (Forms.Keys.Control | Forms.Keys.Y) || key == (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.Z)) { Document.Redo(); CropSelection = null; RefreshState(); return true; }
@@ -268,7 +378,7 @@ internal sealed class AnnotationCanvas : Forms.Control
         if (next == null) return false;
         Tool = next; RefreshState(); return true;
     }
-    protected override void Dispose(bool disposing) { if (disposing) image.Dispose(); base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { CloseInline(); image.Dispose(); } base.Dispose(disposing); }
 }
 
 internal sealed class Preview : Forms.Form
@@ -334,6 +444,7 @@ internal sealed class Preview : Forms.Form
         save.Click += (_, _) => {
             try
             {
+                canvas.CommitInline();
                 if (canvas.Tool == "Crop") canvas.ApplyCrop();
                 var exported = AnnotationDocument.Export(shot, canvas.Document, output);
                 Saved = true;
@@ -345,7 +456,7 @@ internal sealed class Preview : Forms.Form
         if (!returnOnly) bottom.Controls.Add(insert);
         bottom.Controls.Add(save);
         bottom.Controls.Add(cancel);
-        var hint = new Forms.Label { Text = "V select · A arrow · R box · P draw · T text · C crop · Ctrl+C copy · Ctrl+Z undo · Ctrl+D duplicate", AutoSize = true, Padding = new Forms.Padding(8) };
+        var hint = new Forms.Label { Text = "V select · A arrow · R box · P draw · T text · C crop · Enter commits text · Shift+Enter newline · Escape cancels · Ctrl+C copy · Ctrl+Z undo · Ctrl+D duplicate", AutoSize = true, Padding = new Forms.Padding(8) };
         bottom.Controls.Add(hint);
         Controls.Add(canvas); Controls.Add(toolbar); Controls.Add(bottom);
         // Freeze the editor while an insertion awaits focus/clipboard operations.
@@ -353,6 +464,7 @@ internal sealed class Preview : Forms.Form
             canvas.Enabled = toolbar.Enabled = bottom.Enabled = false;
             try
             {
+                canvas.CommitInline();
                 if (canvas.Tool == "Crop") canvas.ApplyCrop();
                 var annotated = AnnotationDocument.Export(shot, canvas.Document, output);
                 Saved = true;
@@ -375,6 +487,9 @@ internal sealed class Preview : Forms.Form
     {
         // Let numeric/text controls handle their own editing shortcuts and arrow keys.
         if (ActiveControl is Forms.NumericUpDown) return base.ProcessCmdKey(ref msg, keyData);
+        if (canvas.IsEditing && keyData == Forms.Keys.Escape) { canvas.CancelInline(); return true; }
+        if (canvas.IsEditing && keyData == Forms.Keys.Enter) { canvas.CommitInline(); return true; }
+        if (canvas.IsEditing) return base.ProcessCmdKey(ref msg, keyData);
         if (canvas.Enabled && canvas.Key(keyData)) return true;
         if (keyData == Forms.Keys.Escape && canvas.Enabled) { Close(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
@@ -405,18 +520,3 @@ internal sealed class Preview : Forms.Form
     }
 }
 
-internal static class TextDialog
-{
-    internal static string? Ask(Forms.IWin32Window? owner, string value)
-    {
-        using var dialog = new Forms.Form { Text = "Annotation text", Width = 500, Height = 260, StartPosition = Forms.FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
-        var input = new Forms.TextBox { Multiline = true, Dock = Forms.DockStyle.Fill, Text = value, MaxLength = 10000, AcceptsReturn = true, ScrollBars = Forms.ScrollBars.Vertical };
-        var buttons = new Forms.FlowLayoutPanel { Dock = Forms.DockStyle.Bottom, Height = 40 };
-        var ok = new Forms.Button { Text = "OK", DialogResult = Forms.DialogResult.OK };
-        var cancel = new Forms.Button { Text = "Cancel", DialogResult = Forms.DialogResult.Cancel };
-        buttons.Controls.AddRange(new Forms.Control[] { ok, cancel });
-        dialog.Controls.Add(input); dialog.Controls.Add(buttons); dialog.CancelButton = cancel;
-        dialog.Shown += (_, _) => input.Focus();
-        return dialog.ShowDialog(owner) == Forms.DialogResult.OK ? input.Text : null;
-    }
-}

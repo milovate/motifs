@@ -358,7 +358,7 @@ left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
 context review, prefixes, skill mentions, recent captures, annotation editing with
-crop and copy, screen recording, instant replay, clip trim, and best-effort draft
+inline text, crop, and copy, screen recording, instant replay, clip trim, and best-effort draft
 handoff. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. The tray's **Context sources**
 menu can keep the last 10 minutes of clicks and app switches, and can tail up to
 4 log files (64 KB each) when you capture. Both are off until you choose them.

@@ -51,11 +51,52 @@ internal static class AnnotationTests
             void Mouse(string method, int x, int y) => typeof(AnnotationCanvas).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(canvas, new object[] { new Forms.MouseEventArgs(Forms.MouseButtons.Left, 1, x, y, 0) });
             Mouse("OnMouseDown", 20, 140); Mouse("OnMouseMove", 80, 200); Mouse("OnMouseUp", 80, 200);
             Check(canvas.Document.Marks.Single().Bounds() == box.Bounds(), "mouse drawing maps through letterbox");
+            Check(canvas.Tool == "Box" && canvas.Selected == null, "drawing tools stay active and new marks stay unselected");
+            canvas.Tool = "Select";
             Mouse("OnMouseDown", 20, 160); Mouse("OnMouseMove", 30, 180); Mouse("OnMouseUp", 30, 180);
             Check(canvas.Document.Marks.Single().Points[0] == new Vec(15, 30), "mouse drag moves selected object");
             canvas.Document.Undo(); Check(canvas.Document.Marks.Single().Points[0] == new Vec(10, 20), "one undo per mouse gesture");
             Mouse("OnMouseDown", 20, 160); Mouse("OnMouseUp", 20, 160);
             canvas.Document.Undo(); Check(canvas.Document.Marks.Length == 0, "selection click does not create undo entry");
+        }
+        using (var canvas = new AnnotationCanvas(new Bitmap(200, 100), null))
+        {
+            canvas.Size = new Size(400, 400);
+            canvas.Tool = "Text";
+            void Mouse(string method, int x, int y) => typeof(AnnotationCanvas).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(canvas, new object[] { new Forms.MouseEventArgs(Forms.MouseButtons.Left, 1, x, y, 0) });
+            bool copied = false;
+            canvas.CopyRequested += () => copied = true;
+            Mouse("OnMouseDown", 40, 160);
+            Check(canvas.IsEditing && canvas.InlineEditor != null && canvas.Tool == "Text", "text starts in an inline editor");
+            Check(canvas.InlineEditor!.AcceptsReturn && canvas.InlineEditor.MaxLength == 10000, "inline text accepts a newline and the annotation limit");
+            canvas.InlineEditor.Text = "Hello";
+            Check(canvas.Key(Forms.Keys.Enter) && !canvas.IsEditing, "enter commits inline text");
+            Check(canvas.Document.Marks.Length == 1 && canvas.Document.Marks[0].Text == "Hello" && canvas.Document.Marks[0].FontSize == 22, "inline text commits into image-space markup");
+            Check(canvas.Tool == "Text" && canvas.Selected == null, "Text remains active and the new label stays unselected");
+            var committed = canvas.Document.Marks[0];
+            Mouse("OnMouseDown", 80, 180);
+            Check(canvas.IsEditing, "another click starts another label");
+            canvas.InlineEditor!.Text = "Cancelled";
+            Check(canvas.Key(Forms.Keys.Escape) && !canvas.IsEditing, "escape cancels inline text");
+            Check(canvas.Document.Marks.Length == 1 && canvas.Document.Marks[0] == committed, "cancel does not overwrite existing text");
+            Check(canvas.Key(Forms.Keys.Control | Forms.Keys.C) && copied, "Ctrl+C outside an edit copies the image");
+            canvas.Tool = "Select";
+            canvas.Selected = committed.Id;
+            canvas.EditText();
+            Check(canvas.IsEditing, "edit text reopens the caret on the image");
+            canvas.InlineEditor!.Text = "   ";
+            canvas.CommitInline();
+            Check(canvas.Document.Marks.Length == 0, "blank text removes the label");
+            canvas.Tool = "Text";
+            Mouse("OnMouseDown", 40, 160);
+            canvas.InlineEditor!.Text = "Hello";
+            canvas.CommitInline();
+            bool imageCopy = false;
+            canvas.CopyRequested += () => imageCopy = true;
+            canvas.Tool = "Text";
+            Mouse("OnMouseDown", 80, 180);
+            Check(canvas.IsEditing && !canvas.Key(Forms.Keys.Control | Forms.Keys.C) && !imageCopy, "Ctrl+C while editing does not copy the image");
+            canvas.CancelInline();
         }
         string original = Path.Combine(output, "synthetic-original.png");
         using (var image = new Bitmap(100, 100)) { using var g = Graphics.FromImage(image); g.Clear(Color.White); image.Save(original, System.Drawing.Imaging.ImageFormat.Png); }
