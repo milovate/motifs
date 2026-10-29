@@ -130,12 +130,6 @@ struct Appshots {
         let settings = CaptureSettings.load(output: output)
         bubble.onOpen = { [weak self] in self?.skipCaptureAndCompose() }
         bubble.onHide = { [weak self] in self?.setBubble(false) }
-        bubble.onMove = { [weak self] origin in
-            guard let self else { return }
-            var settings = CaptureSettings.load(output: self.output)
-            settings.bubbleOrigin = origin
-            try? settings.save(output: self.output)
-        }
         refreshBubble()
         if settings.recordClicks { events.start() }
         replay.onChange = { [weak self] in self?.refreshRecordingState() }
@@ -218,7 +212,7 @@ struct Appshots {
         Task { @MainActor in
             defer { choosingRecording = false }
             let area: RecordingArea
-            switch await chooseScreenTarget(hint: "Record: drag an area · Click a window · Click the desktop or press Return for the whole screen · No audio, up to 5 min") {
+            switch await chooseScreenTarget(hint: "Record: drag an area or click a window · ↩ full screen · esc to cancel · no audio, 5 min max") {
             case nil:
                 composer?.recordingFinished(nil)
                 target?.activate()
@@ -573,7 +567,7 @@ struct Appshots {
         let settings = CaptureSettings.load(output: output)
         bubbleItem?.state = settings.showBubble ? .on : .off
         if settings.showBubble, choosingCapture {
-            bubble.show(at: settings.bubbleOrigin)
+            bubble.show(on: NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }, bottom: RegionSelectionView.hintBottom + RegionSelectionView.hintHeight + 10)
         } else {
             bubble.hide()
         }
@@ -1035,7 +1029,7 @@ func draftContext(_ shot: [String: Any]) -> String {
 }
 
 let screenRecordingRequired = "Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access."
-let screenshotHint = "Drag an area · Click a window · Click the desktop or press Return for the whole screen · Esc to cancel"
+let screenshotHint = "Drag an area or click a window · ↩ full screen · esc to cancel"
 
 func isWindowSharingOverlay(_ window: AXUIElement) -> Bool {
     let children = attribute(window, kAXChildrenAttribute) as? [AXUIElement] ?? []

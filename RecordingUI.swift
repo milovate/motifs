@@ -105,13 +105,12 @@ import AppKit
     @objc func stop() { onStop?() }
 }
 
-// A small circle shown over the capture overlay that skips the capture and opens the
-// composer instead. Drag it to move it; it is excluded from captures like the pills.
+// A small circle above the capture overlay's hint that skips the capture and opens
+// the composer instead. It is excluded from captures like the pills.
 @MainActor final class ComposerBubble: NSObject {
     static let diameter: CGFloat = 44
     var onOpen: (() -> Void)?
     var onHide: (() -> Void)?
-    var onMove: ((CGPoint) -> Void)?
     let panel: RecordingPanel
     let button = BubbleView(frame: NSRect(x: 0, y: 0, width: ComposerBubble.diameter, height: ComposerBubble.diameter))
 
@@ -133,24 +132,16 @@ import AppKit
         surface.addSubview(button)
         panel.contentView = surface
         button.onClick = { [weak self] in self?.onOpen?() }
-        button.onDragEnd = { [weak self] in
-            guard let self else { return }
-            self.onMove?(self.panel.frame.origin)
-        }
         button.menu = NSMenu()
         for (title, action) in [("Open composer", #selector(open)), ("Hide floating button", #selector(hideFromMenu))] {
             button.menu?.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
     }
 
-    // A saved origin is used only while the whole circle still fits on a screen.
-    func show(at origin: CGPoint?) {
-        let size = panel.frame.size
-        if let origin, NSScreen.screens.contains(where: { $0.visibleFrame.contains(NSRect(origin: origin, size: size)) }) {
-            panel.setFrameOrigin(origin)
-        } else if let frame = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - size.width - 16, y: frame.minY + frame.height * 0.25))
-        }
+    // Centered at the bottom of the screen, `bottom` points up, e.g. just above the overlay hint.
+    func show(on screen: NSScreen?, bottom: CGFloat) {
+        guard let frame = (screen ?? NSScreen.main)?.frame else { return }
+        panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.minY + bottom))
         guard !panel.isVisible else { return }
         panel.present { panel.orderFrontRegardless() }
     }
@@ -162,9 +153,7 @@ import AppKit
 
     final class BubbleView: NSView {
         var onClick: (() -> Void)?
-        var onDragEnd: (() -> Void)?
-        private var start: NSPoint?
-        private var dragged = false
+        private var pressed = false
         let icon = NSImageView()
 
         override init(frame frameRect: NSRect) {
@@ -179,7 +168,7 @@ import AppKit
             icon.frame = bounds
             icon.autoresizingMask = [.width, .height]
             addSubview(icon)
-            toolTip = "Skip the capture and open the composer, with Recents · Drag to move"
+            toolTip = "Skip the capture and open the composer, with Recents"
             setAccessibilityElement(true)
             setAccessibilityRole(.button)
             setAccessibilityLabel("Skip capture and open the composer")
@@ -190,23 +179,11 @@ import AppKit
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
 
-        override func mouseDown(with event: NSEvent) {
-            start = NSEvent.mouseLocation
-            dragged = false
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            guard let start, let window else { return }
-            let now = NSEvent.mouseLocation
-            if !dragged, hypot(now.x - start.x, now.y - start.y) < 3 { return }
-            dragged = true
-            window.setFrameOrigin(NSPoint(x: window.frame.minX + now.x - start.x, y: window.frame.minY + now.y - start.y))
-            self.start = now
-        }
+        override func mouseDown(with event: NSEvent) { pressed = true }
 
         override func mouseUp(with event: NSEvent) {
-            defer { start = nil }
-            if dragged { onDragEnd?() } else if start != nil { onClick?() }
+            defer { pressed = false }
+            if pressed, bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
         }
 
         override func accessibilityPerformPress() -> Bool { onClick?(); return true }

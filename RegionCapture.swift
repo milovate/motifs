@@ -59,6 +59,9 @@ func overlayRect(_ global: CGRect, screenFrame: CGRect, primaryHeight: CGFloat) 
     var onDisplay: (() -> Void)?
     var onCancel: (() -> Void)?
     var hint = "Drag to capture a region · Escape to cancel"
+    static let hintBottom: CGFloat = 50
+    static let hintFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+    static var hintHeight: CGFloat { ("Ag" as NSString).size(withAttributes: [.font: hintFont]).height + 14 }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -88,9 +91,9 @@ func overlayRect(_ global: CGRect, screenFrame: CGRect, primaryHeight: CGFloat) 
             let border = NSBezierPath(rect: hovered.rect.insetBy(dx: 1, dy: 1)); border.lineWidth = 3; border.stroke()
             (" \(hovered.window.app) " as NSString).draw(at: CGPoint(x: max(8, hovered.rect.minX + 8), y: max(8, hovered.rect.minY + 8)), withAttributes: label)
         }
-        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let font = Self.hintFont
         let size = (hint as NSString).size(withAttributes: [.font: font])
-        let pill = NSRect(x: bounds.midX - size.width / 2 - 14, y: bounds.maxY - size.height - 64, width: size.width + 28, height: size.height + 14)
+        let pill = NSRect(x: bounds.midX - size.width / 2 - 14, y: bounds.maxY - Self.hintBottom - Self.hintHeight, width: size.width + 28, height: Self.hintHeight)
         NSColor.black.withAlphaComponent(0.7).setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         (hint as NSString).draw(at: CGPoint(x: pill.minX + 14, y: pill.minY + 7), withAttributes: [.font: font, .foregroundColor: NSColor.white])

@@ -299,13 +299,11 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         settings.include = BundleInclude(windowText: false, device: true)
         try settings.save(output: output)
         precondition(CaptureSettings.load(output: output).include == BundleInclude(windowText: false, device: true), "context switches are remembered")
-        precondition(settings.showBubble && settings.bubbleOrigin == nil, "the floating composer button is shown by default at its default spot")
+        precondition(settings.showBubble, "the composer button is shown during captures by default")
         settings.showBubble = false
-        settings.bubbleOrigin = CGPoint(x: 120, y: 340)
         try settings.save(output: output)
-        precondition(CaptureSettings.load(output: output) == settings, "hiding and moving the floating button persist")
+        precondition(CaptureSettings.load(output: output) == settings, "hiding the composer button persists")
         settings.showBubble = true
-        settings.bubbleOrigin = nil
         precondition(settings.redactionJudge.isEmpty, "no secret-check model is configured by default")
         settings.redactionJudge = "http://127.0.0.1:8000"
         settings.redactionModel = "laya"
@@ -421,8 +419,9 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         bubble.onHide = { bubbleHidden += 1 }
         precondition(bubble.panel.level.rawValue > NSWindow.Level.screenSaver.rawValue, "the button sits above the capture overlay so it can be clicked there")
         precondition(bubble.panel.sharingType == .none && bubble.panel.styleMask.contains(.nonactivatingPanel) && bubble.button.acceptsFirstMouse(for: nil), "the floating button is never captured, never takes focus and answers the first click")
-        bubble.show(at: CGPoint(x: -50_000, y: -50_000))
-        precondition(bubble.panel.isVisible && NSScreen.screens.contains { $0.visibleFrame.contains(bubble.panel.frame) }, "an off-screen saved spot falls back onto a screen")
+        bubble.show(on: NSScreen.main, bottom: 90)
+        let screen = NSScreen.main!.frame
+        precondition(bubble.panel.isVisible && abs(bubble.panel.frame.midX - screen.midX) < 1 && abs(bubble.panel.frame.minY - screen.minY - 90) < 1, "the button is centered at the bottom of the screen")
         _ = bubble.button.accessibilityPerformPress()
         bubble.hideFromMenu()
         precondition(bubbleOpened == 1 && bubbleHidden == 1 && bubble.button.menu?.items.map(\.title) == ["Open composer", "Hide floating button"], "clicking opens the composer; its menu can hide it")

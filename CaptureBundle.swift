@@ -282,14 +282,13 @@ struct CaptureSettings: Equatable {
     var showBubble = true
     var redactionJudge = ""
     var redactionModel = ""
-    var bubbleOrigin: CGPoint?
     static let maxPrefixes = 12
     static let maxPrefixLength = 500
 
     static func == (lhs: CaptureSettings, rhs: CaptureSettings) -> Bool {
         lhs.defaultDestination == rhs.defaultDestination && lhs.knownDestinations.map(\.id) == rhs.knownDestinations.map(\.id) && lhs.knownDestinations.map(\.label) == rhs.knownDestinations.map(\.label)
             && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles && lhs.instantReplay == rhs.instantReplay
-            && lhs.include == rhs.include && lhs.prefixes == rhs.prefixes && lhs.showBubble == rhs.showBubble && lhs.bubbleOrigin == rhs.bubbleOrigin
+            && lhs.include == rhs.include && lhs.prefixes == rhs.prefixes && lhs.showBubble == rhs.showBubble
             && lhs.redactionJudge == rhs.redactionJudge && lhs.redactionModel == rhs.redactionModel
     }
 
@@ -312,13 +311,12 @@ struct CaptureSettings: Equatable {
             settings.redactionJudge = (redaction["judge"] as? String).flatMap(localJudgeAddress) ?? ""
             settings.redactionModel = String((redaction["model"] as? String ?? "").prefix(80))
         }
-        if let origin = raw["bubbleOrigin"] as? [Double], origin.count == 2, origin.allSatisfy(\.isFinite) { settings.bubbleOrigin = CGPoint(x: origin[0], y: origin[1]) }
         settings.customLogFiles = Array((raw["customLogFiles"] as? [String] ?? []).filter { $0.hasPrefix("/") && $0.count <= 1024 }.prefix(4))
         return settings
     }
 
     func save(output: String) throws {
-        var raw: [String: Any] = [
+        let raw: [String: Any] = [
             "defaultDestination": defaultDestination,
             "knownDestinations": knownDestinations.map { ["id": $0.id, "label": $0.label] },
             "recordClicks": recordClicks,
@@ -329,7 +327,6 @@ struct CaptureSettings: Equatable {
             "showBubble": showBubble,
             "redaction": ["judge": redactionJudge, "model": redactionModel],
         ]
-        if let bubbleOrigin { raw["bubbleOrigin"] = [Double(bubbleOrigin.x), Double(bubbleOrigin.y)] }
         let path = output + "/settings.json"
         let temporary = path + ".tmp"
         let data = try JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys, .prettyPrinted])

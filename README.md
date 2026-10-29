@@ -217,7 +217,7 @@ To get there without capturing, press ⌥G and click the **composer button**, a 
 circle shown only while you choose what to capture. It cancels the capture and opens
 an empty composer with Recents beside it; pick a bundle, or write a note and add
 screenshots or recordings from the composer. No context is collected for an empty
-composer. Drag the circle anywhere; it remembers the spot. Like the recording
+composer. The circle sits at the bottom center, just above the overlay's hint. Like the recording
 controls, it never appears in screenshots or recordings. Right-click it, or use
 **Appshot → Show composer button while capturing**, to turn it off.
 **Appshot → Default destination** sets which destination the composer preselects.
