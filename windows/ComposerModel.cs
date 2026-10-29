@@ -835,7 +835,7 @@ internal static class ComposerTests
         Check(ComposerFiles.MentionSpans("@report-long", new[] { "report", "report-long" }) is { Count: 1 } longer && longer[0].Id == "report-long", "the longer skill name is the highlighted mention");
         Check(ComposerFiles.MentionSpans("mail@report.com", new[] { "report" }).Count == 0 && ComposerFiles.MentionSpans("/@report", new[] { "report" }).Count == 0, "email addresses and paths are not highlighted");
         Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
-        Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)).R > 24, "the mention tint keeps some of the accent color");
+        Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)) == Color.FromArgb(20, 39, 56), "the mention tint keeps some of the accent color");
         Check(ShotSelection.AfterRemove(1, 0, 1) == 0, "removing an earlier thumbnail keeps the later screenshot selected");
         Check(ShotSelection.AfterRemove(1, 1, 2) == 1, "removing the selected thumbnail selects the screenshot that slides into its place");
         Check(ShotSelection.AfterRemove(0, 2, 2) == 0, "removing a later thumbnail leaves the selection");
