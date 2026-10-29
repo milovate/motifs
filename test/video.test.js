@@ -84,8 +84,9 @@ test("the draft describes the recording, numbers its frames after the screenshot
 test("Markdown links the recording and the folder export copies it with its frames", async (t) => {
   const { directory, bundle } = await videoBundle(t);
   const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "note", requestID: randomUUID() });
-  assert.match(copied.text, /## Instant replay · 30\.0 s/);
-  assert.match(copied.text, /\[Open the MP4\]\(<\/[^>]*\/capture-studio-video-[^/]+\/replay\.mp4>\)/);
+  assert.match(copied.text, /^- Instant replay: 30\.0 s of the display · `\/[^`]*\/capture-studio-video-[^/]+\/replay\.mp4`$/m);
+  assert.match(copied.text, /^Full context: `[^`]+-context\.md`$/m);
+  assert.ok(!copied.text.includes("<appshot"), "clipboard summary leaves the full context in the file");
   assert.equal(copied.message, "Copied Markdown with 1 screenshot path and the recording path.");
   const exportRoot = path.join(directory, "exports");
   const result = await folderDestination(exportRoot).prepare(bundle, { id: "exports" }, { note: "note", requestID: randomUUID() });
@@ -146,7 +147,7 @@ test("several clips share six key frames, describe what they recorded and skip p
   assert.deepEqual(exported.media.map((entry) => [entry.video, entry.target, entry.pauses.length]), [["recording.mp4", "Safari", 1], ["recording-2.mp4", "400 × 300 area", 0], ["recording-3.mp4", undefined, 0]]);
   const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "note", requestID: randomUUID() });
   assert.equal(copied.message, "Copied Markdown with 3 recording paths.");
-  assert.match(copied.text, /## Screen recording 2 · 10\.0 s of a 400 × 300 area of the screen/);
+  assert.match(copied.text, /^- Screen recording 2: 10\.0 s of a 400 × 300 area of the screen · `/m);
 });
 
 test("bundles without video still read as before", async (t) => {

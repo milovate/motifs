@@ -118,7 +118,7 @@ installation without planning that permission step.
 5. Optionally click the **microphone**, approve Microphone and Speech Recognition, speak,
    then stop and edit the transcript. Only on-device recognition is used; there is
    no cloud fallback or saved audio. Language/device availability varies.
-6. Click the circular **↗** send button (Command+Return). With OpenCode, this creates
+6. Click the circular **↗** send button (Command+Return). A note is optional when a screenshot or recording is attached. With OpenCode, this creates
    a new root session, opens it in OpenCode, and pastes the screenshots and a short
    draft into its **unsent input**: your description and skill mentions, then one line
    per screenshot and recording with its file path, and the path of a
@@ -155,7 +155,7 @@ somewhere you then act on; none sends, submits, pastes, or runs anything for you
 | Destination | Target | What happens |
 | --- | --- | --- |
 | OpenCode | A loaded project | Creates an empty session and fills its unsent input |
-| Clipboard | Markdown | Copies the note, context and absolute screenshot paths. Nothing is pasted |
+| Clipboard | Markdown | Copies a short summary: the note, screenshot and recording paths, console errors, failed requests, device, and the path of the full-context file. Nothing is pasted |
 | Save to folder | `~/Documents/Appshots` | Writes `screenshot-N.png`, `README.md` and `bundle.json` to a new owner-only folder, then reveals it in Finder |
 
 Change the export folder with the plugin option `{ "exportDirectory": "/absolute/path" }`.
@@ -299,7 +299,7 @@ detaches it. On send:
   lists each clip's MP4 and frame paths; the context file says what each clip
   recorded, lists the frame offsets, and gives the time of each click, console message
   and failed request within its clip. The MP4s stay on your Mac.
-- **Clipboard** Markdown links the MP4s and the key frames.
+- **Clipboard** Markdown lists each MP4 path with its length and scope.
 - **Folder** export copies `recording.mp4`, `recording-2.mp4`, … and their
   `recording-frame-N.png` / `recording-2-frame-N.png` key frames.
 
@@ -478,7 +478,7 @@ reopened. Sending to OpenCode also writes the included context to an owner-only
 `bundle-<id>-context.md` beside it. Delete `bundle-*` files from the captures folder to
 remove them. OpenCode receives the description, inline skill mentions, ordered
 screenshot attachments and the paths of the capture files in its unsent draft; the
-agent can read those files once you submit. No model runs until the user submits it. Clipboard and Save to folder put the same content where you chose. It
+agent can read those files once you submit. No model runs until the user submits it. Copy Markdown puts a short summary and file paths on the clipboard; Save to folder writes everything to a folder you chose. It
 leaves your Mac only if you paste or share it yourself.
 
 Only one hotkey helper runs per captures directory. Annotation and replay commands

@@ -126,9 +126,10 @@ test("Clipboard destination returns Markdown for the helper to copy and creates 
   const f = await fixture(t);
   const result = await submitComposer(f.ctx, f.directory, { ...f.input, destination: "clipboard", target: "markdown" }, f.destinations);
   assert.equal(result.action, "copy-text");
-  assert.match(result.text, /^# Appshot: Checkout button overlaps/);
-  assert.ok(result.text.includes(`![Screenshot 1](<${await realpath(f.shot.screenshot)}>)`));
-  assert.match(result.text, /```text\nUntrusted window text\n```/);
+  assert.match(result.text, /^## Checkout button overlaps/);
+  assert.ok(result.text.includes(`\`${await realpath(f.shot.screenshot)}\``));
+  assert.ok(!result.text.includes("Untrusted window text"), "window text stays in the context file");
+  assert.match(await readFile(result.text.match(/^Full context: `([^`]+)`$/m)[1], "utf8"), /Untrusted window text/);
   assert.match(result.message, /1 screenshot path/);
   assert.equal(f.created.length, 0);
   assert.equal(f.prompts.length, 0);

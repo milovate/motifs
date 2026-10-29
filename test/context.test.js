@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { BUNDLE_SCHEMA, contextSections, contextDocument, markdownBundle, readBundle, systemSummary } from "../bundle.js";
-import { folderDestination } from "../destinations.js";
+import { clipboardDestination, folderDestination } from "../destinations.js";
 import { LIMITS, addEntry, createBuffers, networkEntry, redactUrl, sanitizeConsole, snapshot, windowSnapshots } from "../browser-extension/buffer.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII=", "base64");
@@ -87,6 +87,19 @@ test("Markdown and folder exports carry included context without local paths", a
   const { bundle: excluded } = await bundleWith(t, { include: { network: false } });
   const second = await folderDestination(exportRoot).prepare(excluded, { id: "exports" }, { note: "other", requestID: randomUUID() });
   assert.equal(JSON.parse(await readFile(path.join(second.path, "bundle.json"), "utf8")).context.network, undefined);
+});
+
+test("Copy Markdown is a short summary that honors include switches", async (t) => {
+  const { bundle } = await bundleWith(t);
+  const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "Checkout fails\nAfter tapping pay", requestID: randomUUID() });
+  assert.match(copied.text, /^## Checkout fails\n\nAfter tapping pay\n/);
+  assert.match(copied.text, /^- 2 console errors, latest: `XPC connection lost`$/m);
+  assert.match(copied.text, /^- 1 failed request: `POST 500 api\.shop\.test\/cart`$/m);
+  assert.match(copied.text, /^Full context: `[^`]+-context\.md`$/m);
+  assert.ok(!copied.text.includes("Window text") && !copied.text.includes("server.log"), "window text and logs stay in the context file");
+  const { bundle: excluded } = await bundleWith(t, { include: { console: false, network: false, device: false } });
+  const quiet = await clipboardDestination().prepare(excluded, { id: "markdown" }, { note: "n", requestID: randomUUID() });
+  assert.ok(!/console|failed request|Device/.test(quiet.text), quiet.text);
 });
 
 test("extension redacts credentials and sensitive query values", () => {

@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { copyFile, mkdir, open, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { contextDocument, contextFilePath, draftText, markdownBundle, BUNDLE_SCHEMA } from "./bundle.js";
+import { contextDocument, contextFilePath, draftText, markdownBundle, shareMarkdown, BUNDLE_SCHEMA } from "./bundle.js";
 
 // Writes the bundle's full context beside it (owner-only, never through a symlink)
 // and returns the path, or undefined when there is nothing to write.
@@ -111,7 +111,7 @@ export function opencodeDestination(ctx) {
       if (chosen.id !== target.id) throw new Error("This OpenCode project is no longer loaded. Reopen the composer.");
       const contextFile = await writeContextFile(bundle);
       const session = await ctx.session.create({
-        title: `Appshot: ${request.note.trim().split("\n")[0].slice(0, 80)} [${request.requestID.slice(-8)}]`,
+        title: `Appshot: ${request.note.trim().split("\n")[0].slice(0, 80) || "Capture"} [${request.requestID.slice(-8)}]`,
         location: { directory, ...(ctx.location.workspaceID ? { workspaceID: ctx.location.workspaceID } : {}) },
       });
       return { action: "opencode-draft", sessionID: session.id, title: session.title, directory, draftText: draftText(bundle, request.note, contextFile) };
@@ -128,10 +128,10 @@ export function clipboardDestination() {
     status: async () => "ready",
     targets: async () => [target],
     actionLabel: () => "Copy Markdown",
-    hint: () => "Copies the note, context and screenshot or recording paths. Nothing is pasted for you.",
+    hint: () => "Copies a short summary: the note, file paths, key errors and the full-context file. Nothing is pasted for you.",
     async prepare(bundle, chosen, request) {
       if (chosen.id !== target.id) throw new Error("Unknown clipboard format.");
-      const text = markdownBundle(bundle, request.note, (capture) => capture.screenshot);
+      const text = shareMarkdown(bundle, request.note, await writeContextFile(bundle));
       const count = bundle.media.length;
       const clips = bundle.videos.length;
       const parts = [count ? `${count} screenshot path${count === 1 ? "" : "s"}` : "", clips === 1 ? "the recording path" : clips ? `${clips} recording paths` : ""].filter(Boolean);
