@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +13,19 @@ if (process.platform === "win32") {
 if (process.platform !== "darwin") throw new Error("Build Appshots on macOS or Windows.");
 const app = path.join(root, "Capture Studio.app");
 mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
+const resources = path.join(app, "Contents/Resources");
+const iconset = path.join(os.tmpdir(), "capture-studio-AppIcon.iconset");
+mkdirSync(resources, { recursive: true });
+rmSync(iconset, { recursive: true, force: true });
+mkdirSync(iconset, { recursive: true });
+for (const size of [16, 32, 128, 256, 512]) {
+  for (const [scale, suffix] of [[1, ""], [2, "@2x"]]) {
+    execFileSync("/usr/bin/sips", ["-z", String(size * scale), String(size * scale), path.join(root, "assets/AppIcon.png"), "--out", path.join(iconset, `icon_${size}x${size}${suffix}.png`)], { stdio: "ignore" });
+  }
+}
+execFileSync("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", path.join(resources, "AppIcon.icns")], { stdio: "inherit" });
+rmSync(iconset, { recursive: true, force: true });
+copyFileSync(path.join(root, "assets/Bubble.png"), path.join(resources, "Bubble.png"));
 writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -19,6 +33,7 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <key>CFBundleName</key><string>Capture Studio</string>
 <key>CFBundleExecutable</key><string>CaptureStudio</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleShortVersionString</key><string>0.4.3</string>
 <key>CFBundleVersion</key><string>9</string>
 <key>LSUIElement</key><true/>

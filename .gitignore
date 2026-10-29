@@ -6,6 +6,7 @@ OpenCode Appshots.app/
 .env
 .env.*
 *.png
+!assets/*.png
 latest.json
 status.json
 windows/bin/

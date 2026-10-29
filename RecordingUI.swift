@@ -105,8 +105,8 @@ import AppKit
     @objc func stop() { onStop?() }
 }
 
-// A small floating circle that opens the composer without capturing anything first.
-// Drag it to move it; it never takes focus and is excluded from captures like the pills.
+// A small circle shown over the capture overlay that skips the capture and opens the
+// composer instead. Drag it to move it; it is excluded from captures like the pills.
 @MainActor final class ComposerBubble: NSObject {
     static let diameter: CGFloat = 44
     var onOpen: (() -> Void)?
@@ -119,7 +119,7 @@ import AppKit
         panel = RecordingPanel(contentRect: button.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init()
         panel.isReleasedWhenClosed = false
-        panel.level = .floating
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -165,19 +165,24 @@ import AppKit
         var onDragEnd: (() -> Void)?
         private var start: NSPoint?
         private var dragged = false
-        private let icon = NSImageView()
+        let icon = NSImageView()
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
-            icon.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
-            icon.contentTintColor = .labelColor
+            if let artwork = Bundle.main.url(forResource: "Bubble", withExtension: "png").flatMap(NSImage.init(contentsOf:)) {
+                icon.image = artwork
+                icon.imageScaling = .scaleAxesIndependently
+            } else {
+                icon.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
+                icon.contentTintColor = .labelColor
+            }
             icon.frame = bounds
             icon.autoresizingMask = [.width, .height]
             addSubview(icon)
-            toolTip = "Open the composer to write a note or reopen a recent capture · Drag to move"
+            toolTip = "Skip the capture and open the composer, with Recents · Drag to move"
             setAccessibilityElement(true)
             setAccessibilityRole(.button)
-            setAccessibilityLabel("Open Capture Studio composer")
+            setAccessibilityLabel("Skip capture and open the composer")
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

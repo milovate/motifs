@@ -419,6 +419,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         var bubbleOpened = 0, bubbleHidden = 0
         bubble.onOpen = { bubbleOpened += 1 }
         bubble.onHide = { bubbleHidden += 1 }
+        precondition(bubble.panel.level.rawValue > NSWindow.Level.screenSaver.rawValue, "the button sits above the capture overlay so it can be clicked there")
         precondition(bubble.panel.sharingType == .none && bubble.panel.styleMask.contains(.nonactivatingPanel) && bubble.button.acceptsFirstMouse(for: nil), "the floating button is never captured, never takes focus and answers the first click")
         bubble.show(at: CGPoint(x: -50_000, y: -50_000))
         precondition(bubble.panel.isVisible && NSScreen.screens.contains { $0.visibleFrame.contains(bubble.panel.frame) }, "an off-screen saved spot falls back onto a screen")

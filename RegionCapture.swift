@@ -128,12 +128,14 @@ func overlayRect(_ global: CGRect, screenFrame: CGRect, primaryHeight: CGFloat) 
 }
 
 @MainActor final class RegionSelectionController {
+    static weak var current: RegionSelectionController?
     var panels: [NSPanel] = []
     var completion: ((ScreenChoice?) -> Void)?
     var activationObserver: NSObjectProtocol?
     var hint: String?
 
     func show() {
+        Self.current = self
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
@@ -178,6 +180,7 @@ func overlayRect(_ global: CGRect, screenFrame: CGRect, primaryHeight: CGFloat) 
     func finish(_ choice: ScreenChoice?) {
         guard let completion else { return }
         self.completion = nil
+        if Self.current === self { Self.current = nil }
         if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
         activationObserver = nil
         for panel in panels { panel.orderOut(nil); panel.close() }

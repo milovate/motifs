@@ -81,13 +81,15 @@ struct Appshots {
     var recordHotkey: EventHotKeyRef?
     var handler: EventHandlerRef?
     var lock: Int32 = -1
-    var busy = false { didSet { refreshBubble() } }
+    var busy = false
     var shortcutCount = 0
     var commandObserver: NSObjectProtocol?
     var workspaceObserver: NSObjectProtocol?
     var lastExternalApp: NSRunningApplication?
     var browserSteps: Task<Void, Never>?
-    var choosingRecording = false { didSet { refreshBubble() } }
+    var choosingRecording = false
+    var choosingCapture = false { didSet { refreshBubble() } }
+    var composeAfterChoice = false
     let bubble = ComposerBubble()
     var bubbleItem: NSMenuItem?
     var controls: RecordingControls?
@@ -117,16 +119,16 @@ struct Appshots {
             entry.submenu = submenu
             menu.insertItem(entry, at: 2 + index)
         }
-        let bubbleItem = NSMenuItem(title: "Show floating composer button", action: #selector(toggleBubble), keyEquivalent: "")
+        let bubbleItem = NSMenuItem(title: "Show composer button while capturing", action: #selector(toggleBubble), keyEquivalent: "")
         bubbleItem.target = self
-        bubbleItem.toolTip = "A small circle that opens the composer without capturing, so you can write a note or reopen a recent capture."
+        bubbleItem.toolTip = "While ⌥G is choosing what to capture, a small circle skips the capture and opens the composer with Recents, so you can write a note or reopen a recent capture."
         menu.insertItem(bubbleItem, at: 5)
         self.bubbleItem = bubbleItem
         menu.insertItem(.separator(), at: 6)
         item?.menu = menu
         recordItem = menu.item(at: 1)
         let settings = CaptureSettings.load(output: output)
-        bubble.onOpen = { [weak self] in self?.openComposer() }
+        bubble.onOpen = { [weak self] in self?.skipCaptureAndCompose() }
         bubble.onHide = { [weak self] in self?.setBubble(false) }
         bubble.onMove = { [weak self] origin in
             guard let self else { return }
@@ -139,7 +141,6 @@ struct Appshots {
         replay.onChange = { [weak self] in self?.refreshRecordingState() }
         replay.onRecordingLimit = { [weak self] in self?.stopRecordingAndCompose() }
         AppshotComposer.onRecord = { [weak self] composer in self?.beginRecording(for: composer) }
-        AppshotComposer.onCurrentChange = { [weak self] in self?.refreshBubble() }
         if settings.instantReplay {
             Task { @MainActor in
                 do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Capture Studio — instant replay could not start: " + error.localizedDescription }
@@ -196,7 +197,6 @@ struct Appshots {
     func refreshRecordingState() {
         recordItem?.title = replay.recording ? "Stop screen recording (⌥⇧G)" : "Start screen recording… (⌥⇧G)"
         updateStatusIcon()
-        refreshBubble()
         controls?.update(seconds: replay.recordedSeconds, paused: replay.paused, limit: ReplayPipeline.recordingLimit)
     }
 
@@ -371,9 +371,17 @@ struct Appshots {
             do {
                 guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
                 saveStatus(output: output, phase: "choosing")
-                guard let choice = await chooseScreenTarget(hint: screenshotHint) else {
+                choosingCapture = true
+                let chosen = await chooseScreenTarget(hint: screenshotHint)
+                choosingCapture = false
+                guard let choice = chosen else {
                     saveStatus(output: output, phase: "cancelled")
-                    target?.activate()
+                    if composeAfterChoice {
+                        composeAfterChoice = false
+                        Task { @MainActor in self.openComposer() }
+                    } else {
+                        target?.activate()
+                    }
                     return
                 }
                 saveStatus(output: output, phase: "capturing")
@@ -560,11 +568,11 @@ struct Appshots {
         }
     }
 
-    // The circle stays out of the way while anything else is on screen.
+    // The circle appears only while choosing what to capture with ⌥G.
     func refreshBubble() {
         let settings = CaptureSettings.load(output: output)
         bubbleItem?.state = settings.showBubble ? .on : .off
-        if settings.showBubble, !busy, !choosingRecording, !replay.recording, AppshotComposer.current == nil {
+        if settings.showBubble, choosingCapture {
             bubble.show(at: settings.bubbleOrigin)
         } else {
             bubble.hide()
@@ -578,6 +586,12 @@ struct Appshots {
         settings.showBubble = shown
         do { try settings.save(output: output) } catch { NSAlert(error: error).runModal() }
         refreshBubble()
+    }
+
+    func skipCaptureAndCompose() {
+        guard choosingCapture, let picker = RegionSelectionController.current else { openComposer(); return }
+        composeAfterChoice = true
+        picker.finish(nil)
     }
 
     // Opens an empty composer with Recents beside it. Nothing is captured until the user adds it.

@@ -213,14 +213,13 @@ state, for example to keep annotating or to send it to a different destination; 
 capture you were on stays saved. **Appshot → Recent bundles** in the menu bar lists
 the latest eight. Screenshots deleted since then are reported and left out.
 
-To get there without capturing first, click the **floating composer button**, a small
-circle that stays on top of other apps. It opens an empty composer with Recents beside
-it; pick a bundle, or write a note and add screenshots or recordings from the composer.
-Nothing is captured until you add it, and no context is collected for an empty
-composer. Drag the circle anywhere; it remembers the spot. It hides while a composer,
-capture or recording is open, and like the recording controls it never appears in
-screenshots or recordings. Right-click it, or use **Appshot → Show floating composer
-button**, to turn it off.
+To get there without capturing, press ⌥G and click the **composer button**, a small
+circle shown only while you choose what to capture. It cancels the capture and opens
+an empty composer with Recents beside it; pick a bundle, or write a note and add
+screenshots or recordings from the composer. No context is collected for an empty
+composer. Drag the circle anywhere; it remembers the spot. Like the recording
+controls, it never appears in screenshots or recordings. Right-click it, or use
+**Appshot → Show composer button while capturing**, to turn it off.
 **Appshot → Default destination** sets which destination the composer preselects.
 This is stored in an owner-only `settings.json` in the captures folder.
 
