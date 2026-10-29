@@ -156,6 +156,7 @@ internal sealed class ComposerForm : Form
     readonly ComboBox destinationBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     readonly ComboBox targetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
     readonly Button contextButton = new() { Text = "Context", AutoSize = true };
+    readonly ToolTip tips = new() { ShowAlways = true };
     readonly Button recordButton = MakeButton("Record");
     readonly Button prefixButton = MakeButton("Prefix");
     readonly Button dictateButton = MakeButton("Dictate");
@@ -185,13 +186,18 @@ internal sealed class ComposerForm : Form
     internal static ComposerForm? Open { get; private set; }
     internal bool CanRecord => !sending && !submitted && !dictating && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
     bool dictating;
+    readonly int consolePid;
+    bool collecting;
+    int consoleGeneration;
+    ContextDialog? contextReview;
     string dictationBase = "";
     string dictationCommitted = "";
     DictationSession? speech;
 
-    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null)
+    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, int consolePid = 0)
     {
         this.output = output;
+        this.consolePid = consolePid;
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
         context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
@@ -328,11 +334,13 @@ internal sealed class ComposerForm : Form
         Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
         FitNote();
         note.Focus();
+        BeginConsole();
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         if (Open == this) Open = null;
+        tips.Dispose();
         ActiveSurface.Pop(this);
         if (FocusReturn.AfterComposer(submitted, handoffAction)) FocusReturn.TryActivate(returnWindow);
         base.OnFormClosed(e);
@@ -496,9 +504,18 @@ internal sealed class ComposerForm : Form
         send.Enabled = !sending && !submitted && !dictating && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
         recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/3";
         recordButton.Enabled = CanRecord;
+        int available = ComposerFiles.Sources.Count(source => ContextReview.Count(source, shots, context) > 0);
         int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && ContextReview.Count(source, shots, context) > 0);
-        contextButton.Text = included == 0 ? "No context" : "Context " + included;
-        contextButton.AccessibleDescription = ContextReview.TokenEstimate(ContextReview.IncludedCharacters(shots, context, include));
+        string tokens = ContextReview.TokenEstimate(ContextReview.IncludedCharacters(shots, context, include));
+        var chips = new List<ContextSummary.SourceChip>();
+        foreach (string source in ComposerFiles.Sources)
+        {
+            int count = ContextReview.Count(source, shots, context);
+            if (count > 0) chips.Add(new ContextSummary.SourceChip(ContextReview.Label(source), ComposerFiles.Included(include, source), count));
+        }
+        contextButton.Text = ContextSummary.ButtonText(collecting, included);
+        contextButton.AccessibleDescription = ContextSummary.Accessible(collecting, included, available, tokens);
+        tips.SetToolTip(contextButton, ContextSummary.Tooltip(chips, tokens));
         if (!skillsReady) { mentions.Dismiss(); mentionPopup.Hide(); }
     }
 
@@ -746,8 +763,10 @@ internal sealed class ComposerForm : Form
     {
         mentions.Dismiss();
         mentionPopup.Hide();
-        using var dialog = new ContextDialog(shots, videos, context, include);
+        using var dialog = new ContextDialog(shots, videos, context, include, collecting);
+        contextReview = dialog;
         dialog.ShowDialog(this);
+        contextReview = null;
         settings["include"] = ComposerFiles.Clone(include);
         try { ComposerFiles.SaveSettings(output, settings); } catch (Exception error) { status.Text = error.Message; }
         RefreshSend();
@@ -769,6 +788,8 @@ internal sealed class ComposerForm : Form
 
     internal void LoadSaved(string path)
     {
+        consoleGeneration++;
+        collecting = false;
         try
         {
             var bundle = ComposerFiles.LoadBundle(path, output);
@@ -1157,6 +1178,34 @@ internal sealed class ComposerForm : Form
                 ? "On-device speech recognition is unavailable. Install a Windows speech language in Settings → Time & language → Speech. No audio was sent."
                 : error.Message);
         }
+    }
+
+    void BeginConsole()
+    {
+        if (consolePid <= 0 || context["console"] != null) return;
+        collecting = true;
+        int generation = ++consoleGeneration;
+        RefreshSend();
+        _ = ReadConsole(generation);
+    }
+
+    async Task ReadConsole(int generation)
+    {
+        List<JsonObject> entries;
+        try { entries = await AppConsole.Collect(consolePid); }
+        catch { entries = new List<JsonObject>(); }
+        Later(() =>
+        {
+            if (generation != consoleGeneration) return;
+            collecting = false;
+            if (!sending && prepared == null && AppConsole.Merge(context, entries)) Touch();
+            else RefreshSend();
+            if (contextReview != null)
+            {
+                contextReview.Collecting = false;
+                contextReview.Reload();
+            }
+        });
     }
 
     void Later(Action action)

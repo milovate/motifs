@@ -799,6 +799,8 @@ internal sealed class RecordingSession
 
     internal static bool Active => current != null;
     internal static bool Busy => choosing || current != null;
+    internal static int LastConsolePid { get; private set; }
+    internal static bool ResolveConsoleAtStop { get; private set; }
     internal static event Action? StateChanged;
 
     RecordingSession(string output, CaptureChoice choice, int clipsAlready)
@@ -815,6 +817,8 @@ internal sealed class RecordingSession
     internal static async Task<JsonObject?> Capture(string output, int clipsAlready)
     {
         if (Busy) return null;
+        LastConsolePid = 0;
+        ResolveConsoleAtStop = false;
         choosing = true;
         StateChanged?.Invoke();
         CaptureChoice choice;
@@ -823,6 +827,8 @@ internal sealed class RecordingSession
             using var overlay = new RegionOverlay(Hint);
             if (overlay.ShowDialog() != DialogResult.OK || overlay.Choice is not CaptureChoice chosen) return null;
             choice = chosen;
+            if (choice.Kind == CaptureKind.Window) LastConsolePid = AppConsole.TargetPid(choice.Window);
+            else ResolveConsoleAtStop = true;
         }
         finally { choosing = false; StateChanged?.Invoke(); }
         if (current != null) return null;

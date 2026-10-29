@@ -58,8 +58,13 @@ needed, warn about interrupting active work before `opencode service restart`.
    recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
    Explorer**, or **Copy Path**. That shares the file and does not send the
    draft. **Context**
-   reviews window text, device, console, network, steps, and logs. Each source
-   has an include switch, a preview, Markdown, and a rough token estimate.
+   reviews window text, device, console, network, steps, and logs. Hover it to
+   see each source's count, or **off** when that source is switched off, and a
+   rough token estimate. Each source has an include switch, a preview, and
+   Markdown. For a native app, the button says **collecting…** while that app's
+   errors and critical events are read from the Application log for the last 5
+   minutes (up to 200). A browser window keeps the extension's console instead.
+   Reopening a saved capture does not read the log again.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
    one. Escape closes that list before it closes the composer. Once those skills
@@ -85,7 +90,9 @@ time, **Restart**, **Pause**, and **Stop**. The time turns orange in the last 30
 seconds, and the recording stops at 5 minutes. Pause time is kept out of the clip.
 Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
 key-frame PNGs into the captures folder and attaches the clip to the open composer,
-or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
+or opens a composer when none is open. A new composer reads the Application log
+for a recorded window's app, or for the app in front when a region or display
+recording stops. A browser window does not. Nothing is sent. A composer holds 3 clips.
 Six key frames are sent in total: six for one clip, three each for two, and two
 each for three. Adding or removing a clip reads that share from each MP4 again.
 The bar and the dashed area outline set display affinity and are hidden while each
@@ -327,8 +334,11 @@ from the macOS development environment. Before calling Windows support verified:
   OpenCode and Save to folder leave those windows in front. Send the same capture to Clipboard and
   Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
   Open Context, compare the preview with the captured window, switch a source off,
-  and confirm the switch sticks after reopening a recent capture. Type `@` and
-  confirm Enter inserts a skill mention instead of sending.
+  and confirm the switch sticks after reopening a recent capture. Hover Context
+  and confirm it names each source. Capture a native app and confirm the button
+  says collecting…, then shows that app's Application log errors from the last 5
+  minutes. Capture a browser window and confirm the console stays the extension's.
+  Type `@` and confirm Enter inserts a skill mention instead of sending.
 - Record a short display clip with **Control+Alt+Shift+R**. Pause, restart, and
   stop. Confirm the MP4 and key frames appear in the composer and the control bar
   and dashed outline are absent from those frames. Escape on the bar discards the clip. Confirm nothing

@@ -800,8 +800,10 @@ internal sealed class Tray : Forms.Form
                 catch { clip = null; }
             }
             Program.Save(output, "status.json", new { phase = "composing" });
+            nint consoleWindow = choice.Kind == CaptureKind.Window ? choice.Window : returnTo;
+            int consolePid = AppConsole.TargetPid(consoleWindow);
             if (choice.Kind == CaptureKind.Window && FocusReturn.Usable(choice.Window)) returnTo = choice.Window;
-            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page, returnTo: returnTo);
+            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page, returnTo: returnTo, consolePid: consolePid);
         }
         catch (Exception e) { Error(e); SetStatusIcon(StatusGlyph.Warning); }
         finally { replay.Paused = false; busy = false; }
@@ -829,7 +831,8 @@ internal sealed class Tray : Forms.Form
                 return;
             }
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded, returnTo: returnTo);
+            int consolePid = RecordingSession.ResolveConsoleAtStop ? AppConsole.TargetPid(ExternalWindow()) : RecordingSession.LastConsolePid;
+            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded, returnTo: returnTo, consolePid: consolePid);
         }
         catch (Exception e) { ClickHistory.Shared.TakePublished(); Error(e); }
         finally { busy = false; }
@@ -849,11 +852,11 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { Error(e); }
     }
 
-    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, nint returnTo = 0)
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, nint returnTo = 0, int consolePid = 0)
     {
         try
         {
-            using var composer = new ComposerForm(output, shots, clips, events, browser);
+            using var composer = new ComposerForm(output, shots, clips, events, browser, consolePid);
             composer.ReturnTo = returnTo != 0 ? returnTo : ExternalWindow();
             composer.ShowDialog();
         }

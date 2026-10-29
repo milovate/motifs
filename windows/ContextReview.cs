@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace OpenCode.Appshots;
@@ -27,7 +29,7 @@ internal static class ContextReview
 
     internal static string EmptyText(string source) => source switch
     {
-        "console" => "No console errors. Native apps: errors and faults from the last 5 minutes. Browsers: install the Capture Studio extension from the menu bar.",
+        "console" => "No console errors. Native apps: errors and faults from the Application log in the last 5 minutes. Browsers: install the Capture Studio extension from the tray menu.",
         "network" => "No failed network requests. Browser captures need the Capture Studio extension.",
         "events" => "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the tray menu.",
         "customLogs" => "No log files. Add up to 4 under “Custom log files” in the tray menu.",
@@ -35,6 +37,9 @@ internal static class ContextReview
         "device" => "No device details.",
         _ => "Nothing to show.",
     };
+
+    internal static string EmptyText(string source, bool collecting) =>
+        collecting && source == "console" ? "Collecting console messages…" : EmptyText(source);
 
     // Windows reports memory use as a percentage. These bands name that load the
     // same way the context pane names memory pressure.
@@ -312,6 +317,132 @@ internal static class ContextReview
     }
 }
 
+// The Context chip: its label while a slow source is still loading, and the hover
+// text that names every source that has something to send.
+internal static class ContextSummary
+{
+    internal readonly record struct SourceChip(string Label, bool Included, int Count);
+
+    internal static string ButtonText(bool collecting, int included) =>
+        collecting ? "Context · collecting…" : included > 0 ? "Context " + included.ToString(CultureInfo.InvariantCulture) : "No context";
+
+    internal static string Accessible(bool collecting, int included, int available, string tokens) =>
+        collecting ? "collecting" : included.ToString(CultureInfo.InvariantCulture) + " of " + available.ToString(CultureInfo.InvariantCulture) + " sources included, " + tokens;
+
+    internal static string Tooltip(IReadOnlyList<SourceChip> available, string tokens) =>
+        (available.Count == 0 ? "No context" : string.Join(" · ", available.Select(part => part.Label + " " + (part.Included ? part.Count.ToString(CultureInfo.InvariantCulture) : "off"))) + " · " + tokens) + ". Click to review.";
+}
+
+// Errors and critical events the captured app wrote to the Application log.
+// A browser capture keeps the extension's console and does not read this log.
+internal static class AppConsole
+{
+    internal const int Limit = 200;
+
+    internal static string Query(int pid, int minutes = 5)
+    {
+        int window = Math.Max(1, minutes) * 60 * 1000;
+        return "*[System[(Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) <= " + window.ToString(CultureInfo.InvariantCulture) + "] and Execution[@ProcessID=" + pid.ToString(CultureInfo.InvariantCulture) + "]]]";
+    }
+
+    internal static int TargetPid(nint window)
+    {
+        if (window == 0) return 0;
+        try
+        {
+            if (!Native.IsWindow(window)) return 0;
+            if (BrowserHost.IndexForImage(BrowserHost.WindowImage(window)) >= 0) return 0;
+            Native.GetWindowThreadProcessId(window, out uint pid);
+            if (pid == 0 || pid > int.MaxValue || pid == (uint)Environment.ProcessId) return 0;
+            return (int)pid;
+        }
+        catch { return 0; }
+    }
+
+    internal static string? Message(string? description, string? provider, int? eventId)
+    {
+        if (!string.IsNullOrEmpty(description)) return description.Length <= 2000 ? description : description[..2000];
+        if (string.IsNullOrWhiteSpace(provider) || eventId is not int id) return null;
+        string text = provider.Trim() + " event " + id.ToString(CultureInfo.InvariantCulture);
+        return text.Length <= 2000 ? text : text[..2000];
+    }
+
+    internal static JsonObject? Entry(int? processId, byte? level, DateTime? created, string? message, string? provider, int pid, DateTime utcNow)
+    {
+        if (processId != pid || pid <= 0 || level is not (1 or 2) || created == null || string.IsNullOrEmpty(message)) return null;
+        DateTime when = created.Value.Kind == DateTimeKind.Local ? created.Value.ToUniversalTime() : DateTime.SpecifyKind(created.Value, DateTimeKind.Utc);
+        if (when < utcNow - TimeSpan.FromMinutes(5) || when > utcNow + TimeSpan.FromMinutes(1)) return null;
+        var entry = new JsonObject
+        {
+            ["time"] = new DateTimeOffset(when).ToString("O"),
+            ["level"] = level == 1 ? "fault" : "error",
+            ["message"] = message.Length <= 2000 ? message : message[..2000],
+            ["source"] = "app",
+        };
+        if (!string.IsNullOrWhiteSpace(provider)) entry["subsystem"] = provider.Trim();
+        return entry;
+    }
+
+    internal static List<JsonObject> Latest(IReadOnlyList<JsonObject?> entries, int limit)
+    {
+        var kept = new List<JsonObject>();
+        foreach (var entry in entries)
+            if (entry != null) kept.Add(entry);
+        if (limit <= 0 || kept.Count <= limit) return kept;
+        return kept.GetRange(kept.Count - limit, limit);
+    }
+
+    internal static bool Merge(JsonObject context, IReadOnlyList<JsonObject> entries)
+    {
+        if (context["console"] != null || entries.Count == 0) return false;
+        var list = new JsonArray();
+        foreach (var entry in entries) list.Add(ComposerFiles.Clone(entry));
+        context["console"] = new JsonObject { ["entries"] = list };
+        return true;
+    }
+
+    internal static async Task<List<JsonObject>> Collect(int pid)
+    {
+        if (pid <= 0) return new List<JsonObject>();
+        var read = Task.Run(() =>
+        {
+            try { return Read(pid, DateTime.UtcNow); }
+            catch { return new List<JsonObject>(); }
+        });
+        Task finished = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(8))).ConfigureAwait(false);
+        if (finished != read) return new List<JsonObject>();
+        return await read.ConfigureAwait(false);
+    }
+
+    static List<JsonObject> Read(int pid, DateTime utcNow)
+    {
+        var newest = new List<JsonObject>();
+        try
+        {
+            var query = new EventLogQuery("Application", PathType.LogName, Query(pid)) { ReverseDirection = true };
+            using var reader = new EventLogReader(query);
+            while (newest.Count < Limit)
+            {
+                EventRecord? record;
+                try { record = reader.ReadEvent(); }
+                catch { break; }
+                if (record == null) break;
+                using (record)
+                {
+                    string? description = null;
+                    try { description = record.FormatDescription(); }
+                    catch { description = null; }
+                    var entry = Entry(record.ProcessId, record.Level, record.TimeCreated, Message(description, record.ProviderName, record.Id), record.ProviderName, pid, utcNow);
+                    if (entry != null) newest.Add(entry);
+                }
+            }
+        }
+        catch { /* An unreadable Application log adds no console entries. */ }
+        newest.Reverse();
+        return newest;
+    }
+}
+
 // Sidebar of context sources, with the text or Markdown the destination will receive.
 internal sealed class ContextDialog : Form
 {
@@ -328,13 +459,15 @@ internal sealed class ContextDialog : Form
     readonly Button copy = new() { Text = "Copy", AutoSize = true, Visible = false };
     bool filling;
     string selected = ComposerFiles.Sources[0];
+    internal bool Collecting { get; set; }
 
-    internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include)
+    internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include, bool collecting = false)
     {
         this.shots = shots;
         this.videos = videos;
         this.context = context;
         this.include = include;
+        Collecting = collecting;
         Text = "Context";
         ClientSize = new Size(760, 540);
         StartPosition = FormStartPosition.CenterParent;
@@ -415,8 +548,20 @@ internal sealed class ContextDialog : Form
             sources.Items.Add(item);
             item.Checked = ComposerFiles.Included(include, source);
         }
-        if (sources.Items.Count > 0) sources.Items[0].Selected = true;
+        ListViewItem? match = null;
+        foreach (ListViewItem item in sources.Items)
+            if (item.Tag is string source && source == selected) match = item;
+        if (match != null) match.Selected = true;
+        else if (sources.Items.Count > 0) sources.Items[0].Selected = true;
         filling = false;
+    }
+
+    internal void Reload()
+    {
+        if (IsDisposed) return;
+        FillSources();
+        RefreshEstimate();
+        RefreshDetail();
     }
 
     void ModeChanged()
@@ -436,7 +581,7 @@ internal sealed class ContextDialog : Form
         string text = markdown.Checked
             ? ContextReview.Markdown(selected, shots, videos, context)
             : ContextReview.Preview(selected, shots, context);
-        if (text.Length == 0) text = ContextReview.EmptyText(selected);
+        if (text.Length == 0) text = ContextReview.EmptyText(selected, Collecting);
         int limit = markdown.Checked ? ContextReview.MarkdownLimit : ContextReview.PreviewLimit;
         if (text.Length > limit) text = text[..limit] + "\n… " + (text.Length - limit) + " more characters" + (markdown.Checked ? " (Copy includes everything)" : "");
         detail.Text = text;
