@@ -45,12 +45,16 @@ internal sealed class AnnotationCanvas : Forms.Control
         }
     }
 
+    internal const string Hint = "V Select · A Arrow · R Box · P Draw · T Text · C Crop. Text edits directly on the image. Drawing tools stay active.";
+
     internal AnnotationCanvas(Bitmap image, Mark[]? marks, ImageCrop? crop = null)
     {
         this.image = image;
         Document = new AnnotationDocument(marks, crop);
         Dock = Forms.DockStyle.Fill;
         DoubleBuffered = true; TabStop = true; BackColor = Color.FromArgb(35, 35, 35);
+        AccessibleName = "Screenshot annotation canvas";
+        AccessibleRole = Forms.AccessibleRole.Graphic;
         SetStyle(Forms.ControlStyles.ResizeRedraw, true);
     }
 
@@ -440,6 +444,7 @@ internal sealed class Preview : Forms.Form
         if ((long)source.Width * source.Height > 40_000_000) throw new Exception("Image exceeds 40 million pixels.");
         ImageCrop? savedCrop = shot.crop == null ? null : AnnotationDocument.ValidCrop(shot.crop.Rectangle, source.Size);
         canvas = new AnnotationCanvas(new Bitmap(source), shot.windowsAnnotations, savedCrop);
+        tips.SetToolTip(canvas, AnnotationCanvas.Hint);
         var tools = new System.Collections.Generic.Dictionary<string, Forms.Button>();
         toolRow = new Forms.FlowLayoutPanel { AutoSize = true, WrapContents = true, FlowDirection = Forms.FlowDirection.LeftToRight, Margin = new Forms.Padding(0), Padding = new Forms.Padding(0) };
         var grip = new Forms.Label

@@ -38,6 +38,7 @@ internal static class AnnotationTests
         {
             canvas.Size = new Size(400, 400);
             Check(canvas.ToImage(new PointF(100, 150)) == new PointF(50, 25), "letterboxed coordinate conversion");
+            Check(canvas.AccessibleName == "Screenshot annotation canvas" && AnnotationCanvas.Hint.Contains("V Select", StringComparison.Ordinal) && AnnotationCanvas.Hint.Contains("Drawing tools stay active.", StringComparison.Ordinal), "the canvas names the drawing keys");
             canvas.Document.Add(box); canvas.Selected = box.Id;
             Check(canvas.Key(Forms.Keys.Control | Forms.Keys.D) && canvas.Document.Marks.Length == 2, "duplicate shortcut");
             canvas.Key(Forms.Keys.Shift | Forms.Keys.Right);

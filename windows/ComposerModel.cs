@@ -848,6 +848,38 @@ internal static class AttachmentShare
 {
     internal static string CopyTitle(bool image) => image ? "Copy Image" : "Copy Video";
 
+    internal static string ScreenshotTip(int index, string? app)
+    {
+        string name = string.IsNullOrWhiteSpace(app) ? "Image" : app;
+        return "Annotate screenshot " + (index + 1).ToString(CultureInfo.InvariantCulture) + " — " + name + " · Right-click to copy or share";
+    }
+
+    internal static string ScreenshotLabel(int index) => "Annotate screenshot " + (index + 1).ToString(CultureInfo.InvariantCulture);
+
+    internal static string ScreenshotRemove(int index) => "Remove screenshot " + (index + 1).ToString(CultureInfo.InvariantCulture);
+
+    internal static string ClipKind(string? source) => source == "recording" ? "Screen recording" : "Instant replay";
+
+    internal static int ClipSeconds(double seconds) => (int)Math.Round(Math.Max(0, seconds), MidpointRounding.AwayFromZero);
+
+    internal static string ClipBadge(double seconds) => "▶ " + ClipSeconds(seconds).ToString(CultureInfo.InvariantCulture) + "s";
+
+    internal static string ClipTip(string? source, string? target, double seconds)
+    {
+        string of = string.IsNullOrWhiteSpace(target) ? "" : " of " + target;
+        return ClipKind(source) + of + ", " + ClipSeconds(seconds).ToString(CultureInfo.InvariantCulture) + " s — click to review or trim, right-click to copy or share. Key frames are sent as images; the video stays on this PC.";
+    }
+
+    internal static string ClipLabel(string? source, string? target, double seconds)
+    {
+        string of = string.IsNullOrWhiteSpace(target) ? "" : " of " + target;
+        return "Review " + ClipKind(source).ToLowerInvariant() + of + ", " + ClipSeconds(seconds).ToString(CultureInfo.InvariantCulture) + " seconds";
+    }
+
+    internal static string ClipRemoveTip(string? source) => "Remove " + ClipKind(source).ToLowerInvariant() + " from this capture";
+
+    internal static string ClipRemoveLabel(string? source) => "Remove " + ClipKind(source).ToLowerInvariant();
+
     internal static bool Accepted(string? path, string output, bool image)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
@@ -864,6 +896,17 @@ internal static class AttachmentShare
     {
         if (path.Length == 0 || path.IndexOfAny(new[] { '"', '\r', '\n' }) >= 0) return null;
         return "/select,\"" + path + "\"";
+    }
+}
+
+// The composer sits on the display under the pointer, centered, with its bottom
+// 80px above the working area, or 10% of that area when the display is shorter.
+internal static class ComposerPlacement
+{
+    internal static Point Origin(Rectangle area, Size window)
+    {
+        int gap = (int)Math.Min(80, area.Height * 0.1);
+        return new Point(area.Left + (area.Width - window.Width) / 2, area.Bottom - window.Height - gap);
     }
 }
 
@@ -946,6 +989,9 @@ internal static class ComposerTests
         Check(FocusReturn.AfterAnnotation(false) && !FocusReturn.AfterAnnotation(true), "cancelling annotation returns to the previous app");
         Check(!FocusReturn.Usable(0), "there is no window to restore");
         Check(AttachmentShare.CopyTitle(true) == "Copy Image" && AttachmentShare.CopyTitle(false) == "Copy Video", "a thumbnail copies the image or the video");
+        Check(AttachmentShare.ScreenshotTip(0, "Notes") == "Annotate screenshot 1 — Notes · Right-click to copy or share" && AttachmentShare.ScreenshotLabel(1) == "Annotate screenshot 2" && AttachmentShare.ScreenshotRemove(0) == "Remove screenshot 1", "a screenshot thumbnail names the app and how to share it");
+        Check(AttachmentShare.ClipSeconds(1.5) == 2 && AttachmentShare.ClipBadge(12.2) == "▶ 12s" && AttachmentShare.ClipTip("recording", "Notes", 12.4) == "Screen recording of Notes, 12 s — click to review or trim, right-click to copy or share. Key frames are sent as images; the video stays on this PC." && AttachmentShare.ClipLabel("replay", null, 5) == "Review instant replay, 5 seconds" && AttachmentShare.ClipRemoveTip("recording") == "Remove screen recording from this capture" && AttachmentShare.ClipRemoveLabel("recording") == "Remove screen recording", "a recording thumbnail names the clip and keeps the video on this PC");
+        Check(ComposerPlacement.Origin(new Rectangle(0, 0, 1920, 1080), new Size(680, 250)) == new Point(620, 750) && ComposerPlacement.Origin(new Rectangle(0, 0, 1280, 700), new Size(680, 250)) == new Point(300, 380), "the composer opens centered above the bottom of the screen");
         Check(AttachmentShare.RevealArgument("a\"b") == null, "a quoted path is not passed to File Explorer");
 
         var merged = ComposerFiles.Merge(new (int, JsonArray)[]

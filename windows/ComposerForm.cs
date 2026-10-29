@@ -350,7 +350,7 @@ internal sealed class ComposerForm : Form
         base.OnShown(e);
         ActiveSurface.Push(this);
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
-        Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
+        Location = ComposerPlacement.Origin(screen, Size);
         FitNote();
         note.Focus();
         try { Persist(); } catch { /* Recents still lists a draft that was already saved. */ }
@@ -624,15 +624,18 @@ internal sealed class ComposerForm : Form
                 panel.Tag = image;
             }
             catch { picture.BackColor = Color.DimGray; }
-            string app = shots[index]["app"]?.GetValue<string>() ?? "Image";
-            picture.AccessibleName = "Annotate screenshot " + (index + 1) + " — " + app + (marked ? ", selected" : "");
-            picture.AccessibleDescription = "Right-click to copy, share, or show this screenshot without sending the draft.";
+            string app = shots[index]["app"] is JsonValue appValue && appValue.TryGetValue(out string? appText) ? appText ?? "" : "";
+            string shotTip = AttachmentShare.ScreenshotTip(index, app);
+            tips.SetToolTip(picture, shotTip);
+            picture.AccessibleName = AttachmentShare.ScreenshotLabel(index);
+            picture.AccessibleDescription = (marked ? "Selected. " : "") + shotTip;
             picture.Click += (_, _) => Annotate(current);
             frame.Controls.Add(picture);
             string? shotPath = shots[index]["screenshot"]?.GetValue<string>();
             var menu = AttachmentMenu(shotPath, true);
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat, Visible = false };
-            remove.AccessibleName = "Remove screenshot " + (index + 1);
+            remove.AccessibleName = AttachmentShare.ScreenshotRemove(index);
+            tips.SetToolTip(remove, remove.AccessibleName);
             remove.Click += (_, _) =>
             {
                 if (!CanEditAttachments || current < 0 || current >= shots.Count) return;
@@ -666,21 +669,27 @@ internal sealed class ComposerForm : Form
             }
             double duration = 0;
             try { if (videos[index]["durationSeconds"] is JsonNode seconds) duration = seconds.GetValue<double>(); } catch { duration = 0; }
-            string clipKind = videos[index]["source"]?.GetValue<string>() == "recording" ? "Screen recording" : "Instant replay";
-            picture.AccessibleName = clipKind + " " + (index + 1) + ", " + ContextReview.ClipTime(duration) + ". Click to review or trim.";
-            var caption = new Label { Text = ContextReview.ClipTime(duration), AutoSize = false, Size = new Size(72, 16), Location = new Point(0, 40), ForeColor = Color.White, BackColor = Color.FromArgb(160, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter };
+            string? source = videos[index]["source"] is JsonValue sourceValue && sourceValue.TryGetValue(out string? sourceText) ? sourceText : null;
+            string? target = videos[index]["target"] is JsonValue targetValue && targetValue.TryGetValue(out string? targetText) ? targetText : null;
+            string clipTip = AttachmentShare.ClipTip(source, target, duration);
+            tips.SetToolTip(picture, clipTip);
+            picture.AccessibleName = AttachmentShare.ClipLabel(source, target, duration);
+            picture.AccessibleDescription = clipTip;
+            var badgeFont = new Font("Segoe UI", 8, FontStyle.Bold);
+            var badge = new Label { Text = AttachmentShare.ClipBadge(duration), AutoSize = false, Size = new Size(44, 16), Location = new Point(4, picture.Height - 20), ForeColor = Color.White, BackColor = Color.FromArgb(153, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter, Font = badgeFont, Cursor = Cursors.Hand };
+            badge.Disposed += (_, _) => badgeFont.Dispose();
+            tips.SetToolTip(badge, clipTip);
             picture.Cursor = Cursors.Hand;
-            caption.Cursor = Cursors.Hand;
-            picture.AccessibleDescription = "Right-click to copy, share, or show this recording without sending the draft.";
             picture.Click += (_, _) => Review(current);
-            caption.Click += (_, _) => Review(current);
+            badge.Click += (_, _) => Review(current);
             string? videoPath = videos[index]["video"]?.GetValue<string>();
             var menu = AttachmentMenu(videoPath, false);
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat, Visible = false };
-            remove.AccessibleName = "Remove recording " + (index + 1);
+            remove.AccessibleName = AttachmentShare.ClipRemoveLabel(source);
+            tips.SetToolTip(remove, AttachmentShare.ClipRemoveTip(source));
             remove.Click += (_, _) => RemoveVideo(current);
+            picture.Controls.Add(badge);
             panel.Controls.Add(picture);
-            panel.Controls.Add(caption);
             panel.Controls.Add(remove);
             AssignMenu(panel, menu);
             RevealRemove(panel, remove);

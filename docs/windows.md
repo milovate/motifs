@@ -50,12 +50,12 @@ needed, warn about interrupting active work before `opencode service restart`.
    again while the chooser, composer, or annotation editor is open brings that
    window forward. **Control+Alt+Shift+R** still starts or stops a recording
    while the composer is open.
-3. The composer opens at the bottom of the screen. Add a note, click a thumbnail
+3. The composer opens centered on the display under the pointer, 80px above the bottom of the screen, or 10% of the screen height when that is smaller. Add a note, click a thumbnail
    to annotate it, and use **Add** for another capture (up to 8). Adding a
    screenshot selects it. When more than one screenshot is attached, that
    thumbnail is outlined. Removing one keeps the selection on the screenshot
    that remains in its place. The **×** appears when the pointer is on that
-   thumbnail and removes it from the draft only. Right-click a screenshot or
+   thumbnail and removes it from the draft only. Hovering a screenshot names the app and says to right-click to copy or share. Hovering a recording names the clip and its length, and says the key frames are sent while the video stays on this PC. A play badge on the recording shows that length. Right-click a screenshot or
    recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
    Explorer**, or **Copy Path**. That shares the file and does not send the
    draft. **Context**
@@ -337,7 +337,7 @@ from the macOS development environment. Before calling Windows support verified:
   confirm handles are absent from the PNG.
 - Open the composer from the shortcut. Add a second screenshot and confirm the
   new thumbnail is outlined; remove the first and confirm the outline stays on
-  the remaining one. Right-click a thumbnail and copy it, then show it in File
+  the remaining one. Hover a recording and confirm it names the clip and says the video stays on this PC. Right-click a thumbnail and copy it, then show it in File
   Explorer, and confirm the draft was not sent. Escape from the chooser, and close the composer without
   sending, and confirm the previous app is in front. Copy does the same.
   OpenCode and Save to folder leave those windows in front. Send the same capture to Clipboard and
