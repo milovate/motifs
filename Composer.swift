@@ -22,6 +22,22 @@ struct ComposerEndpoint: Decodable {
         }
         return result
     }
+
+    static func load(output: String) -> [ComposerEndpoint] {
+        let folder = URL(fileURLWithPath: output + "/composers")
+        return (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "json" }
+            .compactMap { try? JSONDecoder().decode(ComposerEndpoint.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.directory < $1.directory } ?? []
+    }
+
+    // The plugin redacts secrets; nil when no loaded plugin answers.
+    static func redact(_ text: String, output: String) async -> String? {
+        for endpoint in load(output: output) {
+            if let redacted = try? await endpoint.request("/redact", body: ["text": text])["text"] as? String { return redacted }
+        }
+        return nil
+    }
 }
 
 @MainActor func composeCapture(shots: [[String: Any]], videos: [[String: Any]], context: [String: Any], pending: Task<[String: Any], Never>?, output: String, returnTo: NSRunningApplication?) async throws {
@@ -125,11 +141,7 @@ struct ComposerEndpoint: Decodable {
         self.output = output
         self.returnTo = returnTo
         settings = CaptureSettings.load(output: output)
-        let folder = URL(fileURLWithPath: output + "/composers")
-        endpoints = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "json" }
-            .compactMap { try? JSONDecoder().decode(ComposerEndpoint.self, from: Data(contentsOf: $0)) }
-            .sorted { $0.directory < $1.directory } ?? []
+        endpoints = ComposerEndpoint.load(output: output)
         let panel = ComposerPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 214), styleMask: [.borderless], backing: .buffered, defer: false)
         panel.title = "Appshot composer"
         panel.identifier = NSUserInterfaceItemIdentifier("appshot-composer")

@@ -4,6 +4,7 @@ import { mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { readBundle } from "./bundle.js";
 import { builtinDestinations, describeDestinations, validateHandoff } from "./destinations.js";
+import { configuredJudge, redactBundle, redactText, createSession } from "./redact.js";
 
 // One private, authenticated loopback endpoint per loaded OpenCode location.
 // This bridge only prepares handoffs. It NEVER admits a prompt or starts a model.
@@ -31,18 +32,25 @@ export async function startComposerBridge(ctx, captures, destinations = builtinD
         response.end(JSON.stringify({ destinations: await describeDestinations(destinations) }));
         return;
       }
-      if (request.method !== "POST" || request.url !== "/prepare") {
+      if (request.method !== "POST" || !["/prepare", "/redact"].includes(request.url)) {
         response.writeHead(404).end(JSON.stringify({ error: "Not found" }));
         return;
       }
       const chunks = [];
       let bytes = 0;
+      const limit = request.url === "/redact" ? 1_000_000 : 128_000;
       for await (const chunk of request) {
         bytes += chunk.length;
-        if (bytes > 128_000) throw new Error("Composer request is too large.");
+        if (bytes > limit) throw new Error("Composer request is too large.");
         chunks.push(chunk);
       }
       const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (request.url === "/redact") {
+        if (typeof input.text !== "string") throw new Error("Nothing to redact.");
+        const session = createSession(await configuredJudge(captures));
+        response.end(JSON.stringify({ text: await redactText(input.text, session), redaction: session.report }));
+        return;
+      }
       if (typeof input.requestID !== "string" || !/^[a-f0-9-]{36}$/i.test(input.requestID)) throw new Error("Invalid submission ID.");
       const fingerprint = JSON.stringify(input);
       let submission = submissions.get(input.requestID);
@@ -86,7 +94,7 @@ export async function submitComposer(ctx, captures, input, destinations = builti
   const destinationID = input.destination ?? "opencode";
   const destination = destinations.find((candidate) => candidate.id === destinationID);
   if (!destination) throw new Error("That destination is not available. Reopen the composer.");
-  const bundle = await readBundle(captures, input.manifest);
+  const bundle = await redactBundle(await readBundle(captures, input.manifest), await configuredJudge(captures));
   if (!input.text.trim() && !bundle.media.length && !bundle.videos.length) throw new Error("Add a note or a capture before sending.");
   const available = (await ctx.skill.list()).data;
   if (!Array.isArray(input.skills) || !input.skills.every((id) => typeof id === "string" && available.some((skill) => skill.id === id))) throw new Error("A selected skill is no longer available. Reopen the composer.");

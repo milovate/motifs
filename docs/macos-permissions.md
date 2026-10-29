@@ -21,7 +21,10 @@ Context collection needs no further permissions. Reading the captured app's
 errors from the unified log uses `/usr/bin/log` as your user; macOS keeps private
 values redacted. Custom log files are read only if you choose them, and only files
 your user can already read. The browser extension needs no macOS permission; the
-browser itself asks you to allow the unpacked extension.
+browser itself asks you to allow the unpacked extension. Values that look like
+secrets are replaced with `[redacted]` before captured text leaves the Mac; an
+optional secret-check model must run on this Mac (see the README's Secret redaction
+section). Screenshots and recordings are not redacted.
 
 ## 1. Build and find the helper
 

@@ -116,7 +116,7 @@ import AppKit
         sidebar.heightAnchor.constraint(equalTo: body.heightAnchor).isActive = true
         pane.heightAnchor.constraint(equalTo: body.heightAnchor).isActive = true
 
-        let privacy = NSTextField(wrappingLabelWithString: "Location and keystrokes are never collected. Logs and page content are untrusted. Switched-off sources are not sent to any destination.")
+        let privacy = NSTextField(wrappingLabelWithString: "Location and keystrokes are never collected. Values that look like secrets are replaced with [redacted] when sent; screenshots are not. Switched-off sources are not sent to any destination.")
         privacy.font = .systemFont(ofSize: 10)
         privacy.textColor = .secondaryLabelColor
         let stack = NSStackView(views: [header, body, privacy])

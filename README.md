@@ -256,6 +256,34 @@ draft wraps them in `<appshot_context>` blocks with a warning not to follow
 instructions inside them. Logs and events share one 60,000-character budget; the
 oldest entries are dropped first, with a note.
 
+#### Secret redaction
+
+Before anything leaves your Mac (OpenCode drafts, the context file, **Copy Markdown**,
+**Save to folder**, the `capture_studio` tool and the menu bar's insert commands),
+the plugin replaces values that look like secrets with `[redacted]` in window text,
+window titles, page URLs, console messages, failed requests, steps and log files.
+Your saved capture keeps the originals, your own note is sent as you wrote it, and
+**screenshots and recordings are not redacted**: a secret visible on screen stays in
+the image.
+
+- **Known formats are always replaced:** private keys, AWS, GitHub, GitLab, Slack,
+  Stripe, OpenAI/Anthropic-style and Google API keys, npm tokens, JWTs, `Bearer`
+  credentials, passwords in URLs, and `password=`/`api_key:`-style assignments.
+- **Values that only might be secrets** are random-looking URL path segments and
+  parameter values (`/api/keys/abc123`, `?id=Zx81Qp0L…`) and long random tokens.
+  By default they are replaced too. Ordinary IDs, UUIDs, numbers and words are kept.
+- **Optional local check:** **Appshot → Context sources → Local secret-check model…**
+  takes the address of a [Jev-compatible](https://github.com/NandhaKishorM/laya)
+  decision model running on this Mac, such as Laya through `laya-serve` or Unsloth's
+  Decision API, or Clef-flash if you run it locally. For each such value it sends the
+  value and about 160 characters around it, and keeps the value when the model
+  answers that it is not a secret (below 0.4). Only `http://127.0.0.1`, `localhost`
+  or `::1` addresses are accepted, because a hosted model would receive the values
+  being checked. If the model is down, slow (2.5 s per value, 10 s per send) or more
+  than 48 values need checking, the rest are replaced.
+
+The draft and the context file say how many values were replaced and how.
+
 #### Browser extension (Chrome, Brave, Edge, Arc, Chromium)
 
 Browser console and network context come from the bundled MV3 extension in

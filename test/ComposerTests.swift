@@ -306,6 +306,17 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(CaptureSettings.load(output: output) == settings, "hiding and moving the floating button persist")
         settings.showBubble = true
         settings.bubbleOrigin = nil
+        precondition(settings.redactionJudge.isEmpty, "no secret-check model is configured by default")
+        settings.redactionJudge = "http://127.0.0.1:8000"
+        settings.redactionModel = "laya"
+        try settings.save(output: output)
+        precondition(CaptureSettings.load(output: output) == settings, "the local secret-check model persists")
+        precondition(localJudgeAddress(" http://localhost:8888 ") == "http://localhost:8888" && localJudgeAddress("https://api.typesafe.ai") == nil && localJudgeAddress("http://10.0.0.2:8000") == nil && localJudgeAddress("http://a:b@127.0.0.1:8000") == nil, "only addresses on this Mac can check secrets")
+        try Data(#"{"redaction":{"judge":"https://api.cloudflare.com/clef"}}"#.utf8).write(to: URL(fileURLWithPath: output + "/settings.json"))
+        precondition(CaptureSettings.load(output: output).redactionJudge.isEmpty, "a hosted address in settings.json is ignored")
+        settings.redactionJudge = ""
+        settings.redactionModel = ""
+        try settings.save(output: output)
         settings.include = BundleInclude()
         settings.instantReplay = false
         try settings.save(output: output)

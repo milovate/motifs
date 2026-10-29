@@ -280,6 +280,8 @@ struct CaptureSettings: Equatable {
     var include = BundleInclude()
     var prefixes: [String] = []
     var showBubble = true
+    var redactionJudge = ""
+    var redactionModel = ""
     var bubbleOrigin: CGPoint?
     static let maxPrefixes = 12
     static let maxPrefixLength = 500
@@ -288,6 +290,7 @@ struct CaptureSettings: Equatable {
         lhs.defaultDestination == rhs.defaultDestination && lhs.knownDestinations.map(\.id) == rhs.knownDestinations.map(\.id) && lhs.knownDestinations.map(\.label) == rhs.knownDestinations.map(\.label)
             && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles && lhs.instantReplay == rhs.instantReplay
             && lhs.include == rhs.include && lhs.prefixes == rhs.prefixes && lhs.showBubble == rhs.showBubble && lhs.bubbleOrigin == rhs.bubbleOrigin
+            && lhs.redactionJudge == rhs.redactionJudge && lhs.redactionModel == rhs.redactionModel
     }
 
     static func load(output: String) -> CaptureSettings {
@@ -305,6 +308,10 @@ struct CaptureSettings: Equatable {
         settings.include = BundleInclude(raw["include"] as? [String: Any])
         settings.prefixes = Array((raw["prefixes"] as? [String] ?? []).filter { !$0.isEmpty && $0.count <= maxPrefixLength }.prefix(maxPrefixes))
         settings.showBubble = raw["showBubble"] as? Bool ?? true
+        if let redaction = raw["redaction"] as? [String: Any] {
+            settings.redactionJudge = (redaction["judge"] as? String).flatMap(localJudgeAddress) ?? ""
+            settings.redactionModel = String((redaction["model"] as? String ?? "").prefix(80))
+        }
         if let origin = raw["bubbleOrigin"] as? [Double], origin.count == 2, origin.allSatisfy(\.isFinite) { settings.bubbleOrigin = CGPoint(x: origin[0], y: origin[1]) }
         settings.customLogFiles = Array((raw["customLogFiles"] as? [String] ?? []).filter { $0.hasPrefix("/") && $0.count <= 1024 }.prefix(4))
         return settings
@@ -320,6 +327,7 @@ struct CaptureSettings: Equatable {
             "include": include.dictionary,
             "prefixes": Array(prefixes.prefix(CaptureSettings.maxPrefixes)),
             "showBubble": showBubble,
+            "redaction": ["judge": redactionJudge, "model": redactionModel],
         ]
         if let bubbleOrigin { raw["bubbleOrigin"] = [Double(bubbleOrigin.x), Double(bubbleOrigin.y)] }
         let path = output + "/settings.json"
@@ -328,6 +336,14 @@ struct CaptureSettings: Equatable {
         guard FileManager.default.createFile(atPath: temporary, contents: data, attributes: [.posixPermissions: 0o600]) else { throw captureError("Could not save Capture Studio settings.") }
         guard rename(temporary, path) == 0 else { throw captureError("Could not save Capture Studio settings.") }
     }
+}
+
+// The secret-check model must run on this Mac: a hosted model would receive the secrets.
+func localJudgeAddress(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: trimmed), url.scheme == "http", url.user == nil, url.password == nil,
+          let host = url.host, ["127.0.0.1", "localhost", "::1"].contains(host) else { return nil }
+    return trimmed
 }
 
 struct ComposerTarget: Equatable {

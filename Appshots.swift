@@ -439,6 +439,11 @@ struct Appshots {
             menu.addItem(add)
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Connect browser extension…", action: #selector(connectBrowserExtension), keyEquivalent: ""))
+            menu.addItem(.separator())
+            let judge = NSMenuItem(title: settings.redactionJudge.isEmpty ? "Local secret-check model…" : "Local secret-check model: \(settings.redactionJudge)", action: #selector(chooseSecretModel), keyEquivalent: "")
+            judge.state = settings.redactionJudge.isEmpty ? .off : .on
+            judge.toolTip = "Secrets in known formats are always redacted before anything leaves this Mac. A decision model running on this Mac (Laya, Clef-flash) can check values that only might be secrets; without it, those are redacted too."
+            menu.addItem(judge)
             for entry in menu.items where entry.action != nil { entry.target = self }
         }
     }
@@ -490,6 +495,59 @@ struct Appshots {
         }
         NSApplication.shared.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    @objc func chooseSecretModel() {
+        var settings = CaptureSettings.load(output: output)
+        let alert = NSAlert()
+        alert.messageText = "Local secret-check model"
+        alert.informativeText = "Known secret formats are always redacted. For values that only might be secrets (random-looking URL parts, tokens in logs), Capture Studio can ask a decision model running on this Mac, such as Laya through laya-serve or Unsloth. Only addresses on this Mac are accepted. Without a model, those values are redacted."
+        let address = NSTextField(string: settings.redactionJudge)
+        address.placeholderString = "http://127.0.0.1:8000"
+        let model = NSTextField(string: settings.redactionModel)
+        model.placeholderString = "Model (optional), e.g. laya"
+        let fields = NSStackView(views: [address, model])
+        fields.orientation = .vertical
+        fields.spacing = 8
+        fields.frame = NSRect(x: 0, y: 0, width: 320, height: 56)
+        for field in [address, model] { field.widthAnchor.constraint(equalToConstant: 320).isActive = true }
+        alert.accessoryView = fields
+        alert.addButton(withTitle: "Save and test")
+        alert.addButton(withTitle: "Cancel")
+        if !settings.redactionJudge.isEmpty { alert.addButton(withTitle: "Turn off") }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.window.initialFirstResponder = address
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            guard let judge = localJudgeAddress(address.stringValue) else {
+                let invalid = NSAlert()
+                invalid.messageText = "Use an address on this Mac"
+                invalid.informativeText = "For example http://127.0.0.1:8000. Hosted models are not allowed because they would receive the values being checked."
+                invalid.runModal()
+                return
+            }
+            settings.redactionJudge = judge
+            settings.redactionModel = model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .alertThirdButtonReturn:
+            settings.redactionJudge = ""
+            settings.redactionModel = ""
+        default:
+            return
+        }
+        do { try settings.save(output: output) } catch { NSAlert(error: error).runModal(); return }
+        guard !settings.redactionJudge.isEmpty else { return }
+        let saved = settings
+        Task { @MainActor in
+            let result = NSAlert()
+            if let score = await testSecretModel(address: saved.redactionJudge, model: saved.redactionModel) {
+                result.messageText = "The model answered"
+                result.informativeText = String(format: "A sample GitHub token was scored %.2f (values at %.2f or above are redacted).", score, 0.4)
+            } else {
+                result.messageText = "Saved, but the model did not answer"
+                result.informativeText = "Start it, for example with laya-serve or Unsloth's Decision API, and check the address. Until it answers, values that only might be secrets are redacted."
+            }
+            result.runModal()
+        }
     }
 
     @objc func reopenBundle(_ sender: NSMenuItem) {
@@ -747,7 +805,20 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
     }
     try ensurePromptFocused(axApp, prompt: prompt, pid: opencode.processIdentifier)
     if let expectedSessionTitle { try verifyHandoffTarget(axApp, prompt: prompt, title: expectedSessionTitle) }
-    let text = draftText ?? attachments.map { draftContext($0.snapshot) }.joined(separator: "\n")
+    var text = draftText ?? ""
+    if draftText == nil {
+        let raw = attachments.map { draftContext($0.snapshot) }.joined(separator: "\n")
+        if let redacted = await ComposerEndpoint.redact(raw, output: output) {
+            text = redacted
+        } else {
+            text = attachments.map { attachment in
+                var shot = attachment.snapshot
+                shot["text"] = ""
+                shot["warnings"] = (shot["warnings"] as? [String] ?? []) + ["Window text was left out: secret redaction needs the Capture Studio plugin loaded in OpenCode."]
+                return draftContext(shot)
+            }.joined(separator: "\n")
+        }
+    }
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw captureError("The draft has no description or screenshot context.") }
     saveStatus(output: output, phase: "pasting_text")
     pasteboard.clearContents()
@@ -764,6 +835,26 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
         }
     } while Date() < confirmDeadline
     throw DraftInsertionUnconfirmed()
+}
+
+// Asks the configured decision model the same question the plugin asks, about a fake token.
+func testSecretModel(address: String, model: String) async -> Double? {
+    let base = address.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let url = URL(string: base.hasSuffix("/v1/systemone") ? base : base + "/v1/systemone") else { return nil }
+    var request = URLRequest(url: url, timeoutInterval: 20)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    var body: [String: Any] = [
+        "state": ["text": "export GITHUB_TOKEN=⟦" + "ghp_" + "4f9Kq2Lm8Zx1Rt6Vb3Nc7Wd0Ye5Hs2Jp9Ua⟧"],
+        "questions": ["secret": ["type": "noul", "instructions": "Is the value inside ⟦ ⟧ a secret, such as a password, API key, access token, session ID, signing key or private credential, rather than an ordinary identifier, hash, file name or word?"]],
+    ]
+    if !model.isEmpty { body["model"] = model }
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
+          let answers = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["answers"] as? [String: Any] else { return nil }
+    let answer = answers["secret"]
+    let score = (answer as? NSNumber)?.doubleValue ?? ((answer as? [String: Any]).flatMap { ($0["noul"] ?? $0["probability"] ?? $0["yes"]) as? NSNumber })?.doubleValue
+    return score.flatMap { (0...1).contains($0) ? $0 : nil }
 }
 
 @MainActor func bringToFront(_ app: NSRunningApplication) async throws {

@@ -158,3 +158,25 @@ test("uncertain session creation is not automatically retried", async (t) => {
   assert.equal(f.created.length, 0);
   assert.equal(count, 1);
 });
+
+test("secrets are redacted before any destination sees them, and the helper can redact pasted text", async (t) => {
+  const f = await fixture(t);
+  const token = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
+  const capture = JSON.parse(await readFile(f.manifest, "utf8"));
+  await writeFile(f.manifest, JSON.stringify({ ...capture, text: `GITHUB_TOKEN=${token}\nGET https://api.test/api/keys/abc123` }));
+  const result = await submitComposer(f.ctx, f.directory, f.input);
+  const written = await contextOf(result.draftText);
+  assert.ok(!written.includes(token) && !written.includes("abc123"), "the context file carries no secrets");
+  assert.match(written, /api\/keys\/\[redacted\]/);
+  assert.match(result.draftText, /- Redacted: 2 values that looked like secrets/);
+  assert.ok(JSON.parse(await readFile(f.manifest, "utf8")).text.includes(token), "the local capture keeps the original");
+  const stop = await startComposerBridge(f.ctx, f.directory);
+  t.after(stop);
+  const [name] = await readdir(path.join(f.directory, "composers"));
+  const descriptor = JSON.parse(await readFile(path.join(f.directory, "composers", name), "utf8"));
+  const redact = (headers) => fetch(`http://127.0.0.1:${descriptor.port}/redact`, { method: "POST", headers, body: JSON.stringify({ text: `token ${token}` }) });
+  assert.equal((await redact({})).status, 403, "redaction needs the bridge token");
+  const redacted = await (await redact({ Authorization: `Bearer ${descriptor.token}` })).json();
+  assert.equal(redacted.text, "token [redacted]");
+  assert.equal(redacted.redaction.rule, 1);
+});
