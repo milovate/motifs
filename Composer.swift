@@ -80,6 +80,7 @@ struct ComposerEndpoint: Decodable {
     let recentsPopover = NSPopover()
     let shortcut = NSTextField(labelWithString: "Review in OpenCode  ·  ⌘↵")
     let skillsButton = ComposerButton(symbol: "at")
+    let prefixButton = ComposerButton(symbol: "text.insert")
     let microphone = ComposerButton(symbol: "mic")
     let sendButton = ComposerButton(symbol: "arrow.up", treatment: .primary)
     let annotateButton = ComposerButton("Annotate", symbol: "pencil.tip", treatment: .chip)
@@ -97,7 +98,6 @@ struct ComposerEndpoint: Decodable {
     let contentStack = NSStackView()
     let skillPopover = NSPopover()
     let mentionCompletion = ComposerMentionCompletion()
-    var didPrefillReport = false
     var updatingMentions = false
     var inputHeight: NSLayoutConstraint!
     let speech = ComposerSpeech()
@@ -144,8 +144,6 @@ struct ComposerEndpoint: Decodable {
         panel.delegate = self
         buildContent()
         if !note.isEmpty {
-            // A reopened bundle keeps its own skill mentions; never add a second default.
-            didPrefillReport = true
             textView.string = note
             updateInputSize()
         }
@@ -263,6 +261,10 @@ struct ComposerEndpoint: Decodable {
         skillsButton.isEnabled = false
         skillsButton.toolTip = "Add a skill"
         skillsButton.setAccessibilityLabel("Choose skills")
+        prefixButton.target = self
+        prefixButton.action = #selector(showPrefixes)
+        prefixButton.setAccessibilityLabel("Choose a saved prefix")
+        refreshPrefixButton()
         microphone.target = self
         microphone.action = #selector(toggleDictation)
         microphone.toolTip = "On-device voice-to-text. Review the transcript before sending."
@@ -276,7 +278,7 @@ struct ComposerEndpoint: Decodable {
         sendButton.keyEquivalentModifierMask = [.command]
         sendButton.isEnabled = false
         let spacer = NSView()
-        let actions = NSStackView(views: [skillsButton, destinationButton, projects, spacer, microphone, sendButton])
+        let actions = NSStackView(views: [skillsButton, prefixButton, destinationButton, projects, spacer, microphone, sendButton])
         actions.distribution = .fill
         actions.spacing = 6
         actions.alignment = .centerY
@@ -475,6 +477,117 @@ struct ComposerEndpoint: Decodable {
         stateChanged()
     }
 
+    // The saved prefix the note starts with, if any; the longest wins when one extends another.
+    var activePrefix: String? {
+        let text = textView.string
+        return settings.prefixes.filter { text == $0 || text.hasPrefix($0 + " ") || text.hasPrefix($0 + "\n") }.max { $0.count < $1.count }
+    }
+
+    func refreshPrefixButton() {
+        let active = activePrefix
+        prefixButton.treatment = active == nil ? .quiet : .chip
+        prefixButton.toolTip = active.map { "Prefix: " + String($0.prefix(80)) + " — click to switch" } ?? "Prefixes"
+    }
+
+    func prefixMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let active = activePrefix
+        if settings.prefixes.isEmpty {
+            let empty = NSMenuItem(title: "No prefixes yet. Type one, then save it.", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        }
+        for (index, prefix) in settings.prefixes.enumerated() {
+            let item = NSMenuItem(title: Self.menuTitle(prefix), action: #selector(choosePrefix(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.toolTip = prefix
+            item.state = prefix == active ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let candidate = prefixCandidate
+        let save = NSMenuItem(title: textView.selectedRange().length > 0 ? "Save Selection as Prefix" : "Save Note as Prefix", action: #selector(saveCurrentPrefix), keyEquivalent: "")
+        save.target = self
+        save.isEnabled = !candidate.isEmpty && candidate.count <= CaptureSettings.maxPrefixLength && !settings.prefixes.contains(candidate)
+        menu.addItem(save)
+        if !settings.prefixes.isEmpty {
+            let remove = NSMenuItem(title: "Remove", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for (index, prefix) in settings.prefixes.enumerated() {
+                let item = NSMenuItem(title: Self.menuTitle(prefix), action: #selector(removePrefix(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = index
+                submenu.addItem(item)
+            }
+            remove.submenu = submenu
+            menu.addItem(remove)
+        }
+        return menu
+    }
+
+    static func menuTitle(_ prefix: String) -> String {
+        let line = prefix.components(separatedBy: .newlines).joined(separator: " ")
+        return line.count > 48 ? String(line.prefix(47)) + "…" : line
+    }
+
+    var prefixCandidate: String {
+        let selection = textView.selectedRange()
+        let text = selection.length > 0 ? (textView.string as NSString).substring(with: selection) : textView.string
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @objc func showPrefixes() {
+        guard !sending, !submitted, prefixButton.isEnabled else { return }
+        mentionCompletion.dismiss()
+        prefixMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: prefixButton.bounds.maxY + 4), in: prefixButton)
+    }
+
+    @objc func choosePrefix(_ sender: NSMenuItem) {
+        guard settings.prefixes.indices.contains(sender.tag) else { return }
+        applyPrefix(settings.prefixes[sender.tag])
+    }
+
+    // Swaps whichever saved prefix the note starts with; choosing the active one removes it.
+    func applyPrefix(_ prefix: String) {
+        guard textView.isEditable else { return }
+        let text = textView.string
+        let active = activePrefix
+        var body = active.map { String(text.dropFirst($0.count)) } ?? text
+        body = String(body.drop { $0 == " " || $0 == "\n" })
+        let updated = active == prefix ? body : prefix + " " + body
+        textView.insertText(updated, replacementRange: NSRange(location: 0, length: (text as NSString).length))
+        textView.setSelectedRange(NSRange(location: (updated as NSString).length, length: 0))
+        window?.makeFirstResponder(textView)
+    }
+
+    @objc func saveCurrentPrefix() {
+        let candidate = prefixCandidate
+        guard !candidate.isEmpty, candidate.count <= CaptureSettings.maxPrefixLength else { return }
+        updatePrefixes { prefixes in
+            guard !prefixes.contains(candidate) else { return }
+            prefixes.insert(candidate, at: 0)
+            prefixes = Array(prefixes.prefix(CaptureSettings.maxPrefixes))
+        }
+        status.stringValue = "Saved prefix · choose it from the prefix button next time."
+    }
+
+    @objc func removePrefix(_ sender: NSMenuItem) {
+        updatePrefixes { prefixes in
+            guard prefixes.indices.contains(sender.tag) else { return }
+            prefixes.remove(at: sender.tag)
+        }
+    }
+
+    func updatePrefixes(_ change: (inout [String]) -> Void) {
+        var stored = CaptureSettings.load(output: output)
+        change(&stored.prefixes)
+        do { try stored.save(output: output) } catch { status.stringValue = error.localizedDescription }
+        settings.prefixes = stored.prefixes
+        refreshPrefixButton()
+    }
+
     // Every change is saved to this composer's bundle shortly after it happens, so the
     // capture can be reopened from Recents in exactly this state.
     func stateChanged() {
@@ -521,7 +634,6 @@ struct ComposerEndpoint: Decodable {
             collecting = false
             selectedShotIndex = 0
             requestID = UUID().uuidString
-            didPrefillReport = true
             adopt(bundle)
             textView.string = bundle.note
             updateInputSize()
@@ -588,20 +700,13 @@ struct ComposerEndpoint: Decodable {
 
     func applyAvailableSkills(_ available: [(id: String, name: String)]) {
         skills = available
-        if !didPrefillReport {
-            didPrefillReport = true
-            if skills.contains(where: { $0.id == "report" }), !ComposerMentions.matches(in: textView.string, skills: ["report"]).contains(where: { $0.id == "report" }) {
-                let selection = textView.selectedRange()
-                textView.insertText("@report ", replacementRange: NSRange(location: 0, length: 0))
-                textView.setSelectedRange(NSRange(location: min((textView.string as NSString).length, selection.location + 8), length: selection.length))
-            }
-        }
         synchronizeMentions()
         updateInputSize()
     }
 
     func updateInputSize() {
         synchronizeMentions()
+        refreshPrefixButton()
         applyComposerParagraphStyle()
         textView.textContainer?.containerSize = NSSize(width: max(1, textView.bounds.width), height: CGFloat.greatestFiniteMagnitude)
         textView.needsDisplay = true
@@ -892,7 +997,7 @@ struct ComposerEndpoint: Decodable {
                 if let target = selectedTarget, selectedDestination?.id != "opencode" {
                     status.stringValue = target.hint
                 } else {
-                    status.stringValue = selectedSkills.contains("report") ? "" : "Report unavailable · Choose another skill or continue without one."
+                    status.stringValue = ""
                 }
             } catch {
                 guard skillLoadID == loadID else { return }
@@ -1041,6 +1146,7 @@ struct ComposerEndpoint: Decodable {
         textView.isEditable = enabled
         projects.isEnabled = enabled
         skillsButton.isEnabled = enabled
+        prefixButton.isEnabled = enabled
         microphone.isEnabled = enabled
         annotateButton.isEnabled = enabled
         recentsButton.isEnabled = enabled

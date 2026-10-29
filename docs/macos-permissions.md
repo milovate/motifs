@@ -68,7 +68,7 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
 3. Confirm **Appshot** appears in the menu bar.
 4. Press **Option+G** and click a non-sensitive test window in the dimmed overlay.
 5. Confirm the floating composer opens with a screenshot, a **Context** chip, the
-   destination and target selectors, and **@report** selected when available. Close it
+   destination and target selectors, and an empty note (no skill is added automatically). Close it
    without sending to verify cancellation. Optionally choose **Clipboard** and send to
    confirm Markdown is copied and nothing is pasted.
 6. To test legacy insertion without a model call, choose **Appshot → Capture,

@@ -49,8 +49,30 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(composer.window!.contentView!.superview!.layer!.borderWidth == 0, "no rectangular native-frame outline")
         precondition(composer.projects.titleOfSelectedItem == "GooeyAI", "project basename, not full path")
         precondition((composer.window!.contentView as! NSVisualEffectView).maskImage != nil, "behind-window blur is rounded, not a rectangle")
-        precondition(composer.selectedSkills == ["report"], "Report is selected by its inline mention")
-        precondition(composer.textView.string == "@report ", "Report is prefilled into the editable draft")
+        precondition(composer.selectedSkills.isEmpty && composer.textView.string.isEmpty, "no skill is added automatically")
+        precondition(composer.prefixButton.treatment == .quiet && composer.prefixMenu().items.first?.isEnabled == false, "no prefixes until one is saved")
+        composer.textView.string = "@report Checkout:"
+        composer.updateInputSize()
+        composer.saveCurrentPrefix()
+        composer.textView.string = "@other"
+        composer.updateInputSize()
+        composer.saveCurrentPrefix()
+        precondition(composer.settings.prefixes == ["@other", "@report Checkout:"] && CaptureSettings.load(output: output).prefixes == composer.settings.prefixes, "prefixes are saved newest first")
+        composer.textView.string = "button is broken"
+        composer.updateInputSize()
+        composer.applyPrefix("@report Checkout:")
+        precondition(composer.textView.string == "@report Checkout: button is broken" && composer.selectedSkills == ["report"] && composer.activePrefix == "@report Checkout:", "choosing a prefix puts it at the start")
+        precondition(composer.prefixButton.treatment == .chip && composer.prefixMenu().items[1].state == .on, "the active prefix is checked")
+        composer.applyPrefix("@other")
+        precondition(composer.textView.string == "@other button is broken" && composer.selectedSkills == ["other"], "choosing another prefix swaps it")
+        composer.applyPrefix("@other")
+        precondition(composer.textView.string == "button is broken" && composer.activePrefix == nil, "choosing the active prefix removes it")
+        let removeItem = composer.prefixMenu().items.last!.submenu!.items[0]
+        composer.removePrefix(removeItem)
+        precondition(CaptureSettings.load(output: output).prefixes == ["@report Checkout:"], "prefixes can be removed")
+        composer.updatePrefixes { $0.removeAll() }
+        composer.textView.string = ""
+        composer.updateInputSize()
         precondition(composer.sendButton.isEnabled, "a capture can continue without a note")
         let compactHeight = composer.window!.frame.height
         composer.textView.string = "@report The button does not respond when I click it."
@@ -459,7 +481,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let composer = try AppshotComposer(shots: shots, note: "@report Reopened note", context: loaded.context, include: BundleInclude(windowText: false, device: true), output: output, returnTo: nil)
         precondition(composer.textView.string == "@report Reopened note", "reopened bundles restore the note")
         composer.applyAvailableSkills([("report", "Report")])
-        precondition(composer.textView.string == "@report Reopened note", "reopened notes never get a second default skill")
+        precondition(composer.textView.string == "@report Reopened note", "loading skills leaves a reopened note unchanged")
         precondition(composer.contextButton.toolTip?.contains("Window off") == true && composer.contextButton.toolTip?.contains("Network 1") == true, "reopened bundles keep include flags and stored context")
 
         let live = try AppshotComposer(shots: shots, note: "", context: deviceOnly, include: BundleInclude(), output: output, returnTo: nil)

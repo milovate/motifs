@@ -112,11 +112,15 @@ installation without planning that permission step.
    The **Context** chip shows the window text and device info that will be included,
    with a rough token estimate. Switch a source off to leave it out of every destination;
    the switches are remembered for the next capture.
-4. **@report** is prefilled into the editable text when available. Type **@** for
-   autocomplete, use Up/Down to choose, and press Enter or Tab to insert a skill.
-   Known mentions are highlighted. Deleting a mention removes the selection; loading
-   skills again does not resurrect a deleted default. The **@** button opens the
-   searchable skill picker. Email addresses are not skill mentions. The text is
+4. No skill is added for you. Type **@** for autocomplete, use Up/Down to choose,
+   and press Enter or Tab to insert a skill. Known mentions are highlighted, and
+   deleting a mention removes the selection. The **@** button opens the searchable
+   skill picker. The **prefix** button next to it keeps reusable openings such as
+   `@report Checkout:`: type one (or select part of the note) and choose **Save Note as
+   Prefix** / **Save Selection as Prefix**. Choosing a saved prefix puts it at the start
+   of the note and replaces the prefix already there; choosing the checked one removes
+   it. **Remove** deletes a saved prefix. Up to 12 are kept in the owner-only
+   `settings.json`. Email addresses are not skill mentions. The text is
    canonical; the selected skills are derived from it.
 5. Optionally click the **microphone**, approve Microphone and Speech Recognition, speak,
    then stop and edit the transcript. Only on-device recognition is used; there is

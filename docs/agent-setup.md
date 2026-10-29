@@ -34,7 +34,7 @@ Do not claim Windows desktop behavior is verified from a build or JavaScript tes
    switches, bypass TCC, or treat tool approval as a macOS grant.
 6. Have the user run `/capture-studio-start` and capture a non-sensitive test window with
    Option+G. On macOS, verify the floating composer, destination and
-   target pickers, Context chip, Report skill picker, and cancellation without sending. Legacy draft insertion is
+   target pickers, Context chip, skill and prefix pickers, and cancellation without sending. Legacy draft insertion is
    available through **Capture, annotate, and insert into current draft**.
    Test voice only if requested; the user approves Microphone and Speech Recognition.
    Continue creates a real session and fills its unsent draft. Do not submit that
