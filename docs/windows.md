@@ -63,8 +63,10 @@ needed, warn about interrupting active work before `opencode service restart`.
    rough token estimate. Each source has an include switch, a preview, and
    Markdown. For a native app, the button says **collecting…** while that app's
    errors and critical events are read from the Application log for the last 5
-   minutes (up to 200). A browser window keeps the extension's console instead.
-   Reopening a saved capture does not read the log again.
+   minutes (up to 200). A browser window, or a region or display capture made
+   while a browser was in front, asks the extension for that window's console
+   and failed requests instead. The composer opens while that read is still
+   going. Reopening a saved capture does not read either source again.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
    one. Escape closes that list before it closes the composer. Once those skills
@@ -91,8 +93,9 @@ seconds, and the recording stops at 5 minutes. Pause time is kept out of the cli
 Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
 key-frame PNGs into the captures folder and attaches the clip to the open composer,
 or opens a composer when none is open. A new composer reads the Application log
-for a recorded window's app, or for the app in front when a region or display
-recording stops. A browser window does not. Nothing is sent. A composer holds 3 clips.
+for a recorded native window, or for the app in front when a region or display
+recording stops. A browser asks the extension for that tab's console and failed
+requests instead. Nothing is sent. A composer holds 3 clips.
 Six key frames are sent in total: six for one clip, three each for two, and two
 each for three. Adding or removing a clip reads that share from each MP4 again.
 The bar and the dashed area outline set display affinity and are hidden while each
@@ -144,9 +147,11 @@ dictation stops. If no speech language is installed, the button says so.
 registers it for each installed copy of Chrome, Chrome Canary, Brave, Edge,
 Chromium, or Arc, then reveals the `browser-extension` folder. Load that folder as an unpacked
 extension, then reload the tabs you want to debug. A capture of that browser
-window asks for the visible tab's console messages and failed requests. A
-screen recording asks the extension to record page steps and collects them
-when the recording stops. The helper and the host accept only each other:
+window asks for the visible tab's console messages and failed requests after
+the composer opens. A screen recording asks the extension to record page steps
+and collects them when the recording stops. Stopping a recording of a browser
+window, or a region or display recording while a browser is in front, also
+asks for that tab's console and failed requests. The helper and the host accept only each other:
 the peer must be this same `Appshots.exe`. Nothing is written to disk on the way.
 
 **Local secret-check model…** saves an `http://127.0.0.1`, `localhost`, or `::1`

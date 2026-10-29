@@ -38,8 +38,12 @@ internal static class ContextReview
         _ => "Nothing to show.",
     };
 
-    internal static string EmptyText(string source, bool collecting) =>
-        collecting && source == "console" ? "Collecting console messages…" : EmptyText(source);
+    internal static string EmptyText(string source, bool collecting, bool collectingNetwork = false) => source switch
+    {
+        "console" when collecting => "Collecting console messages…",
+        "network" when collectingNetwork => "Collecting failed requests…",
+        _ => EmptyText(source),
+    };
 
     // Windows reports memory use as a percentage. These bands name that load the
     // same way the context pane names memory pressure.
@@ -392,6 +396,13 @@ internal static class AppConsole
         return kept.GetRange(kept.Count - limit, limit);
     }
 
+    internal static bool IsBrowser(nint window)
+    {
+        if (window == 0) return false;
+        try { return BrowserHost.IndexForImage(BrowserHost.WindowImage(window)) >= 0; }
+        catch { return false; }
+    }
+
     internal static bool Merge(JsonObject context, IReadOnlyList<JsonObject> entries)
     {
         if (context["console"] != null || entries.Count == 0) return false;
@@ -399,6 +410,45 @@ internal static class AppConsole
         foreach (var entry in entries) list.Add(ComposerFiles.Clone(entry));
         context["console"] = new JsonObject { ["entries"] = list };
         return true;
+    }
+
+    internal static bool MergeBrowser(JsonObject context, JsonObject? page)
+    {
+        if (page == null) return false;
+        bool added = false;
+        foreach (string key in new[] { "browser", "console", "network" })
+        {
+            if (context[key] != null || page[key] == null) continue;
+            context[key] = page[key]!.DeepClone();
+            added = true;
+        }
+        return added;
+    }
+
+    internal static async Task<JsonObject?> CollectBrowser(nint window, string? title)
+    {
+        if (window == 0) return null;
+        var read = Task.Run(() =>
+        {
+            try { return BrowserContext(window, title); }
+            catch { return null; }
+        });
+        Task finished = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(8))).ConfigureAwait(false);
+        if (finished != read) return null;
+        return await read.ConfigureAwait(false);
+    }
+
+    static JsonObject? BrowserContext(nint window, string? title)
+    {
+        if (!IsBrowser(window)) return null;
+        string? image = BrowserHost.WindowImage(window);
+        if (string.IsNullOrEmpty(title))
+        {
+            var buffer = new System.Text.StringBuilder(4096);
+            Native.GetWindowText(window, buffer, buffer.Capacity);
+            title = buffer.ToString();
+        }
+        return BrowserHost.ContextFrom(BrowserHost.RequestSnapshot(image, title ?? ""));
     }
 
     internal static async Task<List<JsonObject>> Collect(int pid)
@@ -460,14 +510,16 @@ internal sealed class ContextDialog : Form
     bool filling;
     string selected = ComposerFiles.Sources[0];
     internal bool Collecting { get; set; }
+    internal bool CollectingNetwork { get; set; }
 
-    internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include, bool collecting = false)
+    internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include, bool collecting = false, bool collectingNetwork = false)
     {
         this.shots = shots;
         this.videos = videos;
         this.context = context;
         this.include = include;
         Collecting = collecting;
+        CollectingNetwork = collectingNetwork;
         Text = "Context";
         ClientSize = new Size(760, 540);
         StartPosition = FormStartPosition.CenterParent;
@@ -581,7 +633,7 @@ internal sealed class ContextDialog : Form
         string text = markdown.Checked
             ? ContextReview.Markdown(selected, shots, videos, context)
             : ContextReview.Preview(selected, shots, context);
-        if (text.Length == 0) text = ContextReview.EmptyText(selected, Collecting);
+        if (text.Length == 0) text = ContextReview.EmptyText(selected, Collecting, CollectingNetwork);
         int limit = markdown.Checked ? ContextReview.MarkdownLimit : ContextReview.PreviewLimit;
         if (text.Length > limit) text = text[..limit] + "\n… " + (text.Length - limit) + " more characters" + (markdown.Checked ? " (Copy includes everything)" : "");
         detail.Text = text;

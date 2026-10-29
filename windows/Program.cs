@@ -787,12 +787,6 @@ internal sealed class Tray : Forms.Form
             }
             Program.Save(output, "status.json", new { phase = "capturing" });
             var shot = await CaptureSelector.Take(choice, output);
-            JsonObject? page = null;
-            if (choice.Kind == CaptureKind.Window)
-            {
-                try { page = BrowserHost.ContextFrom(BrowserHost.RequestSnapshot(BrowserHost.WindowImage(choice.Window), shot.title)); }
-                catch { page = null; }
-            }
             JsonObject? clip = null;
             if (replayFrames.Count > 0)
             {
@@ -800,10 +794,18 @@ internal sealed class Tray : Forms.Form
                 catch { clip = null; }
             }
             Program.Save(output, "status.json", new { phase = "composing" });
-            nint consoleWindow = choice.Kind == CaptureKind.Window ? choice.Window : returnTo;
-            int consolePid = AppConsole.TargetPid(consoleWindow);
+            nint contextWindow = choice.Kind == CaptureKind.Window ? choice.Window : returnTo;
+            nint browserWindow = 0;
+            int consolePid = 0;
+            string browserTitle = "";
+            if (AppConsole.IsBrowser(contextWindow))
+            {
+                browserWindow = contextWindow;
+                browserTitle = choice.Kind == CaptureKind.Window ? shot.title : "";
+            }
+            else consolePid = AppConsole.TargetPid(contextWindow);
             if (choice.Kind == CaptureKind.Window && FocusReturn.Usable(choice.Window)) returnTo = choice.Window;
-            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page, returnTo: returnTo, consolePid: consolePid);
+            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, returnTo: returnTo, consolePid: consolePid, browserWindow: browserWindow, browserTitle: browserTitle);
         }
         catch (Exception e) { Error(e); SetStatusIcon(StatusGlyph.Warning); }
         finally { replay.Paused = false; busy = false; }
@@ -831,8 +833,15 @@ internal sealed class Tray : Forms.Form
                 return;
             }
             Program.Save(output, "status.json", new { phase = "composing" });
-            int consolePid = RecordingSession.ResolveConsoleAtStop ? AppConsole.TargetPid(ExternalWindow()) : RecordingSession.LastConsolePid;
-            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded, returnTo: returnTo, consolePid: consolePid);
+            nint browserWindow = RecordingSession.BrowserWindow;
+            int consolePid = RecordingSession.LastConsolePid;
+            if (RecordingSession.ResolveConsoleAtStop)
+            {
+                nint window = ExternalWindow();
+                if (AppConsole.IsBrowser(window)) { browserWindow = window; consolePid = 0; }
+                else { browserWindow = 0; consolePid = AppConsole.TargetPid(window); }
+            }
+            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded, returnTo: returnTo, consolePid: consolePid, browserWindow: browserWindow);
         }
         catch (Exception e) { ClickHistory.Shared.TakePublished(); Error(e); }
         finally { busy = false; }
@@ -852,11 +861,11 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { Error(e); }
     }
 
-    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, nint returnTo = 0, int consolePid = 0)
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, nint returnTo = 0, int consolePid = 0, nint browserWindow = 0, string? browserTitle = null)
     {
         try
         {
-            using var composer = new ComposerForm(output, shots, clips, events, browser, consolePid);
+            using var composer = new ComposerForm(output, shots, clips, events, browser, consolePid, browserWindow, browserTitle);
             composer.ReturnTo = returnTo != 0 ? returnTo : ExternalWindow();
             composer.ShowDialog();
         }

@@ -1095,6 +1095,16 @@ internal static class ComposerTests
         Check(ContextSummary.Tooltip(new[] { new ContextSummary.SourceChip("Window", true, 1), new ContextSummary.SourceChip("Console", false, 3) }, "≈1.0k tokens") == "Window 1 · Console off · ≈1.0k tokens. Click to review.", "the context tooltip names each source");
         Check(ContextSummary.Accessible(true, 1, 2, "≈1.0k tokens") == "collecting" && ContextSummary.Accessible(false, 1, 2, "≈1.0k tokens") == "1 of 2 sources included, ≈1.0k tokens", "collecting is announced while the log is read");
         Check(ContextReview.EmptyText("console", true) == "Collecting console messages…" && ContextReview.EmptyText("console", false).Contains("Application log", StringComparison.Ordinal), "the console pane says when the Application log is still being read");
+        Check(ContextReview.EmptyText("network", false, true) == "Collecting failed requests…" && ContextReview.EmptyText("network", true) == ContextReview.EmptyText("network"), "failed requests say they are still being collected");
+        var browserPage = new JsonObject
+        {
+            ["browser"] = new JsonObject { ["title"] = "Inbox" },
+            ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["message"] = "page", ["source"] = "browser" }) },
+            ["network"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["url"] = "https://shop.test" }) },
+        };
+        var browserKept = new JsonObject { ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["source"] = "app", ["message"] = "kept" }) } };
+        Check(AppConsole.MergeBrowser(browserKept, browserPage) && browserKept["console"]?["entries"]?[0]?["source"]?.GetValue<string>() == "app" && browserKept["browser"]?["title"]?.GetValue<string>() == "Inbox" && browserKept["network"]?["entries"]?[0]?["url"]?.GetValue<string>() == "https://shop.test", "a browser snapshot fills missing sources and leaves an existing console");
+        Check(!AppConsole.MergeBrowser(browserKept, browserPage), "a second browser snapshot does not replace context that is already there");
         var video = new JsonObject { ["source"] = "replay", ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 20 };
         Check(ContextReview.ClipMoment("2026-10-29T10:00:05Z", new[] { video }) == "Instant replay · 0:05.0", "events inside a clip show the clip time");
         var pausedClip = new JsonObject

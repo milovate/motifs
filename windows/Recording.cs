@@ -800,6 +800,7 @@ internal sealed class RecordingSession
     internal static bool Active => current != null;
     internal static bool Busy => choosing || current != null;
     internal static int LastConsolePid { get; private set; }
+    internal static nint BrowserWindow { get; private set; }
     internal static bool ResolveConsoleAtStop { get; private set; }
     internal static event Action? StateChanged;
 
@@ -818,6 +819,7 @@ internal sealed class RecordingSession
     {
         if (Busy) return null;
         LastConsolePid = 0;
+        BrowserWindow = 0;
         ResolveConsoleAtStop = false;
         choosing = true;
         StateChanged?.Invoke();
@@ -827,7 +829,11 @@ internal sealed class RecordingSession
             using var overlay = new RegionOverlay(Hint);
             if (overlay.ShowDialog() != DialogResult.OK || overlay.Choice is not CaptureChoice chosen) return null;
             choice = chosen;
-            if (choice.Kind == CaptureKind.Window) LastConsolePid = AppConsole.TargetPid(choice.Window);
+            if (choice.Kind == CaptureKind.Window)
+            {
+                if (AppConsole.IsBrowser(choice.Window)) BrowserWindow = choice.Window;
+                else LastConsolePid = AppConsole.TargetPid(choice.Window);
+            }
             else ResolveConsoleAtStop = true;
         }
         finally { choosing = false; StateChanged?.Invoke(); }

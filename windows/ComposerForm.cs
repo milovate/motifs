@@ -187,17 +187,22 @@ internal sealed class ComposerForm : Form
     internal bool CanRecord => !sending && !submitted && !dictating && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
     bool dictating;
     readonly int consolePid;
-    bool collecting;
+    readonly nint browserWindow;
+    readonly string browserTitle;
+    bool collectingConsole;
+    bool collectingNetwork;
     int consoleGeneration;
     ContextDialog? contextReview;
     string dictationBase = "";
     string dictationCommitted = "";
     DictationSession? speech;
 
-    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, int consolePid = 0)
+    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null, int consolePid = 0, nint browserWindow = 0, string? browserTitle = null)
     {
         this.output = output;
         this.consolePid = consolePid;
+        this.browserWindow = browserWindow;
+        this.browserTitle = browserTitle ?? "";
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
         context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
@@ -334,7 +339,7 @@ internal sealed class ComposerForm : Form
         Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
         FitNote();
         note.Focus();
-        BeginConsole();
+        BeginSlowContext();
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -513,6 +518,7 @@ internal sealed class ComposerForm : Form
             int count = ContextReview.Count(source, shots, context);
             if (count > 0) chips.Add(new ContextSummary.SourceChip(ContextReview.Label(source), ComposerFiles.Included(include, source), count));
         }
+        bool collecting = collectingConsole || collectingNetwork;
         contextButton.Text = ContextSummary.ButtonText(collecting, included);
         contextButton.AccessibleDescription = ContextSummary.Accessible(collecting, included, available, tokens);
         tips.SetToolTip(contextButton, ContextSummary.Tooltip(chips, tokens));
@@ -763,7 +769,7 @@ internal sealed class ComposerForm : Form
     {
         mentions.Dismiss();
         mentionPopup.Hide();
-        using var dialog = new ContextDialog(shots, videos, context, include, collecting);
+        using var dialog = new ContextDialog(shots, videos, context, include, collectingConsole, collectingNetwork);
         contextReview = dialog;
         dialog.ShowDialog(this);
         contextReview = null;
@@ -789,7 +795,8 @@ internal sealed class ComposerForm : Form
     internal void LoadSaved(string path)
     {
         consoleGeneration++;
-        collecting = false;
+        collectingConsole = false;
+        collectingNetwork = false;
         try
         {
             var bundle = ComposerFiles.LoadBundle(path, output);
@@ -1180,13 +1187,38 @@ internal sealed class ComposerForm : Form
         }
     }
 
+    void BeginSlowContext()
+    {
+        if (browserWindow != 0)
+        {
+            bool needPage = context["browser"] == null;
+            collectingConsole = context["console"] == null;
+            collectingNetwork = context["network"] == null;
+            if (!needPage && !collectingConsole && !collectingNetwork) return;
+            if (!collectingConsole && !collectingNetwork) collectingConsole = true;
+            int generation = ++consoleGeneration;
+            RefreshSend();
+            _ = ReadBrowser(generation);
+            return;
+        }
+        BeginConsole();
+    }
+
     void BeginConsole()
     {
         if (consolePid <= 0 || context["console"] != null) return;
-        collecting = true;
+        collectingConsole = true;
         int generation = ++consoleGeneration;
         RefreshSend();
         _ = ReadConsole(generation);
+    }
+
+    async Task ReadBrowser(int generation)
+    {
+        JsonObject? page;
+        try { page = await AppConsole.CollectBrowser(browserWindow, browserTitle); }
+        catch { page = null; }
+        Later(() => FinishSlow(generation, () => AppConsole.MergeBrowser(context, page)));
     }
 
     async Task ReadConsole(int generation)
@@ -1194,18 +1226,20 @@ internal sealed class ComposerForm : Form
         List<JsonObject> entries;
         try { entries = await AppConsole.Collect(consolePid); }
         catch { entries = new List<JsonObject>(); }
-        Later(() =>
-        {
-            if (generation != consoleGeneration) return;
-            collecting = false;
-            if (!sending && prepared == null && AppConsole.Merge(context, entries)) Touch();
-            else RefreshSend();
-            if (contextReview != null)
-            {
-                contextReview.Collecting = false;
-                contextReview.Reload();
-            }
-        });
+        Later(() => FinishSlow(generation, () => AppConsole.Merge(context, entries)));
+    }
+
+    void FinishSlow(int generation, Func<bool> merge)
+    {
+        if (generation != consoleGeneration) return;
+        collectingConsole = false;
+        collectingNetwork = false;
+        if (!sending && prepared == null && merge()) Touch();
+        else RefreshSend();
+        if (contextReview == null) return;
+        contextReview.Collecting = false;
+        contextReview.CollectingNetwork = false;
+        contextReview.Reload();
     }
 
     void Later(Action action)
