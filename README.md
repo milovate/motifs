@@ -94,7 +94,7 @@ installation without planning that permission step.
    to annotate it, then choose **Done** to return. The small **×** that appears on hover
    removes it from the draft, not from local capture history. Removing all screenshots
    allows a text-only draft.
-   **+ Add → Screenshot of a region** opens a dimmed-screen region picker:
+   The **viewfinder** button opens a dimmed-screen region picker:
    drag a rectangle and release to attach the selected pixels, or Escape to cancel.
    Each region stays a separate screenshot; up to eight can be attached. Each image
    must be under 15 MB and the collection under 30 MB. Region capture does not read
@@ -106,7 +106,7 @@ installation without planning that permission step.
    such as **Review in OpenCode**, **Copy Markdown**, or **Save bundle**. The last
    destination you choose becomes the default.
    The **Context** chip shows the window text and device info that will be included,
-   with a rough token estimate. Uncheck either source to leave it out of every destination.
+   with a rough token estimate. Switch a source off to leave it out of every destination.
 4. **@report** is prefilled into the editable text when available. Type **@** for
    autocomplete, use Up/Down to choose, and press Enter or Tab to insert a skill.
    Known mentions are highlighted. Deleting a mention removes the selection; loading
@@ -201,9 +201,12 @@ displays and locale. It never includes location, host name, user name or network
 
 ### Context sources
 
-The **Context** chip opens a review popover with one tab per source, an entry count,
-a preview, an include checkbox and a size estimate. Unchecked sources are left out of
-every destination. Sources that take a moment (console, browser) show
+The **Context** chip opens a review popover. The sidebar lists each source with its
+entry count (red when it holds errors or failed requests) and an include switch; the
+pane shows the selected source as readable rows: console messages with level badges,
+failed requests with method, status, path and host, clicks as sentences, device
+details as labeled fields, and window text and log files as text. The header shows a
+size estimate. Switched-off sources are left out of every destination. Sources that take a moment (console, browser) show
 "collecting…" and fill in while you type. A reopened bundle shows the context stored
 with it, not a fresh collection.
 
@@ -262,7 +265,7 @@ Recording permission, and macOS shows its own screen-recording indicator while e
   off or quitting the helper discards the buffer. The setting is stored in the
   owner-only `settings.json`.
 - **Screen recording** starts from **Appshot → Start screen recording…**,
-  **Option+Shift+G**, or the composer's **+ Add → Screen recording…**. A bar asks
+  **Option+Shift+G**, or the composer's **record** button (it shows "1/3" once clips are attached). A bar asks
   what to record: the **Display**, the front **Window** of the app you were using (only
   that window, even when others overlap it), or an **Area** you drag. Return starts and
   Escape cancels. While recording, a floating pill shows the time with **Restart**

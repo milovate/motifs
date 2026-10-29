@@ -276,7 +276,8 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         three.removeVideo(at: 1)
         precondition(three.videos.count == 2 && three.preparingFrames && !three.sendButton.isEnabled, "removing a clip re-splits the frames before sending")
         three.preparingFrames = false
-        precondition(three.canAddRecording && three.addScreenshotButton.isEnabled, "the add menu offers another recording")
+        three.refreshAttachments()
+        precondition(three.canAddRecording && three.addRecordingButton.isEnabled && three.addRecordingButton.title == "2/3", "the record button offers another clip and shows how many are used")
         three.addRecording()
         precondition(asked === three && three.recordingClip && !three.canEditAttachments && !three.sendButton.isEnabled && three.windowShouldClose(three.window!) == false, "recording hides the composer and locks it until the clip arrives")
         three.recordingFinished(nil)
@@ -351,14 +352,15 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             picker.shots = shots
             picker.context = markerContext
             _ = picker.view
-            picker.view.frame = NSRect(x: 0, y: 0, width: 420, height: 360)
-            for dark in [true, false] {
-                picker.sources.selectedSegment = 0
-                picker.refresh()
-                try render(picker.view, "context-window-\(dark ? "dark" : "light")", dark: dark)
-                picker.sources.selectedSegment = 3
-                picker.refresh()
+            picker.view.frame = NSRect(origin: .zero, size: ComposerContextPicker.size)
+            for dark in [false] {
+                picker.view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                picker.select("console")
+                try render(picker.view, "context-console-\(dark ? "dark" : "light")", dark: dark)
+                picker.select("network")
                 try render(picker.view, "context-network-\(dark ? "dark" : "light")", dark: dark)
+                picker.select("events")
+                try render(picker.view, "context-clicks-\(dark ? "dark" : "light")", dark: dark)
             }
         }
         precondition(appshotStatusImage(.recording).isTemplate && appshotStatusImage(.replay).tiffRepresentation != appshotStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
@@ -396,16 +398,16 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         live.showContext()
         let picker = live.contextPopover.contentViewController as! ComposerContextPicker
         _ = picker.view
-        precondition(picker.sources.segmentCount == 6, "the picker lists every context source")
+        precondition(picker.rows.count == 6 && picker.sidebar.arrangedSubviews.count == 7, "the picker lists every context source")
         let deadline = Date().addingTimeInterval(3)
         while live.collecting && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
         precondition(!live.collecting && ContextText.count("console", shots: shots, context: live.context) == 1, "slow sources merge when they finish")
-        precondition(picker.sources.label(forSegment: 2) == "Console 1", "the open picker updates its counts")
-        picker.sources.selectedSegment = 2
-        picker.sourceChanged()
-        precondition(picker.preview.string.contains("late") && picker.includeSource.title == "Include console", "the picker previews the selected source")
-        picker.includeSource.state = .off
-        picker.toggleSource()
+        precondition(picker.rows["console"]?.count.stringValue == "1" && picker.rows["console"]?.count.textColor == .systemRed, "the open picker updates its counts and flags errors")
+        picker.select("console")
+        precondition(picker.detailText.contains("late") && picker.detailText.contains("FAULT"), "the picker shows the selected source as readable rows")
+        picker.rows["console"]!.toggle.state = .off
+        picker.rows["console"]!.toggled()
+        precondition(!picker.banner.isHidden, "a switched-off source says it is not sent")
         precondition(!live.include["console"], "unchecking a source excludes it from the bundle")
         live.contextPopover.close()
         composer.endpoints = ["/fixture/alpha", "/fixture/beta"].map { ComposerEndpoint(directory: $0, port: 1, token: String(repeating: "a", count: 64)) }

@@ -82,7 +82,8 @@ struct ComposerEndpoint: Decodable {
     let closeButton = ComposerButton(symbol: "xmark")
     let status = ComposerStatusField(wrappingLabelWithString: "")
     let thumbnailStrip = NSStackView()
-    let addScreenshotButton = ComposerButton("Add", symbol: "plus", treatment: .chip)
+    let addScreenshotButton = ComposerButton(symbol: "viewfinder", treatment: .chip)
+    let addRecordingButton = ComposerButton(symbol: "record.circle", treatment: .chip)
     var addingScreenshot = false
     var recordingClip = false
     var reviewingClip = false
@@ -171,10 +172,13 @@ struct ComposerEndpoint: Decodable {
         annotateButton.compact = true
         annotateButton.toolTip = "Annotate the screenshot"
         addScreenshotButton.target = self
-        addScreenshotButton.action = #selector(showAddMenu)
+        addScreenshotButton.action = #selector(addScreenshot)
         addScreenshotButton.compact = true
-        addScreenshotButton.toolTip = "Add a screenshot of a region or a screen recording (⌥⇧G records)"
-        addScreenshotButton.setAccessibilityLabel("Add a screenshot or a screen recording")
+        addScreenshotButton.setAccessibilityLabel("Add a screenshot of a region")
+        addRecordingButton.target = self
+        addRecordingButton.action = #selector(addRecording)
+        addRecordingButton.compact = true
+        addRecordingButton.setAccessibilityLabel("Add a screen recording")
         closeButton.target = self
         closeButton.action = #selector(closeComposer)
         closeButton.compact = true
@@ -185,7 +189,7 @@ struct ComposerEndpoint: Decodable {
         contextButton.compact = true
         contextButton.setAccessibilityLabel("Review context sent with this capture")
         refreshContextSummary()
-        let attachment = NSStackView(views: [attachmentScroll, contextButton, addScreenshotButton, closeButton])
+        let attachment = NSStackView(views: [attachmentScroll, contextButton, addScreenshotButton, addRecordingButton, closeButton])
         attachment.alignment = .centerY
         attachment.spacing = 10
 
@@ -440,7 +444,7 @@ struct ComposerEndpoint: Decodable {
             self.refreshContextSummary()
         }
         contextPopover.contentViewController = picker
-        contextPopover.contentSize = NSSize(width: 420, height: 360)
+        contextPopover.contentSize = ComposerContextPicker.size
         contextPopover.behavior = .transient
         contextPopover.show(relativeTo: contextButton.bounds, of: contextButton, preferredEdge: .maxY)
     }
@@ -605,27 +609,22 @@ struct ComposerEndpoint: Decodable {
             thumbnailStrip.addArrangedSubview(empty)
         }
         thumbnailStrip.addArrangedSubview(NSView())
-        addScreenshotButton.isEnabled = textView.isEditable && !sending && (shots.count < 8 || canAddRecording)
+        refreshAddButtons(enabled: textView.isEditable && !sending)
         refreshContextSummary()
+    }
+
+    func refreshAddButtons(enabled: Bool) {
+        addScreenshotButton.isEnabled = enabled && shots.count < 8
+        addScreenshotButton.toolTip = shots.count < 8 ? "Add a screenshot of a region" : "Up to 8 screenshots per capture"
+        addRecordingButton.isEnabled = enabled && canAddRecording
+        addRecordingButton.title = videos.isEmpty ? "" : "\(videos.count)/\(ReplayWriter.maxClips)"
+        addRecordingButton.toolTip = videos.count >= ReplayWriter.maxClips
+            ? "Up to \(ReplayWriter.maxClips) recordings per capture"
+            : "Record the display, a window or an area; the clip is added here (⌥⇧G)" + (videos.isEmpty ? "" : " · \(videos.count) of \(ReplayWriter.maxClips) used")
     }
 
     var canAddRecording: Bool { AppshotComposer.onRecord != nil && videos.count < ReplayWriter.maxClips }
     var canEditAttachments: Bool { textView.isEditable && !sending && !addingScreenshot && !recordingClip && !reviewingClip && preparedSession == nil }
-
-    @objc func showAddMenu() {
-        guard canEditAttachments else { return }
-        let menu = NSMenu()
-        let screenshot = NSMenuItem(title: "Screenshot of a region", action: shots.count < 8 ? #selector(addScreenshot) : nil, keyEquivalent: "")
-        screenshot.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: nil)
-        let recording = NSMenuItem(title: videos.isEmpty ? "Screen recording…" : "Another screen recording… (\(videos.count) of \(ReplayWriter.maxClips))", action: canAddRecording ? #selector(addRecording) : nil, keyEquivalent: "")
-        recording.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
-        recording.toolTip = "Hides the composer while you record the display, a window or an area, then adds the clip here. ⌥⇧G also works."
-        for item in [screenshot, recording] {
-            item.target = self
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: addScreenshotButton.bounds.height + 4), in: addScreenshotButton)
-    }
 
     @objc func addRecording() {
         guard canEditAttachments, canAddRecording, let record = AppshotComposer.onRecord else { return }
@@ -954,7 +953,7 @@ struct ComposerEndpoint: Decodable {
         skillsButton.isEnabled = enabled
         microphone.isEnabled = enabled
         annotateButton.isEnabled = enabled
-        addScreenshotButton.isEnabled = enabled && (shots.count < 8 || canAddRecording)
+        refreshAddButtons(enabled: enabled)
         for case let thumbnail as ScreenshotThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for case let thumbnail as VideoThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         skillPopover.close()
