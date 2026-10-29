@@ -23,12 +23,12 @@ values redacted. Custom log files are read only if you choose them, and only fil
 your user can already read. The browser extension needs no macOS permission; the
 browser itself asks you to allow the unpacked extension. Values that look like
 secrets are replaced with `[redacted]` before captured text leaves the Mac; an
-optional secret-check model must run on this Mac (see the README's Secret redaction
+optional secret-check model must run on this Mac (see the reference's [Secret redaction](reference.md#secret-redaction)
 section). Screenshots and recordings are not redacted.
 
 ## 1. Build and find the helper
 
-Complete the [installation](../README.md#installation) first. For the default path:
+Complete the [installation](../INSTALL.md) first. For the default path:
 
 ```sh
 open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"

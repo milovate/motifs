@@ -28,7 +28,7 @@ plugin's absolute directory into your existing OpenCode configuration:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["C:/path/to/opencode-appshots"]
+  "plugins": ["C:/path/to/motifs"]
 }
 ```
 

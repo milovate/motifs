@@ -1,6 +1,6 @@
 # Appshots contributor and setup instructions
 
-- For installing/enabling this plugin, follow `docs/agent-setup.md` and
+- For installing/enabling this plugin, follow `INSTALL.md` and
   the platform guide (`docs/macos-permissions.md` or `docs/windows.md`). macOS approval must be performed by the user.
 - This is an OpenCode V2 server plugin with a local macOS Swift or Windows .NET helper, not an MCP
   server or a V1 plugin. Runtime JavaScript has no npm dependencies.
