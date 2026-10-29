@@ -867,6 +867,26 @@ internal static class AttachmentShare
     }
 }
 
+// Recents, Context, and the skill list stay up until the composer is used.
+// A click on the button that opened the panel toggles it instead of closing and reopening.
+internal static class TransientPanel
+{
+    internal const int Gap = 8;
+
+    internal static bool ShouldClose(bool pointerOnAnchor, bool composerActive) => !(pointerOnAnchor && composerActive);
+
+    internal static Point Place(Rectangle composer, Rectangle anchor, Size panel, Rectangle area, bool beside)
+    {
+        int x = beside ? composer.Left - panel.Width - Gap : anchor.Left;
+        int y = beside ? composer.Top : anchor.Bottom + 4;
+        if (beside && x < area.Left) x = composer.Right + Gap;
+        else if (!beside && y + panel.Height > area.Bottom) y = anchor.Top - panel.Height - 4;
+        x = Math.Max(area.Left, Math.Min(x, area.Right - panel.Width));
+        y = Math.Max(area.Top, Math.Min(y, area.Bottom - panel.Height));
+        return new Point(x, y);
+    }
+}
+
 // Cancelled capture UI returns to the app that was in front. A finished handoff
 // keeps the window it opened, except Copy, which does not open one.
 internal static class FocusReturn
@@ -1082,6 +1102,13 @@ internal static class ComposerTests
         Check(bubbleBounds.Size == new Size(ComposerBubble.Diameter, ComposerBubble.Diameter) && bubbleBounds.Left + bubbleBounds.Width / 2 == 960 && bubbleBounds.Bottom == 1080 - ComposerBubble.Gap, "the composer button is centered above the capture hint");
         Check(ComposerBubble.MenuTitle == "Show composer button while capturing" && ComposerBubble.Tip == "Skip the capture and open the composer, with Recents" && ComposerBubble.MenuTip.Contains("Ctrl+Alt+Shift+A", StringComparison.Ordinal) && ComposerBubble.MenuTip.Contains("Recents", StringComparison.Ordinal), "the tray explains the composer button");
         Check(!ChooserFocus.ShouldCancel(10, 10) && !ChooserFocus.ShouldCancel(10, 0) && ChooserFocus.ShouldCancel(10, 20), "the chooser closes when another app comes forward");
+        var screen = new Rectangle(0, 0, 1920, 1080);
+        var composer = new Rectangle(400, 200, 680, 250);
+        var recents = TransientPanel.Place(composer, new Rectangle(900, 210, 80, 28), new Size(300, 460), screen, true);
+        var flipped = TransientPanel.Place(new Rectangle(10, 40, 680, 250), new Rectangle(20, 50, 80, 28), new Size(300, 460), screen, true);
+        var under = TransientPanel.Place(composer, new Rectangle(100, 100, 80, 28), new Size(680, 500), screen, false);
+        var above = TransientPanel.Place(composer, new Rectangle(100, 700, 80, 28), new Size(680, 500), new Rectangle(0, 0, 1920, 800), false);
+        Check(recents == new Point(92, 200) && flipped == new Point(698, 40) && under == new Point(100, 132) && above == new Point(100, 196) && !TransientPanel.ShouldClose(true, true) && TransientPanel.ShouldClose(true, false) && TransientPanel.ShouldClose(false, true), "Recents sits beside the composer, and a click on the composer closes it");
         Check(DictationText.Base("Hello") == "Hello " && DictationText.Base("Hello ") == "Hello " && DictationText.Base("") == "" && DictationText.Commit("Hello", "there") == "Hello there" && DictationText.Apply("Note ", "Hello", "wor") == "Note Hello wor", "dictation keeps the note and shows the phrase being recognized");
         var clipWindow = new JsonObject { ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 30, ["pauses"] = new JsonArray() };
         var pageSteps = ClickHistory.RecordingEvents(new[]

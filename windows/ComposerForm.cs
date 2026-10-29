@@ -204,6 +204,7 @@ internal sealed class ComposerForm : Form
     bool collectingNetwork;
     int consoleGeneration;
     ContextDialog? contextReview;
+    Form? recentsPopup;
     string dictationBase = "";
     string dictationCommitted = "";
     DictationSession? speech;
@@ -370,6 +371,7 @@ internal sealed class ComposerForm : Form
         if (!CloseAllowed()) { e.Cancel = true; return; }
         if (skillPopup is { IsDisposed: false }) skillPopup.Close();
         if (contextReview is { IsDisposed: false }) contextReview.Close();
+        if (recentsPopup is { IsDisposed: false }) recentsPopup.Close();
         dictating = false;
         speech?.Dispose();
         speech = null;
@@ -545,6 +547,7 @@ internal sealed class ComposerForm : Form
         bool locked = sending || submitted;
         if (locked && skillPopup is { IsDisposed: false }) skillPopup.Close();
         if (locked && contextReview is { IsDisposed: false }) contextReview.Close();
+        if (locked && recentsPopup is { IsDisposed: false }) recentsPopup.Close();
         bool attachments = !CanEditAttachments;
         note.ReadOnly = locked || dictating;
         destinationBox.Visible = destinations.Count >= 2;
@@ -846,13 +849,7 @@ internal sealed class ComposerForm : Form
             if (contextReview == dialog) contextReview = null;
             SaveInclude();
         };
-        var origin = contextButton.PointToScreen(new Point(0, contextButton.Height + 4));
-        dialog.Location = origin;
-        dialog.Show(this);
-        var area = Screen.FromControl(dialog).WorkingArea;
-        int x = Math.Max(area.Left, Math.Min(dialog.Left, area.Right - dialog.Width));
-        int y = dialog.Bottom > area.Bottom ? contextButton.PointToScreen(Point.Empty).Y - dialog.Height - 4 : dialog.Top;
-        dialog.Location = new Point(x, Math.Max(area.Top, y));
+        ShowTransient(dialog, contextButton, false);
     }
 
     void SaveInclude()
@@ -867,29 +864,38 @@ internal sealed class ComposerForm : Form
 
     void ShowRecents()
     {
+        if (recentsPopup is { IsDisposed: false }) { recentsPopup.Close(); return; }
         if (!CanEditAttachments) return;
         try { Persist(); } catch (Exception error) { status.Text = error.Message; return; }
         var recent = ComposerFiles.Recents(output, ComposerFiles.ComposerRecentLimit);
-        using var headingFont = new Font(Font, FontStyle.Bold);
-        using var dialog = new Form
+        var headingFont = new Font(Font, FontStyle.Bold);
+        var dialog = new TransientDialog
         {
             Text = "Recents",
             ClientSize = new Size(300, 460),
-            StartPosition = FormStartPosition.CenterParent,
+            StartPosition = FormStartPosition.Manual,
+            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            ShowInTaskbar = false,
             MinimizeBox = false,
             MaximizeBox = false,
             BackColor = BackColor,
             ForeColor = ForeColor,
             Font = Font,
         };
+        recentsPopup = dialog;
+        var rowTips = new ToolTip { ShowAlways = true };
+        dialog.FormClosed += (_, _) => { if (recentsPopup == dialog) recentsPopup = null; };
+        dialog.Disposed += (_, _) =>
+        {
+            headingFont.Dispose();
+            rowTips.Dispose();
+        };
         dialog.Controls.Add(new Label { Text = "Recents", Font = headingFont, AutoSize = true, Location = new Point(12, 16), ForeColor = ForeColor });
         dialog.Controls.Add(new Label { Text = "Captures and edits are saved as you go", AutoSize = true, Location = new Point(12, 40), ForeColor = Color.FromArgb(170, 170, 176) });
         var scroll = new Panel { Location = new Point(12, 68), Size = new Size(276, 380), AutoScroll = true };
-        string? chosen = null;
         if (recent.Count == 0)
             scroll.Controls.Add(new Label { Text = "No captures yet. Press Ctrl+Alt+Shift+A to capture.", AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Color.FromArgb(170, 170, 176) });
         int top = 0;
-        using var rowTips = new ToolTip { ShowAlways = true };
         foreach (var item in recent)
         {
             bool open = ComposerFiles.SameCapture(item.Path, manifest);
@@ -897,12 +903,13 @@ internal sealed class ComposerForm : Form
             var row = RecentRow(item, detail, open, headingFont);
             row.Location = new Point(0, top);
             row.Width = 260;
+            string path = item.Path;
             string tip = open ? "This capture is open" : "Reopen this capture in the composer";
             void Choose(object? sender, EventArgs args)
             {
-                if (open) return;
-                chosen = item.Path;
-                dialog.DialogResult = DialogResult.OK;
+                if (open || dialog.IsDisposed) return;
+                dialog.Close();
+                LoadSaved(path);
             }
             void Watch(Control control)
             {
@@ -924,8 +931,34 @@ internal sealed class ComposerForm : Form
             top += row.Height + 2;
         }
         dialog.Controls.Add(scroll);
-        if (dialog.ShowDialog(this) != DialogResult.OK || chosen == null) return;
-        LoadSaved(chosen);
+        ShowTransient(dialog, recentsButton, true);
+    }
+
+    void ShowTransient(Form popup, Control anchor, bool beside)
+    {
+        bool armed = false;
+        popup.Shown += (_, _) => armed = true;
+        popup.Deactivate += (_, _) =>
+        {
+            if (!armed || popup.IsDisposed || !popup.IsHandleCreated) return;
+            try
+            {
+                popup.BeginInvoke(() =>
+                {
+                    if (popup.IsDisposed || popup.ContainsFocus || anchor.IsDisposed || IsDisposed) return;
+                    bool onAnchor = anchor.RectangleToScreen(anchor.ClientRectangle).Contains(Cursor.Position);
+                    bool composerActive = ActiveForm == this || ContainsFocus;
+                    if (!TransientPanel.ShouldClose(onAnchor, composerActive)) return;
+                    popup.Close();
+                });
+            }
+            catch (InvalidOperationException) { /* The panel is already closing. */ }
+        };
+        var area = Screen.FromControl(this).WorkingArea;
+        popup.Location = TransientPanel.Place(Bounds, anchor.RectangleToScreen(anchor.ClientRectangle), popup.Size, area, beside);
+        popup.Show(this);
+        if (popup.IsDisposed) return;
+        popup.Location = TransientPanel.Place(Bounds, anchor.RectangleToScreen(anchor.ClientRectangle), popup.Size, Screen.FromControl(this).WorkingArea, beside);
     }
 
     Panel RecentRow(RecentCapture item, string detail, bool open, Font headingFont)
@@ -942,7 +975,9 @@ internal sealed class ComposerForm : Form
                 int edge = Math.Max(source.Width, source.Height);
                 int width = edge <= 160 ? source.Width : Math.Max(1, source.Width * 160 / edge);
                 int height = edge <= 160 ? source.Height : Math.Max(1, source.Height * 160 / edge);
-                preview.Image = source.GetThumbnailImage(width, height, () => false, IntPtr.Zero);
+                var thumbImage = source.GetThumbnailImage(width, height, () => false, IntPtr.Zero);
+                preview.Image = thumbImage;
+                preview.Disposed += (_, _) => thumbImage.Dispose();
             }
             catch { preview.Image = null; }
         }
@@ -965,6 +1000,9 @@ internal sealed class ComposerForm : Form
     internal void LoadSaved(string path)
     {
         if (!CanEditAttachments || ComposerFiles.SameCapture(path, manifest)) return;
+        if (contextReview is { IsDisposed: false }) contextReview.Close();
+        mentions.Dismiss();
+        mentionPopup.Hide();
         consoleGeneration++;
         collectingConsole = false;
         collectingNetwork = false;
@@ -994,7 +1032,7 @@ internal sealed class ComposerForm : Form
     {
         if (!skillsReady || sending || submitted) return;
         if (skillPopup is { IsDisposed: false }) { skillPopup.Close(); return; }
-        var popup = new Form
+        var popup = new TransientDialog
         {
             Text = "Skills",
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
@@ -1006,16 +1044,9 @@ internal sealed class ComposerForm : Form
             BackColor = BackColor,
             ForeColor = ForeColor,
             Font = Font,
-            KeyPreview = true,
         };
         skillPopup = popup;
         popup.FormClosed += (_, _) => { if (skillPopup == popup) skillPopup = null; };
-        popup.KeyDown += (_, key) =>
-        {
-            if (key.KeyCode != Keys.Escape) return;
-            key.Handled = true;
-            popup.Close();
-        };
         var search = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Find a skill…", AccessibleName = "Find a skill" };
         var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
         var skillTips = new ToolTip { ShowAlways = true };
@@ -1066,13 +1097,7 @@ internal sealed class ComposerForm : Form
         popup.Controls.Add(search);
         Fill();
         popup.Shown += (_, _) => search.Focus();
-        var origin = skillsButton.PointToScreen(new Point(0, skillsButton.Height + 4));
-        popup.Location = origin;
-        popup.Show(this);
-        var area = Screen.FromControl(popup).WorkingArea;
-        int x = Math.Max(area.Left, Math.Min(popup.Left, area.Right - popup.Width));
-        int y = popup.Bottom > area.Bottom ? skillsButton.PointToScreen(Point.Empty).Y - popup.Height - 4 : popup.Top;
-        popup.Location = new Point(x, Math.Max(area.Top, y));
+        ShowTransient(popup, skillsButton, false);
     }
 
     void InsertSkillMention(string id)
@@ -1564,6 +1589,22 @@ internal sealed class ComposerForm : Form
         mentions.Dismiss();
         mentionPopup.Hide();
         note.Focus();
+    }
+}
+
+// Recents and the skill list. Escape closes the panel and leaves the composer open.
+sealed class TransientDialog : Form
+{
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Escape) { Close(); return true; }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 }
 
