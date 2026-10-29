@@ -1120,9 +1120,13 @@ struct ComposerEndpoint: Decodable {
             guard let id = result["sessionID"] as? String, let title = result["title"] as? String, let draftText = result["draftText"] as? String else { throw captureError("OpenCode returned an invalid draft handoff.") }
             status.stringValue = "Opening the new session in OpenCode…"
             window?.orderOut(nil)
-            try await openSessionDraft(sessionID: id, title: title, draftText: draftText, shot: screenshotBundle, output: output)
+            do {
+                try await openSessionDraft(sessionID: id, title: title, draftText: draftText, shot: screenshotBundle, output: output)
+                saveStatus(output: output, phase: "composer_draft_inserted", details: ["sessionID": id])
+            } catch is DraftInsertionUnconfirmed {
+                saveStatus(output: output, phase: "composer_draft_unconfirmed", details: ["sessionID": id])
+            }
             submitted = true
-            saveStatus(output: output, phase: "composer_draft_inserted", details: ["sessionID": id])
         case "copy-text":
             guard let text = result["text"] as? String else { throw captureError("The clipboard destination returned no text.") }
             NSPasteboard.general.clearContents()
@@ -1177,4 +1181,11 @@ struct ComposerEndpoint: Decodable {
         done?()
         if !submitted || returnAfterHandoff { returnTo?.activate(options: [.activateAllWindows]) }
     }
+}
+
+// The draft was pasted into OpenCode's prompt but could not be read back. The paste
+// already happened, so the composer must not come back or offer a retry that would
+// paste it twice.
+struct DraftInsertionUnconfirmed: LocalizedError {
+    var errorDescription: String? { "The draft was pasted into OpenCode but could not be confirmed. Check the prompt before sending it." }
 }

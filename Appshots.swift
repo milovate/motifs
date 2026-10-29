@@ -699,7 +699,7 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
             return
         }
     } while Date() < confirmDeadline
-    throw captureError("Could not confirm insertion into the Prompt input. Check the draft before retrying.")
+    throw DraftInsertionUnconfirmed()
 }
 
 @MainActor func bringToFront(_ app: NSRunningApplication) async throws {
