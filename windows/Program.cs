@@ -30,6 +30,11 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (BrowserHost.IsNativeHostLaunch(args))
+        {
+            try { return BrowserHost.RunNativeHost(); }
+            catch { return 0; }
+        }
         bool capture = args.Contains("--capture") || args.Contains("--test-annotations") || args.Contains("--test-composer") || args.Contains("--test-recording");
         try
         {
@@ -78,7 +83,7 @@ internal static class Program
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
     }
 
-    static void PrivateDirectory(string output)
+    internal static void PrivateDirectory(string output)
     {
         Directory.CreateDirectory(output);
         if ((File.GetAttributes(output) & FileAttributes.ReparsePoint) != 0) throw new Exception("Capture directory cannot be a link.");
@@ -310,6 +315,10 @@ internal sealed class Tray : Forms.Form
         addLog.ToolTipText = "Capture Studio reads the last 64 KB of this file when you capture.";
         addLog.Click += (_, _) => AddLog();
         menu.Items.Add(addLog);
+        var browserItem = new Forms.ToolStripMenuItem("Connect browser extension…");
+        browserItem.ToolTipText = "Registers the native messaging host for Chrome, Brave, Edge, Arc and Chromium. The extension is loaded separately.";
+        browserItem.Click += (_, _) => ConnectBrowser();
+        menu.Items.Add(browserItem);
         menu.Opening += (_, _) =>
         {
             var menuSettings = ComposerFiles.Settings(output);
@@ -548,6 +557,12 @@ internal sealed class Tray : Forms.Form
             }
             Program.Save(output, "status.json", new { phase = "capturing" });
             var shot = await CaptureSelector.Take(choice, output);
+            JsonObject? page = null;
+            if (choice.Kind == CaptureKind.Window)
+            {
+                try { page = BrowserHost.ContextFrom(BrowserHost.RequestSnapshot(BrowserHost.WindowImage(choice.Window), shot.title)); }
+                catch { page = null; }
+            }
             JsonObject? clip = null;
             if (replayFrames.Count > 0)
             {
@@ -555,7 +570,7 @@ internal sealed class Tray : Forms.Form
                 catch { clip = null; }
             }
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip });
+            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page);
         }
         catch (Exception e) { Error(e); }
         finally { replay.Paused = false; busy = false; }
@@ -583,9 +598,24 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { ClickHistory.Shared.TakePublished(); Error(e); }
         finally { busy = false; }
     }
-    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null)
+    void ConnectBrowser()
     {
-        try { using var composer = new ComposerForm(output, shots, clips, events); composer.ShowDialog(); }
+        try
+        {
+            string executable = Environment.ProcessPath ?? throw new Exception("Could not locate the Capture Studio executable.");
+            var installed = BrowserHost.Install(executable);
+            string folder = BrowserHost.ExtensionFolder(AppContext.BaseDirectory);
+            string text = (installed.Count == 0 ? "Install Chrome, Brave, Edge, Arc or Chromium, then try again." : "Registered for " + string.Join(", ", installed) + ".")
+                + "\n\nTo finish: open chrome://extensions, turn on Developer mode, choose Load unpacked, and select the browser-extension folder. The extension keeps console messages and failed requests in memory per tab and only hands them over when you capture that browser window.";
+            Forms.MessageBox.Show(text, installed.Count == 0 ? "No supported browser found" : "Browser connection installed");
+            if (Directory.Exists(folder)) Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + Path.Combine(folder, "manifest.json") + "\"") { UseShellExecute = true });
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null)
+    {
+        try { using var composer = new ComposerForm(output, shots, clips, events, browser); composer.ShowDialog(); }
         catch (Exception e) { Error(e); }
     }
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }

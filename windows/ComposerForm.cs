@@ -102,13 +102,18 @@ internal sealed class ComposerForm : Form
     string dictationCommitted = "";
     DictationSession? speech;
 
-    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null)
+    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null, JsonObject? browser = null)
     {
         this.output = output;
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
         context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
         CaptureContext.Apply(context, settings, events);
+        if (browser != null)
+        {
+            foreach (string key in new[] { "browser", "console", "network" })
+                if (browser[key] != null) context[key] = browser[key]!.DeepClone();
+        }
         foreach (var shot in initial) shots.Add(ComposerFiles.Media(shot));
         if (clips != null) videos.AddRange(clips.Take(ReplayMath.MaxClips));
         Text = "Capture Studio";

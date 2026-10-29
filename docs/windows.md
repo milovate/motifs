@@ -112,6 +112,15 @@ It does not save audio and it does not send audio to a cloud recognizer. Stop
 leaves the transcript in the note for you to edit. Send stays disabled until
 dictation stops. If no speech language is installed, the button says so.
 
+**Connect browser extension…** writes one native messaging host manifest and
+registers it for each installed copy of Chrome, Chrome Canary, Brave, Edge,
+Chromium, or Arc, then reveals the `browser-extension` folder. Load that folder as an unpacked
+extension, then reload the tabs you want to debug. A capture of that browser
+window asks for the visible tab's console messages and failed requests. A
+screen recording asks the extension to record page steps and collects them
+when the recording stops. The helper and the host accept only each other:
+the peer must be this same `Appshots.exe`. Nothing is written to disk on the way.
+
 **Local secret-check model…** saves an `http://127.0.0.1`, `localhost`, or `::1`
 address and an optional model name. Hosted addresses are ignored. Save and test
 asks that address to score one sample value. Known secret formats are still
@@ -187,6 +196,11 @@ error rather than replacing the saved capture.
   Key codes and typed characters are not recorded. Secure fields keep their role
   and lose their label, and a selection inside one is dropped. Custom logs are
   read only for files you chose, and only the last 64 KB when you capture.
+- The browser extension is registered only from **Connect browser extension…**.
+  Console messages, failed requests, and page steps stay in the browser until a
+  capture or the end of a recording asks for them. The named pipe allows the
+  current user and SYSTEM, and the helper refuses any peer that is not
+  `Appshots.exe`.
 - The composer button is on by default and only appears over the capture chooser.
   Hiding it is saved. Dictate uses the installed Windows speech language, keeps
   no audio file, and has no cloud fallback. The secret-check model must be an
@@ -260,6 +274,11 @@ from the macOS development environment. Before calling Windows support verified:
 - Click **Dictate**, speak, then **Stop**. Confirm the words are in the note and
   nothing was sent. With no speech language installed, confirm the button explains
   that instead of sending audio anywhere.
+- Choose **Connect browser extension…**, load the unpacked extension, reload a
+  tab, and capture that browser window. Confirm Context shows the page and its
+  console errors, and that cancelling the chooser adds nothing. Record a short
+  clip while clicking a button on the page and confirm the step names the button
+  and not a keystroke.
 - Choose **Local secret-check model…**, enter `http://127.0.0.1:8000`, and save.
   Confirm a hosted address is refused. Turn it off afterward if you were only testing.
 - Turn on **Record recent clicks**, click another app, and capture. Confirm

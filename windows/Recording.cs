@@ -748,6 +748,7 @@ internal sealed class RecordingSession
     bool finishing;
     bool grabbing;
     bool watching;
+    Task? browserSteps;
     bool? deferredSave;
     Exception? deferredError;
 
@@ -809,6 +810,7 @@ internal sealed class RecordingSession
             controls.Show();
             if (stopping) return done.Task;
             ClickHistory.Shared.BeginRecording();
+            browserSteps = Task.Run(() => { try { BrowserHost.CollectSteps(true); } catch { /* Recording continues when the extension is not connected. */ } });
             watching = true;
             timer.Start();
             Program.Save(output, "status.json", new { phase = "recording" });
@@ -923,7 +925,11 @@ internal sealed class RecordingSession
         if (!watching) return;
         watching = false;
         var native = ClickHistory.Shared.EndRecording(ComposerFiles.RecordClicks(ComposerFiles.Settings(output)));
-        if (clip != null) ClickHistory.Shared.Publish(ClickHistory.ForClip(native, clip));
+        try { browserSteps?.Wait(4000); } catch { /* The start request can still be in flight. */ }
+        List<JsonObject> page;
+        try { page = BrowserHost.CollectSteps(false); }
+        catch { page = new List<JsonObject>(); }
+        if (clip != null) ClickHistory.Shared.Publish(page.Count == 0 ? ClickHistory.ForClip(native, clip) : ClickHistory.RecordingEvents(native, page, clip));
     }
 
     void Stop(bool save, Exception? error)

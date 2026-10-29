@@ -842,6 +842,18 @@ internal static class ComposerTests
         var bubbleBounds = ComposerBubble.BoundsOn(new Rectangle(0, 0, 1920, 1080));
         Check(bubbleBounds.Size == new Size(ComposerBubble.Diameter, ComposerBubble.Diameter) && bubbleBounds.Left + bubbleBounds.Width / 2 == 960 && bubbleBounds.Bottom == 1080 - ComposerBubble.Gap, "the composer button is centered above the capture hint");
         Check(DictationText.Base("Hello") == "Hello " && DictationText.Base("Hello ") == "Hello " && DictationText.Base("") == "" && DictationText.Commit("Hello", "there") == "Hello there" && DictationText.Apply("Note ", "Hello", "wor") == "Note Hello wor", "dictation keeps the note and shows the phrase being recognized");
+        var clipWindow = new JsonObject { ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 30, ["pauses"] = new JsonArray() };
+        var pageSteps = ClickHistory.RecordingEvents(new[]
+        {
+            new JsonObject { ["time"] = "2026-10-29T10:00:05Z", ["kind"] = "click", ["app"] = "Google Chrome" },
+            new JsonObject { ["time"] = "2026-10-29T10:00:06Z", ["kind"] = "click", ["app"] = "Notes" },
+            new JsonObject { ["time"] = "2026-10-29T10:00:07Z", ["kind"] = "app-switch", ["app"] = "Google Chrome" },
+        }, new[]
+        {
+            new JsonObject { ["time"] = "2026-10-29T10:00:05.100Z", ["kind"] = "click", ["app"] = "Google Chrome", ["role"] = "button", ["name"] = "Run" },
+        }, clipWindow);
+        Check(pageSteps.Count == 3 && pageSteps[0]["source"]?.GetValue<string>() == "browser" && pageSteps[1]["app"]?.GetValue<string>() == "Notes" && pageSteps[2]["kind"]?.GetValue<string>() == "app-switch", "page steps replace the browser's native clicks and keep app switches");
+        BrowserHost.SelfCheck();
         var stepVideo = new JsonObject
         {
             ["startedAt"] = "2026-10-29T00:00:00.000Z",

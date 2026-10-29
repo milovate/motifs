@@ -305,7 +305,7 @@ internal sealed class ClickHistory
 
     internal static bool IsSecure(string? role, string? subrole) => role == "AXSecureTextField" || subrole == "AXSecureTextField";
 
-    // Keeps steps that fall inside the clip. Page steps will replace these for browser apps once that host exists.
+    // Keeps steps that fall inside the clip. A source already set, such as a page step, stays.
     internal static List<JsonObject> ForClip(IReadOnlyList<JsonObject> native, JsonObject video)
     {
         var timed = new List<(DateTimeOffset When, JsonObject Entry)>();
@@ -314,10 +314,34 @@ internal sealed class ClickHistory
             if (Text(entry, "time") is not string text || !DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var when)) continue;
             if (ContextReview.Offset(when, video) == null) continue;
             var copy = ComposerFiles.Clone(entry);
-            copy["source"] = "app";
+            if (copy["source"] == null) copy["source"] = "app";
             timed.Add((when, copy));
         }
         return timed.OrderBy(item => item.When).TakeLast(Limit).Select(item => item.Entry).ToList();
+    }
+
+    // Page steps replace native events from the same browser. App switches stay.
+    internal static List<JsonObject> RecordingEvents(IReadOnlyList<JsonObject> native, IReadOnlyList<JsonObject> browser, JsonObject video)
+    {
+        var browsers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in browser)
+            if (Text(entry, "app") is string app && app.Length > 0) browsers.Add(app);
+        var combined = new List<JsonObject>();
+        foreach (var entry in native)
+        {
+            string? app = Text(entry, "app");
+            if (Text(entry, "kind") != "app-switch" && app != null && browsers.Contains(app)) continue;
+            var copy = ComposerFiles.Clone(entry);
+            if (copy["source"] == null) copy["source"] = "app";
+            combined.Add(copy);
+        }
+        foreach (var entry in browser)
+        {
+            var copy = ComposerFiles.Clone(entry);
+            copy["source"] = "browser";
+            combined.Add(copy);
+        }
+        return ForClip(combined, video);
     }
 
     void FlushScroll(bool describe)
