@@ -4,11 +4,13 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using Microsoft.Win32;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -173,6 +175,99 @@ internal static class ComposerFiles
 
     internal static bool RecordClicks(JsonObject settings) => settings["recordClicks"]?.GetValue<bool>() == true;
 
+    internal static bool ShowBubble(JsonObject settings) => settings["showBubble"] is not JsonValue value || !value.TryGetValue(out bool shown) || shown;
+
+    // A hosted model would receive the values being checked, so only this machine is accepted.
+    internal static string? LocalJudgeAddress(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        string trimmed = raw.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var url)) return null;
+        if (!string.Equals(url.Scheme, "http", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(url.UserInfo)) return null;
+        string host = url.IdnHost;
+        if (host.Length > 1 && host[0] == '[' && host[^1] == ']') host = host[1..^1];
+        if (host != "127.0.0.1" && !host.Equals("localhost", StringComparison.OrdinalIgnoreCase) && host != "::1") return null;
+        return trimmed;
+    }
+
+    internal static string? JudgeEndpoint(string? address)
+    {
+        string? local = LocalJudgeAddress(address);
+        if (local == null) return null;
+        string trimmed = local.TrimEnd('/');
+        return trimmed.EndsWith("/v1/systemone", StringComparison.Ordinal) ? trimmed : trimmed + "/v1/systemone";
+    }
+
+    internal static string RedactionJudge(JsonObject settings) =>
+        settings["redaction"] is JsonObject redaction ? LocalJudgeAddress(Text(redaction, "judge")) ?? "" : "";
+
+    internal static string RedactionModel(JsonObject settings)
+    {
+        if (settings["redaction"] is not JsonObject redaction) return "";
+        string model = (Text(redaction, "model") ?? "").Trim();
+        return model.Length <= 80 ? model : model[..80];
+    }
+
+    internal static JsonObject RedactionSettings(JsonObject settings) => new()
+    {
+        ["judge"] = RedactionJudge(settings),
+        ["model"] = RedactionModel(settings),
+    };
+
+    internal static JsonObject SecretProbe(string model)
+    {
+        var body = new JsonObject
+        {
+            ["state"] = new JsonObject { ["text"] = "export GITHUB_TOKEN=⟦" + "ghp_" + "4f9Kq2Lm8Zx1Rt6Vb3Nc7Wd0Ye5Hs2Jp9Ua⟧" },
+            ["questions"] = new JsonObject
+            {
+                ["secret"] = new JsonObject
+                {
+                    ["type"] = "noul",
+                    ["instructions"] = "Is the value inside ⟦ ⟧ a secret, such as a password, API key, access token, session ID, signing key or private credential, rather than an ordinary identifier, hash, file name or word?",
+                },
+            },
+        };
+        if (model.Length > 0) body["model"] = model;
+        return body;
+    }
+
+    internal static double? SecretScore(JsonNode? root)
+    {
+        JsonNode? answer = root?["answers"]?["secret"];
+        if (UnitInterval(answer) is double direct) return direct;
+        if (answer is not JsonObject obj) return null;
+        foreach (string key in new[] { "noul", "probability", "yes" })
+            if (UnitInterval(obj[key]) is double score) return score;
+        return null;
+    }
+
+    static double? UnitInterval(JsonNode? node)
+    {
+        if (node is not JsonValue value) return null;
+        if (value.TryGetValue(out double real)) return real >= 0 && real <= 1 ? real : null;
+        if (value.TryGetValue(out int number)) return number >= 0 && number <= 1 ? number : null;
+        return null;
+    }
+
+    static string? Text(JsonObject obj, string key) => obj[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    internal static async Task<double?> ProbeSecretModel(string address, string model)
+    {
+        string? endpoint = JudgeEndpoint(address);
+        if (endpoint == null) return null;
+        try
+        {
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+            using var body = new StringContent(SecretProbe(model).ToJsonString(), Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync(endpoint, body);
+            if ((int)response.StatusCode != 200) return null;
+            return SecretScore(JsonNode.Parse(await response.Content.ReadAsStringAsync()));
+        }
+        catch { return null; }
+    }
+
     // The first four saved paths are kept, including a relative path that load then drops.
     internal static JsonArray NormalizeLogs(JsonArray? logs)
     {
@@ -209,6 +304,8 @@ internal static class ComposerFiles
             var disk = Settings(output);
             settings["instantReplay"] = InstantReplay(disk);
             settings["recordClicks"] = RecordClicks(disk);
+            settings["showBubble"] = ShowBubble(disk);
+            settings["redaction"] = RedactionSettings(disk);
             settings["customLogFiles"] = NormalizeLogs(disk["customLogFiles"] as JsonArray);
         }
         else settings["customLogFiles"] = NormalizeLogs(settings["customLogFiles"] as JsonArray);
@@ -469,6 +566,29 @@ internal static class ComposerFiles
     }
 }
 
+// The note is frozen when Dictate starts. A partial guess is shown after the committed
+// phrases and replaced when the recognizer finishes that phrase.
+internal static class DictationText
+{
+    internal static string Base(string note) => note.Length == 0 || note.EndsWith(' ') ? note : note + " ";
+
+    internal static string Commit(string committed, string phrase)
+    {
+        phrase = phrase.Trim();
+        if (phrase.Length == 0) return committed;
+        if (committed.Length == 0) return phrase;
+        return committed.EndsWith(' ') ? committed + phrase : committed + " " + phrase;
+    }
+
+    internal static string Apply(string dictationBase, string committed, string hypothesis)
+    {
+        if (hypothesis.Length == 0) return dictationBase + committed;
+        if (committed.Length == 0) return dictationBase + hypothesis;
+        if (committed.EndsWith(' ') || hypothesis.StartsWith(' ')) return dictationBase + committed + hypothesis;
+        return dictationBase + committed + " " + hypothesis;
+    }
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct PowerStatus
 {
@@ -698,6 +818,30 @@ internal static class ComposerTests
         var remaining = recordingSteps.Snapshot();
         Check(recordingSteps.IsRunning && remaining.Count == 1 && remaining[0]["kind"]?.GetValue<string>() == "click", "recording-only steps leave the click history when the recording ends");
         recordingSteps.Stop();
+        Check(ComposerFiles.ShowBubble(ComposerFiles.DefaultSettings()), "the composer button is shown during captures by default");
+        var bubbleSettings = ComposerFiles.Settings(output);
+        bubbleSettings["showBubble"] = false;
+        ComposerFiles.SaveSettings(output, bubbleSettings, false);
+        var hiddenBubble = ComposerFiles.Settings(output);
+        hiddenBubble["defaultDestination"] = "opencode";
+        ComposerFiles.SaveSettings(output, hiddenBubble);
+        Check(!ComposerFiles.ShowBubble(ComposerFiles.Settings(output)), "hiding the composer button persists");
+        Check(ComposerFiles.LocalJudgeAddress(" http://localhost:8888 ") == "http://localhost:8888" && ComposerFiles.LocalJudgeAddress("https://api.typesafe.ai") == null && ComposerFiles.LocalJudgeAddress("http://10.0.0.2:8000") == null && ComposerFiles.LocalJudgeAddress("http://a:b@127.0.0.1:8000") == null, "only addresses on this Mac can check secrets");
+        Check(ComposerFiles.JudgeEndpoint("http://127.0.0.1:8000/") == "http://127.0.0.1:8000/v1/systemone" && ComposerFiles.JudgeEndpoint("http://127.0.0.1:8000/v1/systemone") == "http://127.0.0.1:8000/v1/systemone", "the probe uses the local decision endpoint");
+        Check(ComposerFiles.RedactionJudge(ComposerFiles.DefaultSettings()) == "" && ComposerFiles.RedactionModel(ComposerFiles.DefaultSettings()) == "", "no secret-check model is configured by default");
+        var judgeSettings = ComposerFiles.DefaultSettings();
+        judgeSettings["redaction"] = new JsonObject { ["judge"] = "http://127.0.0.1:8000", ["model"] = "laya" };
+        ComposerFiles.SaveSettings(output, judgeSettings, false);
+        Check(ComposerFiles.RedactionJudge(ComposerFiles.Settings(output)) == "http://127.0.0.1:8000" && ComposerFiles.RedactionModel(ComposerFiles.Settings(output)) == "laya", "the local secret-check model persists");
+        File.WriteAllText(Path.Combine(output, "settings.json"), "{\"redaction\":{\"judge\":\"https://api.cloudflare.com/clef\",\"model\":\"nope\"}}");
+        Check(ComposerFiles.RedactionJudge(ComposerFiles.Settings(output)) == "" && ComposerFiles.RedactionModel(ComposerFiles.Settings(output)) == "nope", "a hosted address in settings.json is ignored");
+        ComposerFiles.SaveSettings(output, ComposerFiles.DefaultSettings(), false);
+        var probe = ComposerFiles.SecretProbe("laya");
+        Check(probe["model"]?.GetValue<string>() == "laya" && (probe["state"]?["text"]?.GetValue<string>() ?? "").Contains("⟦", StringComparison.Ordinal) && ComposerFiles.SecretProbe("")["model"] == null, "the probe asks about one marked sample and names the model");
+        Check(ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":0.82}}")) is double scored && Math.Abs(scored - 0.82) < 0.001 && ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":{\"noul\":0.2}}}")) is double nested && Math.Abs(nested - 0.2) < 0.001 && ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":1.5}}")) == null, "a secret score is a probability from 0 to 1");
+        var bubbleBounds = ComposerBubble.BoundsOn(new Rectangle(0, 0, 1920, 1080));
+        Check(bubbleBounds.Size == new Size(ComposerBubble.Diameter, ComposerBubble.Diameter) && bubbleBounds.Left + bubbleBounds.Width / 2 == 960 && bubbleBounds.Bottom == 1080 - ComposerBubble.Gap, "the composer button is centered above the capture hint");
+        Check(DictationText.Base("Hello") == "Hello " && DictationText.Base("Hello ") == "Hello " && DictationText.Base("") == "" && DictationText.Commit("Hello", "there") == "Hello there" && DictationText.Apply("Note ", "Hello", "wor") == "Note Hello wor", "dictation keeps the note and shows the phrase being recognized");
         var stepVideo = new JsonObject
         {
             ["startedAt"] = "2026-10-29T00:00:00.000Z",

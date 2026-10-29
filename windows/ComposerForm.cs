@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Speech.Recognition;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,6 +74,7 @@ internal sealed class ComposerForm : Form
     readonly Button contextButton = new() { Text = "Context", AutoSize = true };
     readonly Button recordButton = MakeButton("Record");
     readonly Button prefixButton = MakeButton("Prefix");
+    readonly Button dictateButton = MakeButton("Dictate");
     readonly Button send = new() { Text = "Review in OpenCode", AutoSize = true, Enabled = false };
     readonly Label status = new() { AutoSize = true, MaximumSize = new Size(600, 0) };
     readonly System.Windows.Forms.Timer autosave = new() { Interval = 600 };
@@ -94,7 +96,11 @@ internal sealed class ComposerForm : Form
     readonly MentionPopup mentionPopup = new();
     bool updatingMentions;
     internal static ComposerForm? Open { get; private set; }
-    internal bool CanRecord => !sending && !submitted && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
+    internal bool CanRecord => !sending && !submitted && !dictating && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
+    bool dictating;
+    string dictationBase = "";
+    string dictationCommitted = "";
+    DictationSession? speech;
 
     internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null)
     {
@@ -132,14 +138,17 @@ internal sealed class ComposerForm : Form
         skillsButton.AccessibleName = "Choose skills";
         skillsButton.Click += (_, _) => ChooseSkills();
         prefixButton.Click += (_, _) => ShowPrefixes(prefixButton);
+        dictateButton.AccessibleName = "Start dictation";
+        dictateButton.Click += (_, _) => ToggleDictation();
         var close = MakeButton("Close");
         close.Click += (_, _) => Close();
-        actions.Controls.AddRange(new Control[] { contextButton, add, recordButton, recents, skillsButton, prefixButton, close });
+        actions.Controls.AddRange(new Control[] { contextButton, add, recordButton, recents, skillsButton, prefixButton, dictateButton, close });
         top.Controls.Add(thumbs, 0, 0);
         top.Controls.Add(actions, 1, 0);
         note.Dock = DockStyle.Fill;
         note.BackColor = Color.FromArgb(24, 24, 26);
         note.ForeColor = ForeColor;
+        note.AccessibleDescription = "Describe what felt wrong. Type here, or use Dictate. Nothing is sent until you click Send.";
         note.TextChanged += (_, _) => { autosave.Stop(); autosave.Start(); RefreshSend(); RefreshPrefix(); UpdateMentions(); };
         note.MouseUp += (_, _) => UpdateMentions();
         note.KeyUp += (_, _) => UpdateMentions();
@@ -205,6 +214,9 @@ internal sealed class ComposerForm : Form
     {
         if (RecordingSession.Active && Open == this) { e.Cancel = true; return; }
         if (sending && !submitted) { e.Cancel = true; return; }
+        dictating = false;
+        speech?.Dispose();
+        speech = null;
         mentions.Dismiss();
         mentionPopup.Hide();
         autosave.Stop();
@@ -329,7 +341,7 @@ internal sealed class ComposerForm : Form
     {
         var target = CurrentTarget;
         send.Text = target?.ActionLabel ?? "Continue";
-        send.Enabled = !sending && !submitted && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
+        send.Enabled = !sending && !submitted && !dictating && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
         recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/3";
         recordButton.Enabled = CanRecord;
         int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && ContextReview.Count(source, shots, context) > 0);
@@ -790,9 +802,93 @@ internal sealed class ComposerForm : Form
         Touch();
     }
 
+    void ToggleDictation()
+    {
+        if (dictating)
+        {
+            speech?.Stop();
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                Later(() => { if (dictating) FinishDictation(null); });
+            });
+            return;
+        }
+        if (sending || submitted) return;
+        dictationBase = DictationText.Base(note.Text);
+        dictationCommitted = "";
+        dictating = true;
+        note.ReadOnly = true;
+        dictateButton.Text = "Stop";
+        dictateButton.AccessibleName = "Stop dictation";
+        mentions.Dismiss();
+        mentionPopup.Hide();
+        RefreshSend();
+        status.Text = "Listening on this PC · Click Stop to review.";
+        try { Program.Save(output, "status.json", new { phase = "dictation", dictationStage = "listening" }); } catch { /* The button state is enough if status cannot be written. */ }
+        try
+        {
+            speech?.Dispose();
+            speech = new DictationSession();
+            speech.Hypothesis += text => Later(() => ShowHypothesis(text));
+            speech.Phrase += text => Later(() => CommitPhrase(text));
+            speech.Stopped += message => Later(() => FinishDictation(message));
+            speech.Start();
+        }
+        catch (Exception error)
+        {
+            FinishDictation(string.IsNullOrWhiteSpace(error.Message)
+                ? "On-device speech recognition is unavailable. Install a Windows speech language in Settings → Time & language → Speech. No audio was sent."
+                : error.Message);
+        }
+    }
+
+    void Later(Action action)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try { BeginInvoke(action); } catch (InvalidOperationException) { /* The composer closed before the recognizer reported. */ }
+    }
+
+    void ShowHypothesis(string text)
+    {
+        if (!dictating || IsDisposed) return;
+        note.Text = DictationText.Apply(dictationBase, dictationCommitted, text);
+        note.SelectionStart = note.Text.Length;
+    }
+
+    void CommitPhrase(string text)
+    {
+        if (!dictating || IsDisposed) return;
+        dictationCommitted = DictationText.Commit(dictationCommitted, text);
+        string next = DictationText.Apply(dictationBase, dictationCommitted, "");
+        if (next.Length > 16_000)
+        {
+            note.Text = next[..16_000];
+            FinishDictation("Keep the description under 16000 characters.");
+            return;
+        }
+        note.Text = next;
+        note.SelectionStart = note.Text.Length;
+    }
+
+    void FinishDictation(string? error)
+    {
+        if (!dictating || IsDisposed) return;
+        dictating = false;
+        note.ReadOnly = false;
+        dictateButton.Text = "Dictate";
+        dictateButton.AccessibleName = "Start dictation";
+        var current = speech;
+        speech = null;
+        current?.Dispose();
+        RefreshSend();
+        status.Text = error ?? "Transcript ready to review.";
+        try { Program.Save(output, "status.json", new { phase = "composing", dictationStage = error == null ? "stopped" : "failed" }); } catch { /* The transcript stays in the note. */ }
+    }
+
     void UpdateMentions()
     {
-        if (updatingMentions) return;
+        if (updatingMentions || dictating) return;
         if (sending || !skillsReady) { mentions.Dismiss(); mentionPopup.Hide(); return; }
         mentions.Update(note.Text, note.SelectionStart, note.SelectionLength, skills);
         if (!mentions.Open) mentionPopup.Hide();
@@ -866,5 +962,63 @@ internal sealed class MentionPopup : Form
         int x = Math.Min(Math.Max(area.Left + 8, screenCaret.X - 8), Math.Max(area.Left + 8, area.Right - Width - 8));
         Location = new Point(x, y);
         if (!Visible) base.Show(owner);
+    }
+}
+
+// Desktop speech on this PC. Audio is not saved and there is no cloud recognizer.
+internal sealed class DictationSession : IDisposable
+{
+    SpeechRecognitionEngine? engine;
+    bool completed;
+    internal event Action<string>? Hypothesis;
+    internal event Action<string>? Phrase;
+    internal event Action<string?>? Stopped;
+
+    internal void Start()
+    {
+        var installed = SpeechRecognitionEngine.InstalledRecognizers();
+        if (installed.Count == 0) throw new InvalidOperationException("On-device speech recognition is unavailable. Install a Windows speech language in Settings → Time & language → Speech. No audio was sent.");
+        var created = new SpeechRecognitionEngine(installed[0]);
+        try
+        {
+            created.SetInputToDefaultAudioDevice();
+            created.LoadGrammar(new DictationGrammar());
+            created.SpeechHypothesized += (_, args) => Hypothesis?.Invoke(args.Result?.Text ?? "");
+            created.SpeechRecognized += (_, args) => Phrase?.Invoke(args.Result?.Text ?? "");
+            created.RecognizeCompleted += (_, args) =>
+            {
+                if (completed) return;
+                completed = true;
+                Stopped?.Invoke(args.Error?.Message);
+            };
+            created.RecognizeAsync(RecognizeMode.Multiple);
+            engine = created;
+        }
+        catch
+        {
+            created.Dispose();
+            throw;
+        }
+    }
+
+    internal void Stop()
+    {
+        try { engine?.RecognizeAsyncStop(); }
+        catch (Exception error)
+        {
+            if (completed) return;
+            completed = true;
+            Stopped?.Invoke(error.Message);
+        }
+    }
+
+    public void Dispose()
+    {
+        completed = true;
+        var current = engine;
+        engine = null;
+        if (current == null) return;
+        try { current.RecognizeAsyncCancel(); } catch { /* Already stopped. */ }
+        current.Dispose();
     }
 }

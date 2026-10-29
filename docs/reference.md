@@ -368,7 +368,10 @@ seconds, 150 MB) and writes an MP4 only after a capture is confirmed. The sample
 visible pixels, including Capture Studio's own windows. Click a clip to review it:
 yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
 clip** writes a new MP4 beside the original and takes key frames from the selection.
-Dictation and the macOS visual treatment stay on macOS.
+**Dictate** uses a Windows speech language installed on this PC. It does not save
+audio and it does not call a cloud recognizer. **Show composer button** skips the
+chooser and opens an empty composer. **Local secret-check model…** accepts only
+`http://127.0.0.1`, `localhost`, or `::1`. The frosted macOS composer stays on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
 contract tests or a successful build does not verify native interaction.
 

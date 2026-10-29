@@ -102,7 +102,23 @@ the item off while nothing is recording, discards the memory buffer.
 64 KB of each regular file at that moment. The paths are saved in `settings.json`.
 What is sent includes the file name and the tail, not a live watch.
 
-The tray can also open an empty composer, start or stop a recording, keep instant replay, record recent clicks, choose log files, annotate or insert the latest capture,
+**Show composer button** is on by default. While the capture chooser is open, a
+small button sits above the hint. Clicking it closes the chooser and opens an
+empty composer. Its menu can hide it. The chooser closes before any screenshot
+is taken, so the button is not in the image.
+
+**Dictate** in the composer uses a Windows speech language installed on this PC.
+It does not save audio and it does not send audio to a cloud recognizer. Stop
+leaves the transcript in the note for you to edit. Send stays disabled until
+dictation stops. If no speech language is installed, the button says so.
+
+**Local secret-check model…** saves an `http://127.0.0.1`, `localhost`, or `::1`
+address and an optional model name. Hosted addresses are ignored. Save and test
+asks that address to score one sample value. Known secret formats are still
+redacted without a model, and values that only might be secrets are redacted
+when the model does not answer.
+
+The tray can also open an empty composer, start or stop a recording, keep instant replay, record recent clicks, show the composer button, choose a local secret-check model, choose log files, annotate or insert the latest capture,
 annotate a clipboard image, open the captures folder, or quit the watcher.
 `/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
@@ -171,6 +187,10 @@ error rather than replacing the saved capture.
   Key codes and typed characters are not recorded. Secure fields keep their role
   and lose their label, and a selection inside one is dropped. Custom logs are
   read only for files you chose, and only the last 64 KB when you capture.
+- The composer button is on by default and only appears over the capture chooser.
+  Hiding it is saved. Dictate uses the installed Windows speech language, keeps
+  no audio file, and has no cloud fallback. The secret-check model must be an
+  address on this PC; a hosted address in `settings.json` is ignored.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -233,6 +253,14 @@ from the macOS development environment. Before calling Windows support verified:
   Confirm the composer shows the screenshot and an instant-replay clip. Cancel
   the chooser and confirm the captures folder gains no replay MP4. Turn replay
   off and confirm the tray tooltip returns to the capture shortcut.
+- With **Show composer button** on, start a capture and click the round button.
+  Confirm the composer opens and the captures folder gains no new screenshot.
+  Hide the button from its menu and confirm the next chooser has none.
+- Click **Dictate**, speak, then **Stop**. Confirm the words are in the note and
+  nothing was sent. With no speech language installed, confirm the button explains
+  that instead of sending audio anywhere.
+- Choose **Local secret-check model…**, enter `http://127.0.0.1:8000`, and save.
+  Confirm a hosted address is refused. Turn it off afterward if you were only testing.
 - Turn on **Record recent clicks**, click another app, and capture. Confirm
   Context shows the click and not a keystroke. Turn it off and confirm a new
   capture has no leftover steps. Add a log file, capture, and confirm Context

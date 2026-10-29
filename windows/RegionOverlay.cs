@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -15,14 +16,18 @@ internal sealed class RegionOverlay : Form
 {
     const string HintText = "Drag an area or click a window    ·    Enter full screen    ·    Esc cancel";
     readonly string hint;
+    readonly string? captures;
     Point? anchor;
     Rectangle selection;
     nint hovered;
     Rectangle hoveredBounds;
+    ComposerBubble? bubble;
     internal CaptureChoice? Choice;
+    internal bool OpenComposerInstead { get; private set; }
 
-    internal RegionOverlay(string? hint = null)
+    internal RegionOverlay(string? hint = null, string? output = null)
     {
+        captures = output;
         this.hint = hint ?? HintText;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
@@ -43,6 +48,29 @@ internal sealed class RegionOverlay : Form
         Activate();
         Focus();
         UpdateHover(PointToClient(Cursor.Position));
+        if (!string.IsNullOrEmpty(captures) && ComposerFiles.ShowBubble(ComposerFiles.Settings(captures)))
+            bubble = ComposerBubble.Show(this, SkipToComposer, HideBubble);
+    }
+
+    void SkipToComposer()
+    {
+        OpenComposerInstead = true;
+        DialogResult = DialogResult.Cancel;
+    }
+
+    void HideBubble()
+    {
+        if (string.IsNullOrEmpty(captures)) return;
+        var settings = ComposerFiles.Settings(captures);
+        settings["showBubble"] = false;
+        ComposerFiles.SaveSettings(captures, settings, false);
+        bubble?.Hide();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) bubble?.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -168,6 +196,71 @@ internal sealed class RegionOverlay : Form
         if (pid == (uint)Environment.ProcessId || Native.GetWindowTextLength(window) == 0) return false;
         return Native.GetWindowRect(window, out var rect) && rect.Right - rect.Left >= 40 && rect.Bottom - rect.Top >= 40;
     }
+}
+
+// A circle above the capture hint. Clicking it skips the screenshot and opens the composer.
+internal sealed class ComposerBubble : Form
+{
+    internal const int Diameter = 44;
+    internal const int Gap = 88;
+
+    internal static Rectangle BoundsOn(Rectangle screen)
+    {
+        int x = screen.Left + Math.Max(0, (screen.Width - Diameter) / 2);
+        int y = screen.Bottom - Gap - Diameter;
+        if (y < screen.Top) y = screen.Top;
+        return new Rectangle(x, y, Diameter, Diameter);
+    }
+
+    internal static ComposerBubble Show(Form owner, Action open, Action hideFromMenu)
+    {
+        var bubble = new ComposerBubble(open, hideFromMenu);
+        bubble.Show(owner);
+        return bubble;
+    }
+
+    ComposerBubble(Action open, Action hideFromMenu)
+    {
+        var screen = Screen.FromPoint(Cursor.Position).Bounds;
+        FormBorderStyle = FormBorderStyle.None;
+        StartPosition = FormStartPosition.Manual;
+        ShowInTaskbar = false;
+        TopMost = true;
+        Bounds = BoundsOn(screen);
+        BackColor = Color.White;
+        using (var path = new GraphicsPath())
+        {
+            path.AddEllipse(0, 0, Diameter, Diameter);
+            Region = new Region(path);
+        }
+        var button = new Button
+        {
+            Text = "✎",
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(20, 20, 20),
+            Font = new Font("Segoe UI", 14, FontStyle.Bold),
+            TabStop = false,
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.AccessibleName = "Skip capture and open the composer";
+        button.Click += (_, _) => open();
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Open composer", null, (_, _) => open());
+        menu.Items.Add("Hide floating button", null, (_, _) => hideFromMenu());
+        button.ContextMenuStrip = menu;
+        Controls.Add(button);
+        Text = "Capture Studio composer button";
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.SetWindowDisplayAffinity(Handle, 0x11);
+    }
+
+    protected override bool ShowWithoutActivation => true;
 }
 
 internal static class CaptureSelector

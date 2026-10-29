@@ -296,6 +296,14 @@ internal sealed class Tray : Forms.Form
         clicksItem.ToolTipText = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes.";
         clicksItem.Click += (_, _) => ToggleClicks();
         menu.Items.Add(clicksItem);
+        var bubbleItem = new Forms.ToolStripMenuItem("Show composer button");
+        bubbleItem.ToolTipText = "Shows a button above the capture hint that opens the composer without taking a screenshot.";
+        bubbleItem.Click += (_, _) => ToggleBubble();
+        menu.Items.Add(bubbleItem);
+        var judgeItem = new Forms.ToolStripMenuItem("Local secret-check model…");
+        judgeItem.ToolTipText = "Asks a model running on this PC about values that only might be secrets. Hosted models are not allowed.";
+        judgeItem.Click += async (_, _) => await ChooseJudge();
+        menu.Items.Add(judgeItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(new Forms.ToolStripMenuItem("Custom log files") { Enabled = false });
         var addLog = new Forms.ToolStripMenuItem("Add log file…");
@@ -304,11 +312,15 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add(addLog);
         menu.Opening += (_, _) =>
         {
+            var menuSettings = ComposerFiles.Settings(output);
             replayItem.Checked = replay.Enabled;
-            clicksItem.Checked = ComposerFiles.RecordClicks(ComposerFiles.Settings(output));
+            clicksItem.Checked = ComposerFiles.RecordClicks(menuSettings);
+            bubbleItem.Checked = ComposerFiles.ShowBubble(menuSettings);
+            string judge = ComposerFiles.RedactionJudge(menuSettings);
+            judgeItem.Text = judge.Length == 0 ? "Local secret-check model…" : "Local secret-check model: " + judge;
             foreach (var item in logItems) menu.Items.Remove(item);
             logItems.Clear();
-            var files = ComposerFiles.CustomLogFiles(ComposerFiles.Settings(output));
+            var files = ComposerFiles.CustomLogFiles(menuSettings);
             int insertAt = menu.Items.IndexOf(addLog);
             foreach (string path in files)
             {
@@ -401,6 +413,82 @@ internal sealed class Tray : Forms.Form
         catch (Exception e) { Error(e); }
     }
 
+    void ToggleBubble()
+    {
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            settings["showBubble"] = !ComposerFiles.ShowBubble(settings);
+            ComposerFiles.SaveSettings(output, settings, false);
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    async Task ChooseJudge()
+    {
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            using var dialog = new Forms.Form
+            {
+                Text = "Local secret-check model",
+                FormBorderStyle = Forms.FormBorderStyle.FixedDialog,
+                StartPosition = Forms.FormStartPosition.CenterScreen,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ClientSize = new Size(420, 210),
+                ShowInTaskbar = false,
+            };
+            var explanation = new Forms.Label
+            {
+                Text = "Known secret formats are always redacted. For values that only might be secrets, Capture Studio can ask a decision model running on this PC. Only addresses on this PC are accepted. Without a model, those values are redacted.",
+                Location = new Point(16, 12),
+                Size = new Size(388, 72),
+            };
+            var address = new Forms.TextBox { Text = ComposerFiles.RedactionJudge(settings), PlaceholderText = "http://127.0.0.1:8000", Location = new Point(16, 92), Width = 388 };
+            var model = new Forms.TextBox { Text = ComposerFiles.RedactionModel(settings), PlaceholderText = "Model (optional), e.g. laya", Location = new Point(16, 124), Width = 388 };
+            var save = new Forms.Button { Text = "Save and test", DialogResult = Forms.DialogResult.None, Location = new Point(16, 164) };
+            var cancel = new Forms.Button { Text = "Cancel", DialogResult = Forms.DialogResult.Cancel, Location = new Point(140, 164) };
+            var turnOff = new Forms.Button { Text = "Turn off", DialogResult = Forms.DialogResult.Abort, Location = new Point(240, 164), Visible = ComposerFiles.RedactionJudge(settings).Length > 0 };
+            save.Click += (_, _) =>
+            {
+                if (ComposerFiles.LocalJudgeAddress(address.Text) == null)
+                {
+                    Forms.MessageBox.Show(dialog, "Use an address on this PC.\n\nFor example http://127.0.0.1:8000. Hosted models are not allowed because they would receive the values being checked.", "Capture Studio");
+                    return;
+                }
+                dialog.DialogResult = Forms.DialogResult.OK;
+            };
+            dialog.Controls.AddRange(new Forms.Control[] { explanation, address, model, save, cancel, turnOff });
+            dialog.CancelButton = cancel;
+            dialog.AcceptButton = save;
+            var result = dialog.ShowDialog();
+            if (result == Forms.DialogResult.Cancel) return;
+            if (result == Forms.DialogResult.Abort)
+            {
+                settings["redaction"] = new JsonObject { ["judge"] = "", ["model"] = "" };
+            }
+            else if (result == Forms.DialogResult.OK)
+            {
+                string? judge = ComposerFiles.LocalJudgeAddress(address.Text);
+                if (judge == null) return;
+                string chosen = model.Text.Trim();
+                if (chosen.Length > 80) chosen = chosen[..80];
+                settings["redaction"] = new JsonObject { ["judge"] = judge, ["model"] = chosen };
+            }
+            else return;
+            ComposerFiles.SaveSettings(output, settings, false);
+            string saved = ComposerFiles.RedactionJudge(settings);
+            if (saved.Length == 0) return;
+            double? score = await ComposerFiles.ProbeSecretModel(saved, ComposerFiles.RedactionModel(settings));
+            if (score is double answered)
+                Forms.MessageBox.Show($"The model answered.\n\nA sample token was scored {answered:0.00} (values at 0.40 or above are redacted).", "Capture Studio");
+            else
+                Forms.MessageBox.Show("Saved, but the model did not answer.\n\nStart it, for example with laya-serve or Unsloth's Decision API, and check the address. Until it answers, values that only might be secrets are redacted.", "Capture Studio");
+        }
+        catch (Exception e) { Error(e); }
+    }
+
     void AddLog()
     {
         try
@@ -451,10 +539,11 @@ internal sealed class Tray : Forms.Form
         try
         {
             Program.Save(output, "status.json", new { phase = "choosing" });
-            using var overlay = new RegionOverlay();
+            using var overlay = new RegionOverlay(output: output);
             if (overlay.ShowDialog() != Forms.DialogResult.OK || overlay.Choice is not CaptureChoice choice)
             {
-                Program.Save(output, "status.json", new { phase = "cancelled" });
+                Program.Save(output, "status.json", new { phase = overlay.OpenComposerInstead ? "composing" : "cancelled" });
+                if (overlay.OpenComposerInstead) OpenComposer(Array.Empty<Snapshot>());
                 return;
             }
             Program.Save(output, "status.json", new { phase = "capturing" });
