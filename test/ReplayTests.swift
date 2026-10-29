@@ -98,6 +98,17 @@ func feed(_ pipeline: ReplayPipeline, from start: Double, seconds: Double, fps: 
         precondition(ReplayWriter.offset(of: base.addingTimeInterval(30), in: clip) == nil, "events during a pause are not in the clip")
         precondition(ReplayWriter.offset(of: base.addingTimeInterval(75), in: clip) == 15, "events after a pause skip the paused time")
         precondition(ReplayWriter.offset(of: base.addingTimeInterval(-1), in: clip) == nil && ReplayWriter.offset(of: base.addingTimeInterval(200), in: clip) == nil, "events outside the clip have no offset")
+        let merged = ReplayWriter.recordingEvents(
+            native: [
+                ["time": "2026-10-29T10:00:05.000Z", "kind": "click", "app": "Google Chrome", "role": "AXButton"],
+                ["time": "2026-10-29T10:00:02.000Z", "kind": "click", "app": "Notes", "role": "AXButton"],
+                ["time": "2026-10-29T10:00:03.000Z", "kind": "app-switch", "app": "Google Chrome"],
+                ["time": "2026-10-29T09:59:00.000Z", "kind": "click", "app": "Notes"],
+            ],
+            browser: [["time": "2026-10-29T10:00:05.100Z", "kind": "click", "app": "Google Chrome", "source": "browser", "role": "button", "name": "Run"]],
+            video: clip)
+        precondition(merged.map { $0["kind"] as? String } == ["click", "app-switch", "click"], "steps outside the clip are dropped and the rest are in time order")
+        precondition(merged[0]["source"] as? String == "app" && merged[2]["source"] as? String == "browser" && merged[2]["name"] as? String == "Run", "page steps replace native clicks in the same browser")
         precondition(abs((ReplayWriter.parseDate("2026-10-29 15:30:00.123456+0530")?.timeIntervalSince(base) ?? 99) - 0.123) < 0.001, "unified log times parse")
         precondition([1, 2, 3, 4].map(ReplayWriter.framesPerClip) == [6, 3, 2, 2], "six frames are split across up to three clips")
         precondition(RecordingArea.window(pid: 1, app: "Safari").details["target"] as? String == "Safari" && RecordingArea.area(CGRect(x: 0, y: 0, width: 400, height: 300), display: 1, scale: 2).details["area"] as? String == "area", "recordings describe what they captured")

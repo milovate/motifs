@@ -2,7 +2,7 @@ import AppKit
 import AVKit
 
 struct ClipMarker: Equatable {
-    enum Kind { case click, error, warning }
+    enum Kind { case click, step, error, warning }
     let time: Double
     let kind: Kind
     let label: String
@@ -11,6 +11,7 @@ struct ClipMarker: Equatable {
         let name: String
         switch kind {
         case .click: name = "Click"
+        case .step: name = "Step"
         case .error: name = "Error"
         case .warning: name = "Warning"
         }
@@ -25,8 +26,8 @@ func clipMarkers(_ video: [String: Any], context: [String: Any]) -> [ClipMarker]
         (entry["time"] as? String).flatMap(ReplayWriter.parseDate).flatMap { ReplayWriter.offset(of: $0, in: video) }
     }
     var markers: [ClipMarker] = []
-    for entry in ContextText.entries(context, "events") where entry["kind"] as? String == "click" {
-        if let time = at(entry) { markers.append(ClipMarker(time: time, kind: .click, label: "Clicked \(entry["role"] as? String ?? "element")" + ((entry["title"] as? String).map { " “\($0)”" } ?? ""))) }
+    for entry in ContextText.entries(context, "events") where entry["kind"] as? String != "app-switch" {
+        if let time = at(entry) { markers.append(ClipMarker(time: time, kind: entry["kind"] as? String == "click" ? .click : .step, label: ContextText.describeEvent(entry))) }
     }
     for entry in ContextText.entries(context, "console") {
         let level = (entry["level"] as? String ?? "").lowercased()
@@ -51,7 +52,7 @@ func clipTime(_ seconds: Double) -> String {
 // drag elsewhere to seek, hover a marker to see what happened.
 @MainActor final class ClipTimelineView: NSView {
     var duration: Double = 1 { didSet { trimOut = duration; needsDisplay = true } }
-    var markers: [ClipMarker] = [] { didSet { needsDisplay = true; setAccessibilityHelp(markers.isEmpty ? "No clicks, errors or warnings during this clip." : markers.map { "\($0.title): \($0.label)" }.joined(separator: "\n")) } }
+    var markers: [ClipMarker] = [] { didSet { needsDisplay = true; setAccessibilityHelp(markers.isEmpty ? "No steps, errors or warnings during this clip." : markers.map { "\($0.title): \($0.label)" }.joined(separator: "\n")) } }
     var frames: [NSImage] = [] { didSet { needsDisplay = true } }
     var trimIn: Double = 0 { didSet { needsDisplay = true } }
     var trimOut: Double = 1 { didSet { needsDisplay = true } }
@@ -81,6 +82,7 @@ func clipTime(_ seconds: Double) -> String {
     static func color(_ kind: ClipMarker.Kind) -> NSColor {
         switch kind {
         case .click: return .systemBlue
+        case .step: return .systemPurple
         case .error: return .systemRed
         case .warning: return .systemOrange
         }
@@ -315,7 +317,7 @@ enum ClipReviewResult {
         header.toolTip = "Drag here to move"
         selection.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         selection.textColor = .secondaryLabelColor
-        let legend = NSStackView(views: [("Click", ClipMarker.Kind.click), ("Error", .error), ("Warning", .warning)].map { name, kind in
+        let legend = NSStackView(views: [("Click", ClipMarker.Kind.click), ("Step", .step), ("Error", .error), ("Warning", .warning)].map { name, kind in
             let count = markers.filter { $0.kind == kind }.count
             let text = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: ClipTimelineView.color(kind), .font: NSFont.systemFont(ofSize: 12)])
             text.append(NSAttributedString(string: "\(name) \(count)", attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 12)]))

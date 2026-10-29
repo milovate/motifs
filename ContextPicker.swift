@@ -190,7 +190,7 @@ import AppKit
         switch source {
         case "console": return collecting ? "Collecting console messages…" : "No console errors. Native apps: errors and faults from the last 5 minutes. Browsers: install the Capture Studio extension from the menu bar."
         case "network": return collecting ? "Collecting failed requests…" : "No failed network requests. Browser captures need the Capture Studio extension."
-        case "events": return "No recent clicks. Turn on “Record recent clicks” in the menu bar to keep a 10-minute, in-memory history."
+        case "events": return "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the menu bar."
         case "customLogs": return "No log files. Add up to 4 under “Custom log files” in the menu bar."
         case "windowText": return "No window text was read from the captured app."
         case "device": return collecting ? "Collecting device details…" : "No device details."
@@ -242,15 +242,13 @@ import AppKit
         case "events":
             let entries = ContextText.entries(context, "events")
             views = entries.suffix(Self.rowLimit).reversed().map { entry in
-                let click = entry["kind"] as? String == "click"
-                let role = (entry["role"] as? String).map { $0.hasPrefix("AX") ? String($0.dropFirst(2)).lowercased() : $0 } ?? "element"
-                let text = click ? "Clicked \(role)" + ((entry["title"] as? String).map { " “\($0)”" } ?? "") : "Switched to \(field(entry, "app"))"
-                let icon = NSImageView(image: NSImage(systemSymbolName: click ? "cursorarrow.click" : "arrow.left.arrow.right", accessibilityDescription: nil) ?? NSImage())
-                icon.contentTintColor = click ? .systemBlue : .secondaryLabelColor
-                let label = Self.body(text, monospaced: false)
+                let kind = field(entry, "kind")
+                let icon = NSImageView(image: NSImage(systemSymbolName: ContextText.eventSymbol(kind), accessibilityDescription: nil) ?? NSImage())
+                icon.contentTintColor = kind == "click" ? .systemBlue : kind == "app-switch" ? .secondaryLabelColor : .systemPurple
+                let label = Self.body(ContextText.describeEvent(entry), monospaced: false)
                 label.maximumNumberOfLines = 2
                 var parts: [NSView] = [icon, label, NSView()]
-                if click { parts.append(Self.secondary(field(entry, "app"))) }
+                if kind != "app-switch" { parts.append(Self.secondary(field(entry, "app"))) }
                 parts.append(Self.clock(field(entry, "time")))
                 return Self.card([Self.line(parts)])
             }

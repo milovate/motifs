@@ -71,7 +71,47 @@ struct BundleInclude: Equatable {
 
 // Mirrors the plugin's rendering closely enough for previews and size estimates.
 enum ContextText {
-    static let labels = ["windowText": "Window", "device": "Device", "console": "Console", "network": "Network", "events": "Clicks", "customLogs": "Logs"]
+    static let labels = ["windowText": "Window", "device": "Device", "console": "Console", "network": "Network", "events": "Steps", "customLogs": "Logs"]
+
+    // One line per user event or page step, shared by the picker, the clip review and the text export.
+    static func describeEvent(_ entry: [String: Any]) -> String {
+        let role = (entry["role"] as? String).map { $0.hasPrefix("AX") ? String($0.dropFirst(2)).lowercased() : $0 } ?? (entry["tag"] as? String)
+        let label = (entry["name"] as? String) ?? (entry["title"] as? String)
+        let target = (role ?? "element") + (label.map { " \"\($0)\"" } ?? "")
+        let number = { (key: String) in (entry[key] as? NSNumber)?.intValue }
+        switch entry["kind"] as? String ?? "" {
+        case "click": return ((number("count") ?? 1) > 1 ? "Double-clicked " : "Clicked ") + target
+        case "type": return "Typed into " + target
+        case "select": return "Selected \"\(entry["text"] as? String ?? "")\"" + (role == nil ? "" : " in " + target)
+        case "scroll":
+            if let direction = entry["direction"] as? String { return "Scrolled \(direction) \(number("distance") ?? 0) pt" + (role == nil ? "" : " over " + target) }
+            return "Scrolled " + (role == nil && entry["selector"] == nil ? "the page" : target) + " to \(number("x") ?? 0), \(number("y") ?? 0)"
+        case "drag": return "Dragged" + (role == nil ? "" : " in " + target)
+        case "choose": return "Chose \"\(entry["option"] as? String ?? "")\" in " + target
+        case "check": return (entry["checked"] as? Bool == true ? "Checked " : "Unchecked ") + target
+        case "upload": return "Chose a file for " + target
+        case "submit": return "Submitted " + target
+        case "navigate": return "Opened " + (entry["url"] as? String ?? "a page")
+        case "tab": return "Switched to tab " + ((entry["title"] as? String) ?? (entry["url"] as? String) ?? "")
+        case "app-switch": return "Switched to " + (entry["app"] as? String ?? "app")
+        case let kind: return kind
+        }
+    }
+
+    static func eventSymbol(_ kind: String) -> String {
+        switch kind {
+        case "click": return "cursorarrow.click"
+        case "type": return "keyboard"
+        case "select": return "text.cursor"
+        case "scroll": return "scroll"
+        case "drag": return "hand.draw"
+        case "choose", "check": return "checkmark.square"
+        case "upload": return "doc.badge.plus"
+        case "submit": return "paperplane"
+        case "navigate", "tab": return "safari"
+        default: return "arrow.left.arrow.right"
+        }
+    }
 
     static func entries(_ context: [String: Any], _ key: String) -> [[String: Any]] {
         (context[key] as? [String: Any])?["entries"] as? [[String: Any]] ?? []
@@ -107,7 +147,7 @@ enum ContextText {
         case "network":
             return entries(context, "network").map { "[\(field($0, "time"))] \(field($0, "method")) \($0["status"].map { "\($0)" } ?? field($0, "error")) \(field($0, "url"))" }.joined(separator: "\n")
         case "events":
-            return entries(context, "events").map { $0["kind"] as? String == "click" ? "[\(field($0, "time"))] Clicked \($0["role"] as? String ?? "element") \(($0["title"] as? String).map { "\"\($0)\"" } ?? "") in \(field($0, "app"))" : "[\(field($0, "time"))] Switched to \(field($0, "app"))" }.joined(separator: "\n")
+            return entries(context, "events").map { "[\(field($0, "time"))] \(describeEvent($0))" + ($0["kind"] as? String == "app-switch" || field($0, "app").isEmpty ? "" : " in \(field($0, "app"))") }.joined(separator: "\n")
         case "customLogs":
             return (context["customLogs"] as? [[String: Any]] ?? []).map { "== \(field($0, "name")) ==\n\(field($0, "text"))" }.joined(separator: "\n\n")
         default:

@@ -152,7 +152,7 @@ function eventOffset(bundle, time) {
 // Every context source the user can include or exclude. "device" also covers
 // system state, the captured app and the browser page.
 export const CONTEXT_SOURCES = ["windowText", "device", "console", "network", "events", "customLogs"];
-const LIMITS = { console: 300, network: 200, events: 100, customLogs: 4, message: 2000, url: 2000, log: 64_000 };
+const LIMITS = { console: 300, network: 200, events: 300, customLogs: 4, message: 2000, url: 2000, log: 64_000 };
 const CONTEXT_BUDGET = 60_000;
 
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -187,9 +187,110 @@ function normalizeNetwork(entry) {
   return { time: time(entry.time), method: text(entry.method, 16) ?? "GET", url: entry.url.slice(0, LIMITS.url), status: Number.isInteger(entry.status) ? entry.status : undefined, error: text(entry.error), type: text(entry.type, 32) };
 }
 
+const EVENT_KINDS = ["click", "type", "select", "scroll", "drag", "choose", "check", "upload", "submit", "navigate", "tab", "app-switch"];
+
+// Native events and browser page steps share one shape. Typed text is never present.
 function normalizeEvent(entry) {
-  if (!isObject(entry) || !["click", "app-switch"].includes(entry.kind)) return undefined;
-  return { time: time(entry.time), kind: entry.kind, app: text(entry.app), role: text(entry.role, 60), title: text(entry.title, 120) };
+  if (!isObject(entry) || !EVENT_KINDS.includes(entry.kind)) return undefined;
+  const int = (value) => (Number.isFinite(value) ? Math.round(value) : undefined);
+  const result = {
+    time: time(entry.time),
+    kind: entry.kind,
+    source: entry.source === "browser" ? "browser" : undefined,
+    app: text(entry.app),
+    role: text(entry.role, 60),
+    title: text(entry.title, 120),
+    name: text(entry.name, 80),
+    tag: text(entry.tag, 20),
+    selector: text(entry.selector, 300),
+    url: text(entry.url, LIMITS.url),
+    text: entry.kind === "select" ? text(entry.text, 200) : undefined,
+    option: entry.kind === "choose" ? text(entry.option, 80) : undefined,
+    checked: entry.kind === "check" ? entry.checked === true : undefined,
+    direction: ["up", "down", "left", "right"].includes(entry.direction) ? entry.direction : undefined,
+    distance: int(entry.distance),
+    x: int(entry.x),
+    y: int(entry.y),
+    count: int(entry.count),
+  };
+  return Object.fromEntries(Object.entries(result).filter(([, value]) => value !== undefined));
+}
+
+export function describeEvent(entry) {
+  const role = entry.role?.startsWith("AX") ? entry.role.slice(2).toLowerCase() : entry.role || entry.tag;
+  const label = entry.name ?? entry.title;
+  const target = (role || "element") + (label ? ` ${JSON.stringify(label)}` : "");
+  switch (entry.kind) {
+    case "click":
+      return (entry.count > 1 ? "Double-clicked " : "Clicked ") + target;
+    case "type":
+      return `Typed into ${target}`;
+    case "select":
+      return `Selected ${JSON.stringify(entry.text ?? "")}${role ? ` in ${target}` : ""}`;
+    case "scroll":
+      if (entry.direction) return `Scrolled ${entry.direction} ${entry.distance ?? 0} pt${role ? ` over ${target}` : ""}`;
+      return `Scrolled ${role || entry.selector ? target : "the page"} to ${entry.x ?? 0}, ${entry.y ?? 0}`;
+    case "drag":
+      return `Dragged${role ? ` in ${target}` : ""}`;
+    case "choose":
+      return `Chose ${JSON.stringify(entry.option ?? "")} in ${target}`;
+    case "check":
+      return `${entry.checked ? "Checked" : "Unchecked"} ${target}`;
+    case "upload":
+      return `Chose a file for ${target}`;
+    case "submit":
+      return `Submitted ${target}`;
+    case "navigate":
+      return `Opened ${entry.url ?? "a page"}`;
+    case "tab":
+      return `Switched to tab ${entry.title ?? entry.url ?? ""}`;
+    case "app-switch":
+      return `Switched to ${entry.app || "app"}`;
+    default:
+      return entry.kind;
+  }
+}
+
+const jsString = (value) => JSON.stringify(String(value ?? "")).replace(/`/g, "\\u0060");
+
+// A starting point for replaying browser steps with Playwright. Selectors come from
+// the page as it was; typed text was never recorded, so fills are placeholders.
+export function playwrightSketch(events) {
+  const browser = events.filter((entry) => entry.source === "browser");
+  if (!browser.length) return [];
+  const lines = [];
+  if (browser[0].kind !== "navigate" && browser[0].url) lines.push(`await page.goto(${jsString(browser[0].url)});`);
+  for (const entry of browser) {
+    const locator = entry.role && entry.name ? `page.getByRole(${jsString(entry.role)}, { name: ${jsString(entry.name)} })` : entry.selector ? `page.locator(${jsString(entry.selector)})` : undefined;
+    const line = (() => {
+      switch (entry.kind) {
+        case "navigate":
+          return entry.url && `await page.goto(${jsString(entry.url)});`;
+        case "tab":
+          return `// Switched to tab ${jsString(entry.url ?? entry.title)}`;
+        case "click":
+          return locator && `await ${locator}.${entry.count > 1 ? "dblclick" : "click"}();`;
+        case "type":
+          return locator && `await ${locator}.fill("…"); // typed text is not recorded`;
+        case "choose":
+          return locator && `await ${locator}.selectOption({ label: ${jsString(entry.option)} });`;
+        case "check":
+          return locator && `await ${locator}.${entry.checked ? "check" : "uncheck"}();`;
+        case "upload":
+          return locator && `await ${locator}.setInputFiles("…");`;
+        case "submit":
+          return `// Submitted ${locator ?? "a form"}`;
+        case "scroll":
+          return entry.selector ? `await page.locator(${jsString(entry.selector)}).evaluate((element) => element.scrollTo(${entry.x ?? 0}, ${entry.y ?? 0}));` : `await page.evaluate(() => window.scrollTo(${entry.x ?? 0}, ${entry.y ?? 0}));`;
+        case "select":
+          return `// Selected text ${jsString(entry.text)}`;
+        default:
+          return undefined;
+      }
+    })();
+    if (line) lines.push(line);
+  }
+  return lines;
 }
 
 function normalizeCustomLog(entry) {
@@ -263,8 +364,11 @@ export function contextSections(bundle) {
     add("console", `Console (${bundle.console.length})`, bundle.console.map((entry) => `[${entry.time}] ${entry.level.toUpperCase()} ${entry.source === "browser" ? "page" : entry.subsystem || "app"}: ${entry.message}`));
   if (bundle.include.network)
     add("network", `Failed network requests (${bundle.network.length})`, bundle.network.map((entry) => `[${entry.time}] ${entry.method} ${entry.status ?? entry.error ?? "failed"} ${entry.url}${entry.type ? ` (${entry.type})` : ""}`));
-  if (bundle.include.events)
-    add("events", `Recent user events (${bundle.events.length})`, bundle.events.map((entry) => (entry.kind === "click" ? `[${entry.time}] Clicked ${entry.role || "element"}${entry.title ? ` ${JSON.stringify(entry.title)}` : ""} in ${entry.app || "app"}` : `[${entry.time}] Switched to ${entry.app || "app"}`) + eventOffset(bundle, entry.time)));
+  if (bundle.include.events) {
+    add("events", `${bundle.videos?.length ? "Steps" : "Recent user events"} (${bundle.events.length})`, bundle.events.map((entry) => `[${entry.time}] ${describeEvent(entry)}${entry.kind === "app-switch" || !entry.app ? "" : ` in ${entry.app}`}${entry.selector ? ` [${entry.selector}]` : ""}` + eventOffset(bundle, entry.time)));
+    const sketch = playwrightSketch(bundle.events);
+    if (sketch.length) add("playwright", "Playwright sketch of the browser steps (check selectors; typed text was not recorded)", ["```js", ...sketch, "```"]);
+  }
   if (bundle.include.customLogs)
     for (const log of bundle.customLogs) add("customLogs", `Log: ${log.name}${log.truncated ? " (last lines)" : ""}`, log.text.split("\n"));
   return sections;
@@ -313,7 +417,7 @@ export function draftText(bundle, note, contextFile) {
       bundle.include.device ? "device" : "",
       bundle.include.console && bundle.console.length ? `console ${bundle.console.length}` : "",
       bundle.include.network && bundle.network.length ? `failed requests ${bundle.network.length}` : "",
-      bundle.include.events && bundle.events.length ? `clicks ${bundle.events.length}` : "",
+      bundle.include.events && bundle.events.length ? `steps ${bundle.events.length}${bundle.events.some((entry) => entry.source === "browser") ? " with a Playwright sketch" : ""}` : "",
       bundle.include.customLogs && bundle.customLogs.length ? `logs ${bundle.customLogs.length}` : "",
       bundle.videos?.length ? "recording timelines" : "",
     ].filter(Boolean);
@@ -353,7 +457,7 @@ export function shareMarkdown(bundle, note, contextFile) {
     });
     highlights.push(`${bundle.network.length} failed request${bundle.network.length === 1 ? "" : "s"}: ${requests.join(", ")}${bundle.network.length > 3 ? ", …" : ""}`);
   }
-  if (bundle.include.events && bundle.events.length) highlights.push(`${bundle.events.length} recent click${bundle.events.length === 1 ? "" : "s"} recorded`);
+  if (bundle.include.events && bundle.events.length) highlights.push(`${bundle.events.length} step${bundle.events.length === 1 ? "" : "s"} recorded${bundle.events.some((entry) => entry.source === "browser") ? " (Playwright sketch in the full context)" : ""}`);
   if (bundle.include.device && bundle.device) highlights.push("Device: " + deviceSummary(bundle.device).slice(0, 3).join(" · "));
   if (highlights.length) sections.push("**Context**\n" + highlights.map((line) => `- ${line}`).join("\n"));
   if (contextFile) sections.push(`Full context: \`${contextFile}\``);

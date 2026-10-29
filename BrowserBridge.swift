@@ -7,7 +7,8 @@ let nativeHostName = "local.opencode.capturestudio"
 
 // Connects capture to the Capture Studio browser extension. Chrome launches this
 // same executable as a native messaging host; the menu-bar helper asks it for
-// the extension's buffer only when the user captures a browser window. The two
+// the extension's buffer only when the user captures a browser window, and turns
+// page-step recording on and off around a screen recording. The two
 // talk over a Unix socket and each refuses a peer that is not this same signed
 // binary, so other processes can neither request nor read browser context.
 enum BrowserBridge {
@@ -79,7 +80,8 @@ enum BrowserBridge {
                 let client = accept(server, nil, nil)
                 guard client >= 0 else { continue }
                 guard PeerSocket.peerIsSameBinary(client) else { close(client); continue }
-                DispatchQueue.main.async { state.begin(client) }
+                guard let type = NativeHostState.requestType(client) else { close(client); continue }
+                DispatchQueue.main.async { state.begin(client, type: type) }
             }
         }
         Thread.detachNewThread {
@@ -112,11 +114,38 @@ enum BrowserBridge {
     }
 
     static func query(path: String, timeout: TimeInterval) -> [[String: Any]] {
-        guard let socket = PeerSocket.connect(path: path, timeout: timeout) else { return [] }
+        request(path: path, type: "snapshot", timeout: timeout)?["windows"] as? [[String: Any]] ?? []
+    }
+
+    static func request(path: String, type: String, timeout: TimeInterval) -> [String: Any]? {
+        guard let socket = PeerSocket.connect(path: path, timeout: timeout) else { return nil }
         defer { close(socket) }
-        guard PeerSocket.peerIsSameBinary(socket), let data = PeerSocket.readAll(socket, limit: 32_000_000),
-              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-        return raw["windows"] as? [[String: Any]] ?? []
+        guard PeerSocket.peerIsSameBinary(socket), let request = try? JSONSerialization.data(withJSONObject: ["type": type]) else { return nil }
+        PeerSocket.writeAll(socket, request)
+        shutdown(socket, SHUT_WR)
+        guard let data = PeerSocket.readAll(socket, limit: 32_000_000) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    // Starts or stops page-step recording in every connected browser. Stopping returns
+    // the recorded steps, each tagged with its browser's name.
+    static func steps(recording: Bool, timeout: TimeInterval = 1.5) async -> [[String: Any]] {
+        let directory = socketDirectory()
+        let hosts = ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).compactMap { name -> (path: String, browser: String)? in
+            guard let index = name.split(separator: ".").first.flatMap({ Int($0) }), browsers.indices.contains(index) else { return nil }
+            return (directory.appendingPathComponent(name).path, browsers[index].name)
+        }
+        let type = recording ? "steps-start" : "steps-stop"
+        return await withTaskGroup(of: [[String: Any]].self) { group in
+            for host in hosts.prefix(8) {
+                group.addTask {
+                    (request(path: host.path, type: type, timeout: timeout)?["steps"] as? [[String: Any]] ?? []).suffix(500).map { $0.merging(["app": host.browser, "source": "browser"]) { _, new in new } }
+                }
+            }
+            var all: [[String: Any]] = []
+            for await result in group { all += result }
+            return all
+        }
     }
 
     // Chrome window titles are "<tab title> - <browser>", sometimes with a profile suffix.
@@ -155,13 +184,22 @@ enum BrowserBridge {
 // Each connection from the helper becomes one request to the extension; the
 // reply goes back on that connection only.
 final class NativeHostState {
+    static let requestTypes: Set<String> = ["snapshot", "steps-start", "steps-stop"]
+
+    // The helper writes one small JSON request and closes its side before reading.
+    static func requestType(_ client: Int32) -> String? {
+        var limit = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size))
+        let request = PeerSocket.readAll(client, limit: 4096).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        return (request?["type"] as? String).flatMap { requestTypes.contains($0) ? $0 : nil }
+    }
     var pending: [String: Int32] = [:]
     var send: (Data) -> Void = { FileHandle.standardOutput.write($0) }
     var timeout: TimeInterval = 3
 
-    func begin(_ client: Int32) {
+    func begin(_ client: Int32, type: String = "snapshot") {
         let requestID = UUID().uuidString
-        guard let message = try? BrowserBridge.encodeMessage(["type": "snapshot", "requestID": requestID]) else { close(client); return }
+        guard let message = try? BrowserBridge.encodeMessage(["type": type, "requestID": requestID]) else { close(client); return }
         pending[requestID] = client
         send(message)
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
@@ -170,10 +208,11 @@ final class NativeHostState {
     }
 
     func receive(_ payload: Data) {
-        guard let message = try? JSONSerialization.jsonObject(with: payload) as? [String: Any], message["type"] as? String == "snapshot",
+        guard let message = try? JSONSerialization.jsonObject(with: payload) as? [String: Any], let type = message["type"] as? String, ["snapshot", "steps"].contains(type),
               let requestID = message["requestID"] as? String, let client = pending.removeValue(forKey: requestID) else { return }
         defer { close(client) }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["windows": message["windows"] as? [[String: Any]] ?? []]) else { return }
+        let reply: [String: Any] = type == "snapshot" ? ["windows": message["windows"] as? [[String: Any]] ?? []] : ["steps": message["steps"] as? [[String: Any]] ?? []]
+        guard let data = try? JSONSerialization.data(withJSONObject: reply) else { return }
         PeerSocket.writeAll(client, data)
     }
 }

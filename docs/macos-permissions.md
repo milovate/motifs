@@ -7,7 +7,7 @@ OpenCode's tool approval is separate and does not grant macOS access.
 | Permission | Used for | Without it |
 | --- | --- | --- |
 | Screen Recording / Screen & System Audio Recording | Screenshot of the requested app window; instant replay and screen recording of the main display, only when you turn them on | Screenshot capture, replay and recording fail with setup instructions |
-| Accessibility | Read the selected window's UI text, insert an attachment into OpenCode's draft, and (only if you turn on **Record recent clicks**) observe clicks and the clicked element's role/label | Screenshot-only results; automatic insertion and click history are unavailable |
+| Accessibility | Read the selected window's UI text, insert an attachment into OpenCode's draft, and observe clicks, scrolls, highlighted text and which field was typed into with the element's role/label (during screen recordings, or clicks only when you turn on **Record recent clicks**; typed characters are never read) | Screenshot-only results; automatic insertion and recorded steps are unavailable |
 | Microphone | Listen only after clicking Dictate | Type the description instead |
 | Speech Recognition | On-device voice-to-text in the composer | Type or use macOS keyboard dictation instead |
 
@@ -121,11 +121,13 @@ an unsent OpenCode draft, Markdown on the clipboard, or an owner-only export fol
 Dictation never sends. The composer keeps an owner-only `bundle-*.json` for each
 capture, saved as you edit so Recents can reopen it, holding your
 description, window text, collected context (device and system state, console and
-failed-request entries, recent clicks if enabled, custom log tails; never location
-or keystrokes) and include flags; delete these files to remove recent bundles.
-Recent clicks live only in the helper's memory until a capture copies them into
-the composer. The browser extension's buffers live only in the browser's session
-memory. Browser context travels only over an owner-only socket in
+failed-request entries, steps recorded during a screen recording or recent clicks if
+enabled, custom log tails; never location, typed text or which keys were pressed) and
+include flags; delete these files to remove recent bundles. Steps and recent clicks
+live only in the helper's memory until a capture copies them into the composer;
+recording-only steps are dropped when the recording ends. The browser extension's
+buffers and page steps live only in the browser's session memory, and it records page
+steps only between the start and stop of a screen recording. Browser context travels only over an owner-only socket in
 `~/Library/Application Support/Capture Studio/browser/` between two copies of the
 same signed Capture Studio binary; each side refuses any other process.
 

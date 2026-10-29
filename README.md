@@ -130,7 +130,7 @@ installation without planning that permission step.
    draft into its **unsent input**: your description and skill mentions, then one line
    per screenshot and recording with its file path, and the path of a
    `bundle-<id>-context.md` file holding the included context (window text, device,
-   console, network, clicks, logs, recording timelines). The agent opens those files
+   console, network, steps, logs, recording timelines). The agent opens those files
    when it needs detail, so large window text and logs no longer fill the prompt.
    Review it there and press Enter yourself to run. The composer never submits a
    prompt, calls a model, or presses Enter in OpenCode. **×** or Escape cancels.
@@ -235,7 +235,7 @@ with it, not a fresh collection.
 | Device | Mac model, macOS, CPU, memory, displays, locale; memory pressure and the captured app's footprint; battery level/charging/power source; free/total space on the home volume; thermal state and Low Power Mode; captured app name, bundle ID and version; for browsers, page URL, title and user agent | At capture |
 | Console | Native apps: errors and faults the captured app wrote to the unified log in the last 5 minutes (`/usr/bin/log show`; private values stay `<private>`). Browsers: the extension's console messages and uncaught errors for the visible tab | Starts at capture, finishes in about 1–2 s |
 | Network | Browsers only: failed requests (HTTP status ≥ 400 or network error) for the visible tab, with method, URL, status/error and resource type. No headers or bodies; credentials and values of query parameters such as `token`, `key`, `secret`, `password`, `auth`, `session`, `code` or `sig` are replaced with `[redacted]` | From the extension's buffer at capture |
-| Clicks | Off by default. When **Context sources → Record recent clicks** is on: the last 10 minutes (up to 100) of clicks, with the clicked element's accessibility role and label, and app switches. Kept in memory only and cleared when turned off or the helper quits. Keystrokes are never observed; secure fields keep only their role | Continuously, in memory, while enabled |
+| Steps | **During a screen recording** (automatic, only while it runs): clicks, scroll gestures, drags, text you highlight (up to 200 characters) and which field you typed into, each with the element's accessibility role and label. Which keys you pressed and what you typed are never read: typing is noted once per field from the fact that a key went down. With the browser extension, page steps replace the browser's native ones and add the element's role, accessible name, CSS selector, page URL and scroll position, plus a Playwright sketch in the context file. **Outside recordings**, off by default: when **Context sources → Record recent clicks** is on, the last 10 minutes (up to 300) of clicks and app switches. Kept in memory only. Secure fields keep only their role, and selections in them are never read | During recordings; continuously in memory while Record recent clicks is on |
 | Logs | The last 64 KB of up to 4 files chosen under **Context sources → Custom log files**. Paths are stored in the owner-only `settings.json`; exports include only the file name | At capture |
 
 Logs, console messages, page content and click labels are untrusted app content. The
@@ -249,7 +249,13 @@ Browser console and network context come from the bundled MV3 extension in
 `browser-extension/`. It keeps a per-tab buffer (300 console entries, 200 failed
 requests, 10 minutes) in the browser's in-memory session storage and hands over
 only the visible tab of each window, when the helper asks during a capture of that
-browser. Nothing is sent anywhere else.
+browser. While a screen recording runs, the helper tells it to record page steps:
+clicks, which field was typed into (never field values or typed text), select and
+checkbox changes, form submits, scroll positions, highlighted text outside editable
+fields, navigations and tab switches, up to 500 steps. Stopping the recording
+collects and clears them; steps expire after 6 minutes if the helper never asks.
+Nothing is sent anywhere else. After updating Capture Studio, reload the extension
+on `chrome://extensions` so page steps are available.
 
 1. Choose **Appshot → Context sources → Connect browser extension…**. This writes a
    native messaging host manifest named `local.opencode.capturestudio.json` into each
@@ -302,8 +308,9 @@ each for three. The bundle records each clip's source, what it captured, start t
 duration, pauses and frame offsets.
 
 Click a clip to review it. A filmstrip shows the clip with blue dots under it for
-clicks, red for console errors and failed requests, and orange for warnings; hover a
-dot to see the event. Drag the yellow handles (or press I and O) to trim; Space plays
+clicks, purple for other steps (scrolls, selections, typing, navigation), red for
+console errors and failed requests, and orange for warnings; hover a dot to see the
+event. Drag the yellow handles (or press I and O) to trim; Space plays
 the selection and the arrow keys step. **Use trimmed clip** writes a new MP4 for the selection and takes
 key frames from it; the original file is left in the captures folder. **Remove clip**
 detaches it. On send:

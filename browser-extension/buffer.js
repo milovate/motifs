@@ -1,7 +1,8 @@
 // Per-tab rolling buffers of console messages and failed requests. Pure logic,
 // shared by the service worker and the Node tests.
 
-export const LIMITS = { console: 300, network: 200, ageMs: 10 * 60_000, message: 2000, url: 2000 };
+export const LIMITS = { console: 300, network: 200, ageMs: 10 * 60_000, message: 2000, url: 2000, steps: 500, stepsMs: 6 * 60_000 };
+const STEP_KINDS = ["click", "type", "choose", "check", "upload", "submit", "scroll", "select", "navigate", "tab"];
 const LEVELS = ["log", "info", "warn", "error", "debug"];
 const SENSITIVE = /(token|key|secret|password|passwd|auth|session|sig|signature|code|credential|jwt|bearer)/i;
 
@@ -78,4 +79,36 @@ export function windowSnapshots(buffers, windows, userAgent, now = Date.now()) {
     const tab = window.tabs?.find((candidate) => candidate.active);
     return tab ? [{ focused: Boolean(window.focused), snapshot: snapshot(buffers, tab.id, { url: tab.url, title: tab.title, userAgent }, now) }] : [];
   });
+}
+
+// One page step from a content script or a tab event. Only descriptive fields
+// survive; the content script never sends field values, and nothing else is kept.
+export function sanitizeStep(step, tab, now = Date.now()) {
+  if (!step || typeof step !== "object" || !STEP_KINDS.includes(step.kind)) return undefined;
+  const text = (value, limit) => (typeof value === "string" && value.trim() ? value.replace(/\s+/g, " ").trim().slice(0, limit) : undefined);
+  const int = (value) => (Number.isFinite(value) ? Math.round(value) : undefined);
+  const result = {
+    time: new Date(Number.isFinite(step.time) ? step.time : now).toISOString(),
+    kind: step.kind,
+    url: tab?.url ? redactUrl(tab.url) : undefined,
+    tag: text(step.tag, 20),
+    role: text(step.role, 40),
+    name: text(step.name, 80),
+    selector: text(step.selector, 300),
+  };
+  if (step.kind === "select") result.text = text(step.text, 200);
+  if (step.kind === "choose") result.option = text(step.option, 80);
+  if (step.kind === "check") result.checked = step.checked === true;
+  if (step.kind === "click" || step.kind === "scroll") Object.assign(result, { x: int(step.x), y: int(step.y) });
+  if (step.kind === "click" && int(step.count) > 1) result.count = int(step.count);
+  if (step.kind === "navigate" || step.kind === "tab") result.title = text(tab?.title, 120);
+  if (step.kind === "select" && !result.text) return undefined;
+  return Object.fromEntries(Object.entries(result).filter(([, value]) => value !== undefined));
+}
+
+export function addStep(steps, step, now = Date.now()) {
+  if (!step || !steps.active || now - steps.startedAt > LIMITS.stepsMs) return steps;
+  steps.entries.push(step);
+  steps.entries = steps.entries.slice(-LIMITS.steps);
+  return steps;
 }

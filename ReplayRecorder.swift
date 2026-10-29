@@ -334,6 +334,18 @@ enum ReplayWriter {
 
     // Seconds into the clip for a wall-clock time, skipping paused spans. Nil
     // outside the clip or while it was paused.
+    // The steps of one recording: native events plus page steps, keeping only what
+    // happened inside the clip. Page steps replace native events from the same browser.
+    static func recordingEvents(native: [[String: Any]], browser: [[String: Any]], video: [String: Any], limit: Int = 300) -> [[String: Any]] {
+        let browsers = Set(browser.compactMap { $0["app"] as? String })
+        let kept = native.filter { $0["kind"] as? String == "app-switch" || !browsers.contains($0["app"] as? String ?? "") }.map { $0.merging(["source": "app"]) { current, _ in current } }
+        let timed = (kept + browser).compactMap { entry -> (Date, [String: Any])? in
+            guard let date = (entry["time"] as? String).flatMap(parseDate), offset(of: date, in: video) != nil else { return nil }
+            return (date, entry)
+        }
+        return Array(timed.sorted { $0.0 < $1.0 }.map(\.1).suffix(limit))
+    }
+
     static func offset(of date: Date, in video: [String: Any]) -> Double? {
         guard let start = (video["startedAt"] as? String).flatMap(parseDate) else { return nil }
         let duration = (video["durationSeconds"] as? NSNumber)?.doubleValue ?? 0

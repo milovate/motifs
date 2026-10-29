@@ -71,12 +71,12 @@ test("the draft describes the recording, numbers its frames after the screenshot
   assert.match(draft, /Instant replay: 30\.0 s of the display, starting 2026-10-29T10:00:00Z/);
   assert.match(draft, /Key frames attached as images 2–7, at \+0\.0 s, \+5\.0 s, \+10\.0 s, \+15\.0 s, \+20\.0 s, \+25\.0 s\./);
   assert.match(draft, /The full MP4 stays on the user's Mac and is not attached/);
-  assert.match(draft, /Clicked AXButton "Pay" in Chrome \(\+12\.4 s in instant replay\)/);
+  assert.match(draft, /Clicked button "Pay" in Chrome \(\+12\.4 s in instant replay\)/);
   assert.match(draft, /Switched to Finder\n|Switched to Finder$/m, "events outside the recording get no offset");
   assert.ok(!draft.includes("replay.mp4"), "local paths stay out of the context document");
   const lean = draftText(bundle, "Payment spinner never stops", "/captures/bundle-context.md");
   assert.match(lean, /- Instant replay: \/.*replay\.mp4 · 30\.0 s of the display · key frames attached as images 2–7: /);
-  assert.match(lean, /- Full context \(.*clicks 2.*recording timelines\): \/captures\/bundle-context\.md/);
+  assert.match(lean, /- Full context \(.*steps 2.*recording timelines\): \/captures\/bundle-context\.md/);
   const { bundle: recording } = await videoBundle(t, { source: "recording", frames: [] });
   assert.match(contextDocument(recording), /Screen recording: 30\.0 s[\s\S]*No key frames were extracted/);
 });

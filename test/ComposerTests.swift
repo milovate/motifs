@@ -222,7 +222,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         ]
         precondition(ContextText.render("console", shots: [], context: rich) == "[t1] ERROR page: boom", "console renders like the plugin")
         precondition(ContextText.render("network", shots: [], context: rich) == "[t2] POST 500 https://x.test/api", "network renders like the plugin")
-        precondition(ContextText.render("events", shots: [], context: rich) == "[t3] Clicked AXButton \"Pay\" in Chrome\n[t4] Switched to Finder", "events render like the plugin")
+        precondition(ContextText.render("events", shots: [], context: rich) == "[t3] Clicked button \"Pay\" in Chrome\n[t4] Switched to Finder", "events render like the plugin")
         precondition(["console", "network", "events", "customLogs"].map { ContextText.count($0, shots: [], context: rich) } == [1, 1, 2, 1], "per-source counts")
         precondition(contextCharacterCount(shots: [], context: rich, include: include) < contextCharacterCount(shots: [], context: rich, include: BundleInclude()), "excluding a source shrinks the estimate")
 

@@ -86,6 +86,7 @@ struct Appshots {
     var commandObserver: NSObjectProtocol?
     var workspaceObserver: NSObjectProtocol?
     var lastExternalApp: NSRunningApplication?
+    var browserSteps: Task<Void, Never>?
     var choosingRecording = false
     var controls: RecordingControls?
     var outline: RecordingAreaOutline?
@@ -226,6 +227,8 @@ struct Appshots {
                 return
             }
             recordingComposer = composer
+            events.beginRecording()
+            browserSteps = Task { _ = await BrowserBridge.steps(recording: true) }
             showRecordingControls(area: area)
         }
     }
@@ -268,6 +271,13 @@ struct Appshots {
     func stopRecordingAndCompose() {
         guard replay.recording else { return }
         closeRecordingControls()
+        let native = events.endRecording(keepClicks: CaptureSettings.load(output: output).recordClicks)
+        let starting = browserSteps
+        browserSteps = nil
+        let pageSteps = Task { () -> [[String: Any]] in
+            await starting?.value
+            return await BrowserBridge.steps(recording: false)
+        }
         let composer = recordingComposer
         recordingComposer = nil
         let foreground = NSWorkspace.shared.frontmostApplication
@@ -276,14 +286,15 @@ struct Appshots {
             do {
                 let open = composer.flatMap { $0.completion == nil ? nil : $0 }
                 let video = try await replay.stopRecording(output: output, frameCount: ReplayWriter.framesPerClip((open?.videos.count ?? 0) + 1))
+                let recorded = ReplayWriter.recordingEvents(native: native, browser: await pageSteps.value, video: video)
                 if let open {
-                    open.recordingFinished(video, events: events.snapshot())
+                    open.recordingFinished(video, events: recorded)
                     return
                 }
                 while busy { try await Task.sleep(nanoseconds: 200_000_000) }
                 busy = true
                 defer { busy = false }
-                let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: events.snapshot())
+                let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: recorded)
                 let pid = target?.processIdentifier, bundleID = target?.bundleIdentifier, title = target?.localizedName ?? ""
                 let pending = Task { @MainActor in await CaptureContext.slow(pid: pid, bundleID: bundleID, windowTitle: title) }
                 saveStatus(output: output, phase: "composing")
@@ -423,7 +434,7 @@ struct Appshots {
     @objc func toggleClickRecording() {
         let enabled = !CaptureSettings.load(output: output).recordClicks
         updateSettings { $0.recordClicks = enabled }
-        if enabled { events.start() } else { events.stop() }
+        if enabled { events.start() } else if !events.isRecording { events.stop() }
         if enabled && !AXIsProcessTrusted() { permissions() }
     }
 
