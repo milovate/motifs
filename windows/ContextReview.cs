@@ -725,6 +725,7 @@ internal sealed class ContextDialog : Form
     string selected = ComposerFiles.Sources[0];
     internal bool Collecting { get; set; }
     internal bool CollectingNetwork { get; set; }
+    internal event EventHandler? IncludeChanged;
 
     internal ContextDialog(IReadOnlyList<JsonObject> shots, IReadOnlyList<JsonObject> videos, JsonObject context, JsonObject include, bool collecting = false, bool collectingNetwork = false)
     {
@@ -735,10 +736,13 @@ internal sealed class ContextDialog : Form
         Collecting = collecting;
         CollectingNetwork = collectingNetwork;
         Text = "Context";
-        ClientSize = new Size(760, 540);
-        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedToolWindow;
+        ClientSize = new Size(680, 500);
+        StartPosition = FormStartPosition.Manual;
+        ShowInTaskbar = false;
         MinimizeBox = false;
         MaximizeBox = false;
+        KeyPreview = true;
         Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(32, 32, 34);
         ForeColor = Color.FromArgb(236, 236, 238);
@@ -773,6 +777,7 @@ internal sealed class ContextDialog : Form
             include[source] = args.NewValue == CheckState.Checked;
             RefreshEstimate();
             if (source == selected) RefreshDetail();
+            IncludeChanged?.Invoke(this, EventArgs.Empty);
         };
         detail.Dock = DockStyle.None;
         detail.BackColor = Color.FromArgb(24, 24, 26);
@@ -808,6 +813,12 @@ internal sealed class ContextDialog : Form
     {
         base.OnHandleCreated(e);
         Native.ExcludeFromCapture(Handle);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Escape) { Close(); return true; }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     void FillSources()

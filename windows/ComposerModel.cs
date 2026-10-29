@@ -264,6 +264,10 @@ internal static class ComposerFiles
 
     internal const int ComposerRecentLimit = 30;
 
+    internal static string ReopenStatus(int missing) => missing > 0
+        ? "Reopened · " + missing.ToString(CultureInfo.InvariantCulture) + (missing == 1 ? " file was" : " files were") + " deleted since it was saved."
+        : "Reopened a saved capture.";
+
     internal static string TrayTitle(string title, DateTimeOffset created, DateTimeOffset now) => title + " · " + RelativeTime(created, now);
 
     internal static string TrayTip(int screenshots) => screenshots.ToString(CultureInfo.InvariantCulture) + (screenshots == 1 ? " screenshot" : " screenshots") + " · Reopen in the composer";
@@ -909,6 +913,7 @@ internal static class ComposerTests
         Check(ComposerFiles.SkillsTip(Array.Empty<string>()) == "Add a skill" && ComposerFiles.SkillsTip(new[] { "report", "other" }) == "Skills: @other, @report — click to add or remove", "the skill button names the mentions in the note");
         Check(ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"c:\captures\bundle-a.json") && !ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"C:\Captures\bundle-b.json") && !ComposerFiles.SameCapture(null, @"C:\Captures\bundle-a.json"), "Recents does not reopen the capture already open");
         Check(ComposerFiles.RecentDetail(1, 0, "5 min ago", false) == "1 screenshot · 5 min ago" && ComposerFiles.RecentDetail(2, 1, "just now", true) == "2 screenshots · 1 clip · open" && ComposerFiles.RecentDetail(0, 0, "just now", false) == "just now", "a recent row names screenshots, clips, and whether it is open");
+        Check(ComposerFiles.ReopenStatus(0) == "Reopened a saved capture." && ComposerFiles.ReopenStatus(1) == "Reopened · 1 file was deleted since it was saved." && ComposerFiles.ReopenStatus(2) == "Reopened · 2 files were deleted since it was saved.", "reopening a capture says whether its files are still there");
         Check(!ComposerFiles.AllowClose(true, false, false, false) && !ComposerFiles.AllowClose(false, true, false, false) && !ComposerFiles.AllowClose(false, false, true, false) && !ComposerFiles.AllowClose(false, false, false, true) && ComposerFiles.AllowClose(false, false, false, false), "the composer stays open while preparing, adding a screenshot, recording, or reviewing a clip");
         Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
         Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)) == Color.FromArgb(20, 39, 56), "the mention tint keeps some of the accent color");

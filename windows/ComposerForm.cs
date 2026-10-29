@@ -369,6 +369,7 @@ internal sealed class ComposerForm : Form
     {
         if (!CloseAllowed()) { e.Cancel = true; return; }
         if (skillPopup is { IsDisposed: false }) skillPopup.Close();
+        if (contextReview is { IsDisposed: false }) contextReview.Close();
         dictating = false;
         speech?.Dispose();
         speech = null;
@@ -543,6 +544,7 @@ internal sealed class ComposerForm : Form
         bool hasNote = ComposerFiles.HasNote(note.Text, skillIds);
         bool locked = sending || submitted;
         if (locked && skillPopup is { IsDisposed: false }) skillPopup.Close();
+        if (locked && contextReview is { IsDisposed: false }) contextReview.Close();
         bool attachments = !CanEditAttachments;
         note.ReadOnly = locked || dictating;
         destinationBox.Visible = destinations.Count >= 2;
@@ -832,14 +834,33 @@ internal sealed class ComposerForm : Form
 
     void EditContext()
     {
+        if (sending || submitted) return;
         mentions.Dismiss();
         mentionPopup.Hide();
-        using var dialog = new ContextDialog(shots, videos, context, include, collectingConsole, collectingNetwork);
+        if (contextReview is { IsDisposed: false }) { contextReview.Close(); return; }
+        var dialog = new ContextDialog(shots, videos, context, include, collectingConsole, collectingNetwork);
         contextReview = dialog;
-        dialog.ShowDialog(this);
-        contextReview = null;
+        dialog.IncludeChanged += (_, _) => SaveInclude();
+        dialog.FormClosed += (_, _) =>
+        {
+            if (contextReview == dialog) contextReview = null;
+            SaveInclude();
+        };
+        var origin = contextButton.PointToScreen(new Point(0, contextButton.Height + 4));
+        dialog.Location = origin;
+        dialog.Show(this);
+        var area = Screen.FromControl(dialog).WorkingArea;
+        int x = Math.Max(area.Left, Math.Min(dialog.Left, area.Right - dialog.Width));
+        int y = dialog.Bottom > area.Bottom ? contextButton.PointToScreen(Point.Empty).Y - dialog.Height - 4 : dialog.Top;
+        dialog.Location = new Point(x, Math.Max(area.Top, y));
+    }
+
+    void SaveInclude()
+    {
+        if (IsDisposed) return;
         settings["include"] = ComposerFiles.Clone(include);
-        try { ComposerFiles.SaveSettings(output, settings); } catch (Exception error) { status.Text = error.Message; }
+        try { ComposerFiles.SaveSettings(output, settings); }
+        catch (Exception error) { status.Text = error.Message; }
         RefreshSend();
         Touch();
     }
@@ -962,7 +983,7 @@ internal sealed class ComposerForm : Form
             bundleId = bundle.Id ?? bundleId;
             created = bundle.Created ?? created;
             manifest = bundle.Path;
-            if (bundle.Missing > 0) status.Text = bundle.Missing + (bundle.Missing == 1 ? " file was" : " files were") + " deleted since this capture was saved.";
+            status.Text = ComposerFiles.ReopenStatus(bundle.Missing);
             RefreshThumbs();
             RefreshContext();
         }
@@ -1375,7 +1396,7 @@ internal sealed class ComposerForm : Form
     {
         if (videos.Count >= ReplayMath.MaxClips) return;
         videos.Add(clip);
-        status.Text = "Recording added. Click it to review or trim.";
+        status.Text = "Recording added · Click it to review or trim.";
         RedistributeFrames();
         RefreshThumbs();
         RefreshContext();
