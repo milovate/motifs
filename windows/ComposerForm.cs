@@ -150,12 +150,13 @@ internal sealed class ComposerForm : Form
     readonly List<JsonObject> videos = new();
     readonly List<ComposerEndpoint> endpoints = new();
     readonly List<SkillChoice> skills = new();
-    readonly FlowLayoutPanel thumbs = new() { AutoSize = true, WrapContents = false, Height = 64, Dock = DockStyle.Fill };
+    const int ThumbRowHeight = 84;
+    readonly FlowLayoutPanel thumbs = new() { AutoSize = false, AutoScroll = true, WrapContents = false, Height = ThumbRowHeight, Dock = DockStyle.Top, Padding = new Padding(12, 0, 12, 0) };
     readonly MentionNote note = new() { Multiline = true, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 14), PlaceholderText = "What feels wrong?", ScrollBars = ScrollBars.Vertical };
     bool fittingNote;
     readonly ComboBox destinationBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     readonly ComboBox targetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
-    readonly Button contextButton = new() { Text = "Context", AutoSize = true };
+    readonly Button contextButton = new() { Text = "Context", AutoSize = true, Margin = new Padding(4, 16, 0, 0) };
     readonly ToolTip tips = new() { ShowAlways = true };
     readonly Button addButton = MakeButton("Add");
     readonly Button recordButton = MakeButton("Record");
@@ -233,14 +234,12 @@ internal sealed class ComposerForm : Form
         ShowInTaskbar = true;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        ClientSize = new Size(680, 250);
+        ClientSize = new Size(680, 250 + ThumbRowHeight);
         BackColor = Color.FromArgb(32, 32, 34);
         ForeColor = Color.FromArgb(236, 236, 238);
         Font = new Font("Segoe UI", 10);
-        var top = new TableLayoutPanel { Dock = DockStyle.Top, Height = 72, ColumnCount = 2, Padding = new Padding(12, 10, 12, 0) };
-        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var actions = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Dock = DockStyle.Fill };
+        var top = new Panel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(12, 0, 12, 0) };
+        var actions = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Dock = DockStyle.Fill };
         contextButton.Click += (_, _) => EditContext();
         contextButton.AccessibleName = "Review context sent with this capture";
         addButton.Click += async (_, _) => await AddShot();
@@ -261,8 +260,7 @@ internal sealed class ComposerForm : Form
         tips.SetToolTip(closeButton, "Close without sending (Escape)");
         tips.SetToolTip(destinationBox, "Where to send this capture");
         actions.Controls.AddRange(new Control[] { contextButton, addButton, recordButton, recentsButton, skillsButton, prefixButton, dictateButton, closeButton });
-        top.Controls.Add(thumbs, 0, 0);
-        top.Controls.Add(actions, 1, 0);
+        top.Controls.Add(actions);
         note.Dock = DockStyle.Fill;
         note.BackColor = Color.FromArgb(24, 24, 26);
         note.ForeColor = ForeColor;
@@ -292,6 +290,7 @@ internal sealed class ComposerForm : Form
         bottom.Controls.AddRange(new Control[] { destinationBox, targetBox, send, shortcut, status });
         Controls.Add(note);
         Controls.Add(bottom);
+        Controls.Add(thumbs);
         Controls.Add(top);
         autosave.Tick += (_, _) => { autosave.Stop(); Persist(); };
         foreach (var button in actions.Controls) StyleQuiet((Button)button);
@@ -323,7 +322,7 @@ internal sealed class ComposerForm : Form
         int wanted = Math.Clamp(lines * note.Font.Height + 14, 52, 180);
         int chrome = ClientSize.Height - note.Height;
         if (chrome < 80) return;
-        int height = Math.Clamp(chrome + wanted, 214, 440);
+        int height = Math.Clamp(chrome + wanted, 214 + ThumbRowHeight, 440 + ThumbRowHeight);
         if (Math.Abs(ClientSize.Height - height) < 2) return;
         fittingNote = true;
         try

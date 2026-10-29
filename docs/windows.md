@@ -52,7 +52,8 @@ needed, warn about interrupting active work before `opencode service restart`.
    while the composer is open.
 3. The composer opens centered on the display under the pointer, 80px above the bottom of the screen, or 10% of the screen height when that is smaller. Add a note, click a thumbnail
    to annotate it, and use **Add** for another capture (up to 8). Adding a
-   screenshot selects it. When more than one screenshot is attached, that
+   screenshot selects it. Thumbnails sit on their own row under the buttons and
+   scroll sideways when they do not all fit. When more than one screenshot is attached, that
    thumbnail is outlined. Removing one keeps the selection on the screenshot
    that remains in its place. The **×** appears when the pointer is on that
    thumbnail and removes it from the draft only. Hovering a screenshot names the app and says to right-click to copy or share. Hovering a recording names the clip and its length, and says the key frames are sent while the video stays on this PC. A play badge on the recording shows that length. Right-click a screenshot or
