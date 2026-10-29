@@ -265,9 +265,17 @@ Your saved capture keeps the originals, your own note is sent as you wrote it, a
 **screenshots and recordings are not redacted**: a secret visible on screen stays in
 the image.
 
-- **Known formats are always replaced:** private keys, AWS, GitHub, GitLab, Slack,
-  Stripe, OpenAI/Anthropic-style and Google API keys, npm tokens, JWTs, `Bearer`
-  credentials, passwords in URLs, and `password=`/`api_key:`-style assignments.
+- **Known formats are always replaced** (prefixes follow the
+  [gitleaks](https://github.com/gitleaks/gitleaks) rules): OpenAI, Anthropic,
+  OpenRouter, Hugging Face, Groq, Replicate, xAI, Perplexity, Tavily, Pinecone and
+  LangSmith keys; AWS (including Bedrock), Azure client secrets, Google, Cloudflare
+  origin CA, DigitalOcean, Heroku, Fly.io, PlanetScale, Supabase, Databricks, Doppler
+  and 1Password tokens; GitHub, GitLab, npm, PyPI and Postman tokens; Slack, Linear,
+  Notion, Figma, Sentry, Shopify, SendGrid, Twilio and Stripe keys; age and PEM
+  private keys; JWTs; `Bearer` credentials; passwords in URLs; and assignments such
+  as `password=`, `api_key:`, `VERCEL_TOKEN=` or `MISTRAL_KEY:`. Providers without a
+  recognizable prefix (Vercel, Mistral, Cohere and others) are caught by such a
+  variable name, or as a random-looking value.
 - **Values that only might be secrets** are random-looking URL path segments and
   parameter values (`/api/keys/abc123`, `?id=Zx81Qp0L…`) and long random tokens.
   By default they are replaced too. Ordinary IDs, UUIDs, numbers and words are kept.

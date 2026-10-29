@@ -129,3 +129,47 @@ test("bundles are redacted everywhere they leave the Mac, except the user's note
   assert.match(draftText(safe, note, "/tmp/captures/b-context.md"), /- Redacted: \d+ values that looked like secrets/);
   assert.match(contextDocument(safe), /^\d+ values that looked like secrets were replaced/);
 });
+
+test("AI, cloud and developer platform keys are recognised by format", async () => {
+  let seed = 7;
+  const pick = (set, n) => Array.from({ length: n }, () => set[(seed = (seed * 1103515245 + 12345) % 2 ** 31) % set.length]).join("");
+  const alnum = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const letters = alnum.slice(0, 52);
+  const hex = "0123456789abcdef";
+  const samples = {
+    "openai-anthropic-key": ["sk-" + pick(alnum, 48), "sk-proj-" + pick(alnum + "_-", 120), "sk-svcacct-" + pick(alnum, 60), "sk-ant-api03-" + pick(alnum + "_-", 95), "sk-or-v1-" + pick(hex, 64)],
+    "huggingface-token": ["hf_" + pick(letters, 34)],
+    "groq-key": ["gsk_" + pick(alnum, 52)],
+    "replicate-token": ["r8_" + pick(alnum, 37)],
+    "xai-key": ["xai-" + pick(alnum, 80)],
+    "perplexity-key": ["pplx-" + pick(alnum, 48)],
+    "google-api-key": ["AIza" + pick(alnum + "_-", 35)],
+    "aws-access-key": ["AKIA" + pick("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16)],
+    "github-token": ["ghp_" + pick(alnum, 36), "github_pat_" + pick(alnum + "_", 82)],
+    "gitlab-token": ["glpat-" + pick(alnum, 20)],
+    "slack-token": ["xoxb-" + pick("0123456789", 12) + "-" + pick(alnum, 24)],
+    "stripe-key": ["sk_live_" + pick(alnum, 24)],
+    "supabase-key": ["sbp_" + pick(hex, 40), "sb_secret_" + pick(alnum, 32)],
+    "linear-key": ["lin_api_" + pick(alnum, 40)],
+    "notion-token": ["ntn_" + pick("0123456789", 11) + pick(alnum, 35)],
+    "sendgrid-key": ["SG." + pick(alnum, 22) + "." + pick(alnum, 43)],
+    "shopify-token": ["shpat_" + pick(hex, 32)],
+    "digitalocean-token": ["dop_v1_" + pick(hex, 64)],
+    "databricks-token": ["dapi" + pick(hex, 32)],
+    "npm-token": ["npm_" + pick(alnum, 36)],
+    "pinecone-key": ["pcsk_" + pick(alnum, 60)],
+    "langsmith-key": ["lsv2_pt_" + pick(hex, 32) + "_" + pick(hex, 10)],
+  };
+  for (const [kind, values] of Object.entries(samples)) {
+    for (const value of values) {
+      const session = createSession();
+      const result = await redactText(`key: ${value} end`, session);
+      assert.ok(!result.includes(value), `${kind} sample must be redacted`);
+      assert.equal(session.report.fallback, 0, `${kind} is known without asking a model`);
+    }
+  }
+  const unlabeled = createSession();
+  assert.equal(await redactText(`VERCEL_TOKEN=${pick(alnum, 24)} and MISTRAL_KEY: ${pick(alnum, 32)}`, unlabeled), "VERCEL_TOKEN=[redacted] and MISTRAL_KEY: [redacted]", "providers without a prefix are caught by their variable name");
+  const prose = "Ask the risk-assessment team; the SKU list and secret santa notes are in the monkey: banana file.";
+  assert.equal(await redactText(prose, createSession()), prose);
+});
