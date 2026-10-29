@@ -58,7 +58,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
    Explorer**, or **Copy Path**. That shares the file and does not send the
    draft. **Context**
-   reviews window text, device, console, network, steps, and logs. Hover it to
+   reviews window text, device, console, network, steps, and logs. Console and network show the first 200 rows and say how many are left out. Steps show the newest 200, newest first. A time inside a clip uses that clip's time. Hover it to
    see each source's count, or **off** when that source is switched off, and a
    rough token estimate. Each source has an include switch, a preview, and
    Markdown. For a native app, the button says **collecting…** while that app's
@@ -76,6 +76,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    reusable opening, puts it at the start of the note, and removes it when chosen
    again. Nothing is sent while you edit.
 4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
+   The destination menu is hidden when only one is available, and a destination that is not ready cannot stay selected.
    **Ctrl+Enter** or the action button prepares the bundle through the bridge.
    The note and the other controls stay locked until that finishes.
    OpenCode opens a new unsent session and pastes the screenshots and draft.

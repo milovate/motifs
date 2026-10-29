@@ -166,6 +166,7 @@ internal sealed class ComposerForm : Form
     readonly Button closeButton = MakeButton("Close");
     readonly Button send = new() { Text = "Review in OpenCode", AutoSize = true, Enabled = false };
     readonly Label status = new() { AutoSize = true, MaximumSize = new Size(600, 0) };
+    readonly Label shortcut = new() { Text = "Ctrl+Enter", AutoSize = true, ForeColor = Color.FromArgb(170, 170, 176), Padding = new Padding(0, 8, 0, 0) };
     readonly System.Windows.Forms.Timer autosave = new() { Interval = 600 };
     JsonObject settings;
     JsonObject context;
@@ -287,7 +288,6 @@ internal sealed class ComposerForm : Form
         send.BackColor = Color.FromArgb(232, 232, 234);
         send.ForeColor = Color.FromArgb(20, 20, 20);
         send.Click += async (_, _) => await Send();
-        var shortcut = new Label { Text = "Ctrl+Enter", AutoSize = true, ForeColor = Color.FromArgb(170, 170, 176), Padding = new Padding(0, 8, 0, 0) };
         bottom.Controls.AddRange(new Control[] { destinationBox, targetBox, send, shortcut, status });
         Controls.Add(note);
         Controls.Add(bottom);
@@ -430,7 +430,10 @@ internal sealed class ComposerForm : Form
         foreach (var destination in destinations) destinationBox.Items.Add(destination);
         destinationBox.DisplayMember = "Label";
         string preferred = settings["defaultDestination"]?.GetValue<string>() ?? "opencode";
-        int index = destinations.FindIndex(item => item.Id == preferred);
+        int index = destinations.FindIndex(item => item.Id == preferred && item.Status == "ready");
+        if (index < 0) index = destinations.FindIndex(item => item.Status == "ready");
+        if (index < 0) index = destinations.FindIndex(item => item.Id == preferred);
+        destinationBox.Visible = destinations.Count >= 2;
         if (destinationBox.Items.Count > 0) destinationBox.SelectedIndex = index >= 0 ? index : 0;
         filling = false;
         DestinationChanged();
@@ -438,6 +441,22 @@ internal sealed class ComposerForm : Form
 
     void DestinationChanged()
     {
+        if (Current is ComposerDestination blocked && blocked.Status != "ready")
+        {
+            int ready = destinations.FindIndex(item => item.Status == "ready");
+            if (ready >= 0 && destinationBox.SelectedIndex != ready)
+            {
+                filling = true;
+                destinationBox.SelectedIndex = ready;
+                filling = false;
+            }
+            else if (ready < 0)
+            {
+                status.Text = blocked.Label + ": " + blocked.Status;
+                RefreshSend();
+                return;
+            }
+        }
         filling = true;
         targetBox.Items.Clear();
         foreach (var target in Current?.Targets ?? new List<ComposerTarget>()) targetBox.Items.Add(target);
@@ -526,7 +545,9 @@ internal sealed class ComposerForm : Form
         if (locked && skillPopup is { IsDisposed: false }) skillPopup.Close();
         bool attachments = !CanEditAttachments;
         note.ReadOnly = locked || dictating;
-        destinationBox.Enabled = !locked;
+        destinationBox.Visible = destinations.Count >= 2;
+        destinationBox.Enabled = !locked && destinationBox.Visible;
+        shortcut.Text = (target?.ActionLabel ?? "Continue") + "  ·  Ctrl+Enter";
         targetBox.Enabled = !locked;
         contextButton.Enabled = !locked;
         addButton.Enabled = !attachments && shots.Count < 8;

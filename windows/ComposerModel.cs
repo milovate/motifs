@@ -1182,6 +1182,14 @@ internal static class ComposerTests
         Check(!AppConsole.MergeBrowser(browserKept, browserPage), "a second browser snapshot does not replace context that is already there");
         var video = new JsonObject { ["source"] = "replay", ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 20 };
         Check(ContextReview.ClipMoment("2026-10-29T10:00:05Z", new[] { video }) == "Instant replay · 0:05.0", "events inside a clip show the clip time");
+        var manyConsole = new JsonArray();
+        for (int index = 0; index < 205; index++) manyConsole.Add(new JsonObject { ["time"] = "t", ["level"] = "error", ["source"] = "app", ["message"] = "m" + index.ToString(CultureInfo.InvariantCulture) });
+        string consolePreview = ContextReview.Preview("console", Array.Empty<JsonObject>(), new JsonObject { ["console"] = new JsonObject { ["entries"] = manyConsole } });
+        Check(consolePreview.Contains("app: m0") && consolePreview.Contains("app: m199") && !consolePreview.Contains("app: m204") && consolePreview.EndsWith("5 more not shown", StringComparison.Ordinal), "the console preview keeps the first 200 messages");
+        var stepPreview = ContextReview.Preview("events", Array.Empty<JsonObject>(), new JsonObject { ["events"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "t1", ["kind"] = "click", ["app"] = "Notes" }, new JsonObject { ["time"] = "t2", ["kind"] = "app-switch", ["app"] = "Chrome" }) } });
+        Check(stepPreview.StartsWith("[t2]", StringComparison.Ordinal), "steps are shown newest first");
+        var timed = new JsonObject { ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:05Z", ["level"] = "error", ["source"] = "app", ["message"] = "boom" }) } };
+        Check(ContextReview.Preview("console", Array.Empty<JsonObject>(), timed, new[] { video }).Contains("Instant replay · 0:05.0", StringComparison.Ordinal), "a preview uses the clip time when the message falls inside a clip");
         var pausedClip = new JsonObject
         {
             ["startedAt"] = "2026-10-29T10:00:00.000Z",

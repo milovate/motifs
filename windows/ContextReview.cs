@@ -15,6 +15,7 @@ internal static class ContextReview
 {
     internal const int PreviewLimit = 8_000;
     internal const int MarkdownLimit = 20_000;
+    internal const int RowLimit = 200;
 
     internal static string Label(string source) => source switch
     {
@@ -183,14 +184,33 @@ internal static class ContextReview
         }
     }
 
-    internal static string Preview(string source, IReadOnlyList<JsonObject> shots, JsonObject context)
+    internal static string Preview(string source, IReadOnlyList<JsonObject> shots, JsonObject context, IReadOnlyList<JsonObject>? videos = null)
     {
         if (source == "device")
         {
             var pairs = DevicePairs(context);
             return pairs.Count == 0 ? "" : string.Join("\n", pairs.Select(pair => pair.Key + ": " + pair.Value));
         }
+        if (source is "console" or "network" or "events") return Limited(source, context, videos ?? Array.Empty<JsonObject>());
         return Render(source, shots, context);
+    }
+
+    static string Limited(string source, JsonObject context, IReadOnlyList<JsonObject> videos)
+    {
+        var entries = Entries(context, source);
+        bool newestFirst = source == "events";
+        IEnumerable<JsonObject> shown = newestFirst ? entries.TakeLast(RowLimit).Reverse() : entries.Take(RowLimit);
+        string When(JsonObject entry) => ClipMoment(Field(entry, "time"), videos) ?? Field(entry, "time");
+        string Line(JsonObject entry) => source switch
+        {
+            "console" => "[" + When(entry) + "] " + Field(entry, "level").ToUpperInvariant() + " " + (Field(entry, "source") == "browser" ? "page" : (StringOf(entry, "subsystem") ?? "app")) + ": " + Field(entry, "message"),
+            "network" => "[" + When(entry) + "] " + Field(entry, "method") + " " + StatusOrError(entry) + " " + Field(entry, "url"),
+            "events" => "[" + When(entry) + "] " + Describe(entry) + (Field(entry, "kind") == "app-switch" || Field(entry, "app").Length == 0 ? "" : " in " + Field(entry, "app")),
+            _ => "",
+        };
+        var lines = shown.Select(Line).ToList();
+        if (!newestFirst && entries.Count > RowLimit) lines.Add((entries.Count - RowLimit).ToString(CultureInfo.InvariantCulture) + " more not shown");
+        return string.Join("\n", lines);
     }
 
     internal static List<KeyValuePair<string, string>> DevicePairs(JsonObject context)
@@ -531,6 +551,10 @@ internal sealed class ContextDialog : Form
         var title = new Label { Text = "Context", AutoSize = true, Font = new Font("Segoe UI", 14, FontStyle.Bold), ForeColor = ForeColor };
         var subtitle = new Label { Text = "What this capture sends along with your note", AutoSize = true, ForeColor = Color.FromArgb(170, 170, 176) };
         estimate.ForeColor = Color.FromArgb(170, 170, 176);
+        var tips = new ToolTip { ShowAlways = true };
+        tips.SetToolTip(estimate, "Rough size of the included context (about 4 characters per token)");
+        tips.SetToolTip(copy, "Copy this source as Markdown");
+        Disposed += (_, _) => tips.Dispose();
         preview.ForeColor = ForeColor;
         markdown.ForeColor = ForeColor;
         preview.CheckedChanged += (_, _) => ModeChanged();
@@ -632,7 +656,7 @@ internal sealed class ContextDialog : Form
         detail.ForeColor = included ? Color.FromArgb(236, 236, 238) : Color.FromArgb(140, 140, 146);
         string text = markdown.Checked
             ? ContextReview.Markdown(selected, shots, videos, context)
-            : ContextReview.Preview(selected, shots, context);
+            : ContextReview.Preview(selected, shots, context, videos);
         if (text.Length == 0) text = ContextReview.EmptyText(selected, Collecting, CollectingNetwork);
         int limit = markdown.Checked ? ContextReview.MarkdownLimit : ContextReview.PreviewLimit;
         if (text.Length > limit) text = text[..limit] + "\n… " + (text.Length - limit) + " more characters" + (markdown.Checked ? " (Copy includes everything)" : "");
