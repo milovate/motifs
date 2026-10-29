@@ -41,9 +41,8 @@ struct ComposerEndpoint: Decodable {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
         composer.completion = { continuation.resume() }
         AppshotComposer.current = composer
-        composer.showWindow(nil)
         composer.positionNearBottom()
-        composer.window?.makeKeyAndOrderFront(nil)
+        composer.window?.present { composer.window?.makeKeyAndOrderFront(nil) }
         NSApplication.shared.activate(ignoringOtherApps: true)
         composer.window?.makeFirstResponder(composer.textView)
         composer.discoverProjects()
@@ -174,7 +173,7 @@ struct ComposerEndpoint: Decodable {
         addScreenshotButton.target = self
         addScreenshotButton.action = #selector(showAddMenu)
         addScreenshotButton.compact = true
-        addScreenshotButton.toolTip = "Add a screenshot of a region or a screen recording"
+        addScreenshotButton.toolTip = "Add a screenshot of a region or a screen recording (⌥⇧G records)"
         addScreenshotButton.setAccessibilityLabel("Add a screenshot or a screen recording")
         closeButton.target = self
         closeButton.action = #selector(closeComposer)
@@ -653,7 +652,7 @@ struct ComposerEndpoint: Decodable {
         refreshAttachments()
         redistributeFrames()
         refreshSendAvailability()
-        window?.makeKeyAndOrderFront(nil)
+        window?.present { window?.makeKeyAndOrderFront(nil) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeFirstResponder(textView)
     }

@@ -21,6 +21,42 @@ import AppKit
     NSApp.mainMenu = menu
 }
 
+enum CornerRadius {
+    static let panel: CGFloat = 22
+    static let pill: CGFloat = 18
+    static let popup: CGFloat = 12
+    static let control: CGFloat = 9
+    static let tile: CGFloat = 7
+    static let small: CGFloat = 5
+}
+
+extension NSWindow {
+    // Fades in while scaling up from 97%; Reduce Motion keeps only a short fade.
+    @MainActor func present(_ show: () -> Void) {
+        alphaValue = 0
+        show()
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = reduceMotion ? 0.1 : 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1
+        }
+        guard !reduceMotion, let view = contentView?.superview ?? contentView else { return }
+        view.wantsLayer = true
+        guard let layer = view.layer else { return }
+        let center = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+        var start = CATransform3DMakeTranslation(center.x, center.y, 0)
+        start = CATransform3DScale(start, 0.97, 0.97, 1)
+        start = CATransform3DTranslate(start, -center.x, -center.y, 0)
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = start
+        animation.toValue = CATransform3DIdentity
+        animation.duration = 0.18
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(animation, forKey: "appear")
+    }
+}
+
 @MainActor class ComposerPanel: NSPanel {
     override var contentView: NSView? {
         didSet {
@@ -28,7 +64,7 @@ import AppKit
             // transparent NSPanel can retain a rectangular edge around it.
             guard let frame = contentView?.superview else { return }
             frame.wantsLayer = true
-            frame.layer?.cornerRadius = contentView?.layer?.cornerRadius ?? 22
+            frame.layer?.cornerRadius = contentView?.layer?.cornerRadius ?? CornerRadius.panel
             frame.layer?.cornerCurve = .continuous
             frame.layer?.masksToBounds = true
             frame.layer?.borderWidth = 0
@@ -46,7 +82,7 @@ import AppKit
 }
 
 @MainActor final class ComposerSurface: NSVisualEffectView {
-    init(frame frameRect: NSRect, radius: CGFloat = 22) {
+    init(frame frameRect: NSRect, radius: CGFloat = CornerRadius.panel) {
         super.init(frame: frameRect)
         material = .popover
         blendingMode = .behindWindow
@@ -114,7 +150,7 @@ import AppKit
                 let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
                 layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
                     let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -4, dy: 0)
-                    NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
+                    NSBezierPath(roundedRect: pill, xRadius: CornerRadius.small, yRadius: CornerRadius.small).fill()
                 }
             }
         }
@@ -170,7 +206,7 @@ import AppKit
     }
     private func drawControl() {
         let rect = bounds.insetBy(dx: 1, dy: 1)
-        let radius: CGFloat = title.isEmpty ? rect.height / 2 : 9
+        let radius: CGFloat = title.isEmpty ? rect.height / 2 : CornerRadius.control
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         let pressed = isHighlighted && isEnabled
         let background: NSColor
@@ -230,7 +266,7 @@ import AppKit
     }
     private func drawControl() {
         NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.09 : 0.045).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 9, yRadius: 9).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: CornerRadius.control, yRadius: CornerRadius.control).fill()
         let color = isEnabled ? NSColor.labelColor.withAlphaComponent(0.78) : NSColor.tertiaryLabelColor
         let title = titleOfSelectedItem ?? placeholder
         let paragraph = NSMutableParagraphStyle()
@@ -292,7 +328,7 @@ import AppKit
         imageButton.imageScaling = .scaleProportionallyUpOrDown
         imageButton.isBordered = false
         imageButton.wantsLayer = true
-        imageButton.layer?.cornerRadius = 7
+        imageButton.layer?.cornerRadius = CornerRadius.tile
         imageButton.layer?.masksToBounds = true
         imageButton.layer?.borderWidth = selected ? 1 : 0.5
         imageButton.layer?.borderColor = (selected ? NSColor.controlAccentColor : .separatorColor).cgColor
@@ -336,7 +372,7 @@ import AppKit
         imageButton.imageScaling = .scaleProportionallyUpOrDown
         imageButton.isBordered = false
         imageButton.wantsLayer = true
-        imageButton.layer?.cornerRadius = 7
+        imageButton.layer?.cornerRadius = CornerRadius.tile
         imageButton.layer?.masksToBounds = true
         imageButton.layer?.borderWidth = 0.5
         imageButton.layer?.borderColor = NSColor.separatorColor.cgColor
@@ -352,7 +388,7 @@ import AppKit
         badge.backgroundColor = NSColor.black.withAlphaComponent(0.6)
         badge.alignment = .center
         badge.wantsLayer = true
-        badge.layer?.cornerRadius = 4
+        badge.layer?.cornerRadius = CornerRadius.small
         badge.layer?.masksToBounds = true
         badge.frame = NSRect(x: 5, y: 8, width: 38, height: 14)
         removeButton.frame = NSRect(x: 56, y: 40, width: 17, height: 17)
@@ -402,7 +438,7 @@ import AppKit
         scroll.drawsBackground = true
         scroll.backgroundColor = .textBackgroundColor
         scroll.wantsLayer = true
-        scroll.layer?.cornerRadius = 8
+        scroll.layer?.cornerRadius = CornerRadius.control
         scroll.layer?.masksToBounds = true
         scroll.documentView = preview
         preview.isEditable = false

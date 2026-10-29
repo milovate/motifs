@@ -279,9 +279,10 @@ are sent in total, split across the clips: six for one clip, three each for two,
 each for three. The bundle records each clip's source, what it captured, start time,
 duration, pauses and frame offsets.
 
-Click a clip to review it: play it, see blue markers for clicks, red for console
-errors and failed requests, and orange for warnings, and drag the handles (or press
-I and O) to trim. **Use trimmed clip** writes a new MP4 for the selection and takes
+Click a clip to review it. A filmstrip shows the clip with blue dots under it for
+clicks, red for console errors and failed requests, and orange for warnings; hover a
+dot to see the event. Drag the yellow handles (or press I and O) to trim; Space plays
+the selection and the arrow keys step. **Use trimmed clip** writes a new MP4 for the selection and takes
 key frames from it; the original file is left in the captures folder. **Remove clip**
 detaches it. On send:
 

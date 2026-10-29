@@ -85,7 +85,7 @@ enum ComposerMentions {
         let start = max(0, min(selectedIndex - 5, candidates.count - 6))
         let visible = Array(candidates.dropFirst(start).prefix(6))
         let height = CGFloat(visible.count * 32 + 40)
-        let surface = ComposerSurface(frame: NSRect(x: 0, y: 0, width: 330, height: height), radius: 12)
+        let surface = ComposerSurface(frame: NSRect(x: 0, y: 0, width: 330, height: height), radius: CornerRadius.popup)
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading

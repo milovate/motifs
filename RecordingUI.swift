@@ -21,7 +21,7 @@ enum RecordingChoice: Int {
         panel.isMovableByWindowBackground = true
         panel.sharingType = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let surface = ComposerSurface(frame: panel.frame, radius: 18)
+        let surface = ComposerSurface(frame: panel.frame, radius: CornerRadius.pill)
         let row = NSStackView(views: views)
         row.alignment = .centerY
         row.spacing = 8
@@ -101,7 +101,7 @@ enum RecordingChoice: Int {
             self.continuation = continuation
             panel.place(on: NSScreen.main, nearTop: false)
             NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
+            panel.present { panel.makeKeyAndOrderFront(nil) }
         }
     }
 
@@ -181,7 +181,7 @@ enum RecordingChoice: Int {
 
     func show(on screen: NSScreen?) {
         panel.place(on: screen, nearTop: true)
-        panel.orderFrontRegardless()
+        panel.present { panel.orderFrontRegardless() }
     }
 
     func close() { panel.orderOut(nil); panel.close() }

@@ -293,7 +293,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             "network": ["entries": [["time": "2026-10-29T10:00:09Z", "method": "POST", "status": 500, "url": "https://x.test/pay"]]],
         ]
         let markers = clipMarkers(clip(2), context: markerContext)
-        precondition(markers.map(\.kind) == [.click, .error, .warning, .error] && markers.map(\.time) == [4, 6.5, 7, 9] && markers[3].label == "POST 500 https://x.test/pay", "clicks, errors, warnings and failed requests become timeline markers (\(markers))")
+        precondition(markers.map(\.kind) == [.click, .error, .warning, .error] && markers.map(\.time) == [4, 6.5, 7, 9] && markers[3].label == "POST 500 /pay" && markers[0].title == "Click · 0:04.0", "clicks, errors, warnings and failed requests become timeline markers (\(markers))")
         let review = ClipReviewController(video: clip(2), context: markerContext, frameCount: 2)
         precondition(review.timeline.markers.count == 4 && !review.trimmed && review.useButton.title == "Use clip", "the review opens untrimmed")
         review.timeline.trimIn = 5
@@ -302,6 +302,8 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(review.trimmed && review.useButton.title == "Use trimmed clip" && review.selection.stringValue == "0:05.0 in · 0:07.0 selected of 0:20.0 · 0:12.0 out", "trim handles describe the selection (\(review.selection.stringValue))")
         review.timeline.frame = NSRect(x: 0, y: 0, width: 220, height: 44)
         precondition(abs(review.timeline.time(review.timeline.x(7)) - 7) < 0.01, "timeline positions map to clip time")
+        precondition(review.timeline.marker(near: review.timeline.x(9) + 3)?.label == "POST 500 /pay" && review.timeline.marker(near: review.timeline.x(2)) == nil, "hovering near a marker finds it")
+        precondition(review.window is ComposerPanel && !review.window!.styleMask.contains(.titled) && (review.window!.contentView as? NSVisualEffectView)?.maskImage != nil, "the review is a rounded glass panel like the composer")
 
         precondition(RecordingControls.format(65) == "01:05", "controls show minutes and seconds")
         let controls = RecordingControls()
@@ -330,10 +332,21 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             }
             try render(controls.panel.contentView!, "recording-controls", dark: true)
             try render(windowBar.panel.contentView!, "recording-bar", dark: true)
+            review.timeline.frames = (0..<ClipReviewController.filmstripCount).map { index in
+                NSImage(size: NSSize(width: 160, height: 100), flipped: false) { rect in
+                    NSColor(calibratedHue: CGFloat(index) / 14, saturation: 0.35, brightness: 0.85, alpha: 1).setFill()
+                    rect.fill()
+                    NSColor.white.withAlphaComponent(0.7).setFill()
+                    NSRect(x: 12, y: 60, width: 90, height: 10).fill()
+                    return true
+                }
+            }
+            review.timeline.frame = NSRect(x: 0, y: 0, width: 700, height: 70)
+            try render(review.timeline, "clip-timeline", dark: true)
             let reviewContent = review.window!.contentView!
             review.window!.contentView = nil
             reviewContent.frame = NSRect(x: 0, y: 0, width: 780, height: 560)
-            try render(reviewContent, "clip-review", dark: false)
+            try render(reviewContent, "clip-review", dark: true)
             let picker = ComposerContextPicker()
             picker.shots = shots
             picker.context = markerContext
