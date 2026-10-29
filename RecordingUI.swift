@@ -21,7 +21,7 @@ enum RecordingChoice: Int {
         panel.isMovableByWindowBackground = true
         panel.sharingType = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let surface = ComposerSurface(frame: panel.frame)
+        let surface = ComposerSurface(frame: panel.frame, radius: 18)
         let row = NSStackView(views: views)
         row.alignment = .centerY
         row.spacing = 8

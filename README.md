@@ -108,10 +108,10 @@ installation without planning that permission step.
    with a rough token estimate. Uncheck either source to leave it out of every destination.
 4. **@report** is prefilled into the editable text when available. Type **@** for
    autocomplete, use Up/Down to choose, and press Enter or Tab to insert a skill.
-   Known mentions are highlighted. Deleting a mention (or clicking its chip's **×**)
-   removes the selection; loading skills again does not resurrect a deleted default.
-   **+** also opens the searchable skill picker. Email addresses are not skill mentions.
-   The text is canonical; the selected-skill chips are derived from it.
+   Known mentions are highlighted. Deleting a mention removes the selection; loading
+   skills again does not resurrect a deleted default. The **@** button opens the
+   searchable skill picker. Email addresses are not skill mentions. The text is
+   canonical; the selected skills are derived from it.
 5. Optionally click the **microphone**, approve Microphone and Speech Recognition, speak,
    then stop and edit the transcript. Only on-device recognition is used; there is
    no cloud fallback or saved audio. Language/device availability varies.

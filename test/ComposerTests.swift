@@ -49,7 +49,8 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(composer.window!.contentView!.superview!.layer!.cornerRadius == 22, "native frame uses the same rounded contour")
         precondition(composer.window!.contentView!.superview!.layer!.borderWidth == 0, "no rectangular native-frame outline")
         precondition(composer.projects.titleOfSelectedItem == "GooeyAI", "project basename, not full path")
-        precondition(composer.skillChips.arrangedSubviews.count == 1, "Report is a removable chip")
+        precondition((composer.window!.contentView as! NSVisualEffectView).maskImage != nil, "behind-window blur is rounded, not a rectangle")
+        precondition(composer.selectedSkills == ["report"], "Report is selected by its inline mention")
         precondition(composer.textView.string == "@report ", "Report is prefilled into the editable draft")
         precondition(!composer.sendButton.isEnabled, "skill-only drafts cannot continue")
         let compactHeight = composer.window!.frame.height
@@ -75,9 +76,9 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         composer.window!.contentView!.layoutSubtreeIfNeeded()
         precondition(composer.window!.frame.height > compactHeight, "composer grows with input")
         precondition(composer.inputHeight.constant <= 180, "long reports scroll instead of filling the screen")
-        let chip = composer.skillChips.arrangedSubviews[0] as! NSButton
-        composer.removeSkill(chip)
-        precondition(composer.selectedSkills.isEmpty, "skill chip removal")
+        composer.textView.string = "No skill here"
+        composer.updateInputSize()
+        precondition(composer.selectedSkills.isEmpty, "deleting the mention removes the skill")
         let picker = ComposerSkillPicker()
         picker.skills = composer.skills
         _ = picker.view

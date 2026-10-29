@@ -28,7 +28,7 @@ import AppKit
             // transparent NSPanel can retain a rectangular edge around it.
             guard let frame = contentView?.superview else { return }
             frame.wantsLayer = true
-            frame.layer?.cornerRadius = 22
+            frame.layer?.cornerRadius = contentView?.layer?.cornerRadius ?? 22
             frame.layer?.cornerCurve = .continuous
             frame.layer?.masksToBounds = true
             frame.layer?.borderWidth = 0
@@ -46,16 +46,30 @@ import AppKit
 }
 
 @MainActor final class ComposerSurface: NSVisualEffectView {
-    override init(frame frameRect: NSRect) {
+    init(frame frameRect: NSRect, radius: CGFloat = 22) {
         super.init(frame: frameRect)
         material = .popover
         blendingMode = .behindWindow
         state = .active
+        // The window server draws behind-window blur as a rectangle and ignores
+        // layer corners; only maskImage rounds the blur itself.
+        maskImage = Self.roundedMask(radius: radius)
         wantsLayer = true
-        layer?.cornerRadius = 22
+        layer?.cornerRadius = radius
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
         layer?.borderWidth = 0
+    }
+    static func roundedMask(radius: CGFloat) -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func updateLayer() {
@@ -95,12 +109,12 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {
         if let layout = layoutManager, let container = textContainer {
             let origin = textContainerOrigin
-            NSColor.controlAccentColor.withAlphaComponent(0.3).setFill()
+            NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
             for range in mentionRanges where NSMaxRange(range) <= (string as NSString).length {
                 let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
                 layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
-                    let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -2, dy: 1)
-                    NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                    let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -4, dy: 0)
+                    NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
                 }
             }
         }
@@ -253,7 +267,7 @@ import AppKit
         imageButton.wantsLayer = true
         imageButton.layer?.cornerRadius = 7
         imageButton.layer?.masksToBounds = true
-        imageButton.layer?.borderWidth = selected ? 1.5 : 0.5
+        imageButton.layer?.borderWidth = selected ? 1 : 0.5
         imageButton.layer?.borderColor = (selected ? NSColor.controlAccentColor : .separatorColor).cgColor
         imageButton.toolTip = "Annotate screenshot \(index + 1) — " + (shot["app"] as? String ?? "Image")
         imageButton.setAccessibilityLabel("Annotate screenshot \(index + 1)")

@@ -76,7 +76,7 @@ struct ComposerEndpoint: Decodable {
     let contextButton = ComposerButton("Context", symbol: "info.circle", treatment: .chip)
     let contextPopover = NSPopover()
     let shortcut = NSTextField(labelWithString: "Review in OpenCode  ·  ⌘↵")
-    let skillsButton = ComposerButton(symbol: "plus")
+    let skillsButton = ComposerButton(symbol: "at")
     let microphone = ComposerButton(symbol: "mic")
     let sendButton = ComposerButton(symbol: "arrow.up", treatment: .primary)
     let annotateButton = ComposerButton("Annotate", symbol: "pencil.tip", treatment: .chip)
@@ -89,7 +89,6 @@ struct ComposerEndpoint: Decodable {
     var reviewingClip = false
     var preparingFrames = false
     var frameGeneration = UUID()
-    let skillChips = NSStackView()
     let scroll = NSScrollView()
     let contentStack = NSStackView()
     let skillPopover = NSPopover()
@@ -246,10 +245,8 @@ struct ComposerEndpoint: Decodable {
         skillsButton.target = self
         skillsButton.action = #selector(showSkills)
         skillsButton.isEnabled = false
-        skillsButton.toolTip = "Add or remove skills"
+        skillsButton.toolTip = "Add a skill"
         skillsButton.setAccessibilityLabel("Choose skills")
-        skillChips.orientation = .horizontal
-        skillChips.spacing = 4
         microphone.target = self
         microphone.action = #selector(toggleDictation)
         microphone.toolTip = "On-device voice-to-text. Review the transcript before sending."
@@ -263,7 +260,7 @@ struct ComposerEndpoint: Decodable {
         sendButton.keyEquivalentModifierMask = [.command]
         sendButton.isEnabled = false
         let spacer = NSView()
-        let actions = NSStackView(views: [skillsButton, skillChips, destinationButton, projects, spacer, microphone, sendButton])
+        let actions = NSStackView(views: [skillsButton, destinationButton, projects, spacer, microphone, sendButton])
         actions.distribution = .fill
         actions.spacing = 6
         actions.alignment = .centerY
@@ -490,8 +487,8 @@ struct ComposerEndpoint: Decodable {
             layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: full)
             for mention in mentions {
                 // Preserve the editor's exact font metrics and weight. The
-                // text view draws a quiet rounded highlight behind the mention.
-                layout.addTemporaryAttributes([.foregroundColor: NSColor.labelColor], forCharacterRange: mention.range)
+                // text view draws a soft rounded tint behind the mention.
+                layout.addTemporaryAttributes([.foregroundColor: NSColor.controlAccentColor], forCharacterRange: mention.range)
             }
         }
         updateSkillsTitle()
@@ -583,7 +580,7 @@ struct ComposerEndpoint: Decodable {
     func refreshAttachments() {
         for view in thumbnailStrip.arrangedSubviews { thumbnailStrip.removeArrangedSubview(view); view.removeFromSuperview() }
         for (index, shot) in shots.enumerated() {
-            let thumbnail = ScreenshotThumbnailView(shot: shot, index: index, selected: index == selectedShotIndex)
+            let thumbnail = ScreenshotThumbnailView(shot: shot, index: index, selected: shots.count > 1 && index == selectedShotIndex)
             thumbnail.onAnnotate = { [weak self] in
                 guard let self, self.textView.isEditable, !self.addingScreenshot else { return }
                 self.selectedShotIndex = index
@@ -816,33 +813,8 @@ struct ComposerEndpoint: Decodable {
     }
 
     func updateSkillsTitle() {
-        for view in skillChips.arrangedSubviews { skillChips.removeArrangedSubview(view); view.removeFromSuperview() }
         let ids = selectedSkills.sorted()
-        for id in ids.prefix(1) {
-            let name = id.count > 18 ? String(id.prefix(15)) + "…" : id
-            let chip = ComposerButton("@" + name, symbol: "xmark", treatment: .chip)
-            chip.font = .systemFont(ofSize: 12, weight: .regular)
-            chip.identifier = NSUserInterfaceItemIdentifier(id)
-            chip.toolTip = "Remove @" + id
-            chip.setAccessibilityLabel("Remove skill " + id)
-            chip.target = self
-            chip.action = #selector(removeSkill(_:))
-            skillChips.addArrangedSubview(chip)
-        }
-        if ids.count > 1 {
-            let more = ComposerButton("+\(ids.count - 1)", treatment: .chip)
-            more.target = self
-            more.action = #selector(showSkills)
-            more.toolTip = ids.joined(separator: ", ")
-            skillChips.addArrangedSubview(more)
-        }
-    }
-
-    @objc func removeSkill(_ sender: NSButton) {
-        guard !sending, !submitted, skillsButton.isEnabled, let id = sender.identifier?.rawValue else { return }
-        let ranges = ComposerMentions.matches(in: textView.string, skills: [id]).map(\.range).reversed()
-        for range in ranges { textView.insertText("", replacementRange: range) }
-        updateInputSize()
+        skillsButton.toolTip = ids.isEmpty ? "Add a skill" : "Skills: " + ids.map { "@" + $0 }.joined(separator: ", ") + " — click to add or remove"
     }
 
     @objc func showSkills() {
@@ -985,7 +957,6 @@ struct ComposerEndpoint: Decodable {
         addScreenshotButton.isEnabled = enabled && (shots.count < 8 || canAddRecording)
         for case let thumbnail as ScreenshotThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for case let thumbnail as VideoThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
-        for view in skillChips.arrangedSubviews { (view as? NSButton)?.isEnabled = enabled }
         skillPopover.close()
         contextPopover.close()
         mentionCompletion.dismiss()
