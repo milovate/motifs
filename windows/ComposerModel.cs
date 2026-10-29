@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using Microsoft.Win32;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -67,7 +68,11 @@ internal static class ComposerFiles
         return rect.Width < 3 || rect.Height < 3 ? null : rect;
     }
 
-    internal static bool Mentions(string text, string id) => Regex.IsMatch(text, $@"(?<![\w@])@{Regex.Escape(id)}(?![\w-])");
+    internal static bool Mentions(string text, string id) => Regex.IsMatch(text, MentionPattern(id));
+
+    internal static string RemoveMention(string text, string id) => Regex.Replace(text, MentionPattern(id), "");
+
+    static string MentionPattern(string id) => $@"(?<![\p{{L}}\p{{N}}_@/])@{Regex.Escape(id)}(?![\p{{L}}\p{{N}}_-])";
 
     internal static JsonObject Device()
     {
@@ -82,7 +87,7 @@ internal static class ComposerFiles
                 ["scale"] = Math.Round(scale, 2),
             });
         }
-        return new JsonObject
+        var device = new JsonObject
         {
             ["os"] = RuntimeInformation.OSDescription.Trim(),
             ["arch"] = RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant(),
@@ -90,6 +95,36 @@ internal static class ComposerFiles
             ["displays"] = displays,
             ["locale"] = CultureInfo.CurrentCulture.Name,
         };
+        string? cpu = CpuName();
+        if (cpu != null) device["cpu"] = cpu;
+        return device;
+    }
+
+    static string? CpuName()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+            string? name = key?.GetValue("ProcessorNameString") as string;
+            name = name?.Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch { return null; }
+    }
+
+    // Hardware facts only. No machine name, user name, or network identity.
+    internal static JsonObject SystemFacts()
+    {
+        var system = new JsonObject();
+        var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
+        if (Native.GlobalMemoryStatusEx(ref memory))
+            system["memory"] = new JsonObject { ["pressure"] = ContextReview.PressureName((int)memory.MemoryLoad), ["loadPercent"] = memory.MemoryLoad };
+        if (Native.GetSystemPowerStatus(out var power) && (power.BatteryFlag & 128) == 0 && power.BatteryLifePercent <= 100)
+            system["battery"] = new JsonObject { ["level"] = (int)power.BatteryLifePercent, ["charging"] = (power.BatteryFlag & 8) != 0 };
+        string? root = Path.GetPathRoot(Environment.SystemDirectory);
+        if (root != null && Native.GetDiskFreeSpaceEx(root, out ulong free, out _, out _))
+            system["storage"] = new JsonObject { ["availableBytes"] = JsonValue.Create(free) };
+        return system;
     }
 
     static float MonitorScale(System.Windows.Forms.Screen screen)
@@ -326,6 +361,17 @@ internal static class ComposerFiles
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct PowerStatus
+{
+    internal byte ACLineStatus;
+    internal byte BatteryFlag;
+    internal byte BatteryLifePercent;
+    internal byte SystemStatusFlag;
+    internal uint BatteryLifeTime;
+    internal uint BatteryFullLifeTime;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct MemoryStatus
 {
     internal uint Length;
@@ -338,6 +384,72 @@ internal struct MemoryStatus
     internal ulong AvailVirtual;
     internal ulong AvailExtendedVirtual;
 }
+
+internal sealed class SkillChoice
+{
+    internal string Id = "";
+    internal string Name = "";
+}
+
+// The note is canonical. Completion offers known skills while an @ query is being typed.
+internal sealed class MentionSession
+{
+    internal List<SkillChoice> Candidates = new();
+    internal int Selected;
+    internal MentionQuery? Query;
+
+    internal bool Open => Candidates.Count > 0;
+
+    internal void Update(string text, int caret, int selectionLength, IReadOnlyList<SkillChoice> skills)
+    {
+        var next = QueryAt(text, caret, selectionLength);
+        if (next?.Prefix != Query?.Prefix || next?.Start != Query?.Start) Selected = 0;
+        Query = next;
+        if (next == null) { Candidates.Clear(); return; }
+        Candidates = Matching(skills, next.Prefix);
+        if (Candidates.Count == 0) { Query = null; return; }
+        Selected = Math.Min(Selected, Candidates.Count - 1);
+    }
+
+    internal void Move(int delta)
+    {
+        if (Candidates.Count == 0) return;
+        Selected = (Selected + delta + Candidates.Count) % Candidates.Count;
+    }
+
+    internal void Dismiss()
+    {
+        Candidates.Clear();
+        Query = null;
+        Selected = 0;
+    }
+
+    internal static List<SkillChoice> Matching(IReadOnlyList<SkillChoice> skills, string prefix) =>
+        skills.Where(skill => prefix.Length == 0 || skill.Id.Contains(prefix, StringComparison.OrdinalIgnoreCase) || skill.Name.Contains(prefix, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(skill => skill.Id == "report" ? 0 : 1)
+        .ThenBy(skill => skill.Id, StringComparer.Ordinal)
+        .ToList();
+
+    internal static MentionQuery? QueryAt(string text, int caret, int selectionLength)
+    {
+        if (selectionLength != 0 || caret < 0 || caret > text.Length) return null;
+        var match = Regex.Match(text[..caret], @"(?<![\p{L}\p{N}_@/])@([\p{L}\p{N}_.-]*)$");
+        if (!match.Success) return null;
+        if (caret < text.Length && ContinuesToken(text[caret])) return null;
+        return new MentionQuery(match.Index, match.Length, match.Groups[1].Value);
+    }
+
+    internal static string Apply(string text, int start, int length, string id)
+    {
+        string mention = "@" + id + " ";
+        if (start < 0 || length < 0 || start > text.Length || start + length > text.Length) return text + mention;
+        return text[..start] + mention + text[(start + length)..];
+    }
+
+    static bool ContinuesToken(char value) => char.IsLetterOrDigit(value) || value is '_' or '-' or '.' or '@';
+}
+
+internal readonly record struct MentionQuery(int Start, int Length, string Prefix);
 
 internal static class ComposerTests
 {
@@ -395,6 +507,38 @@ internal static class ComposerTests
         Check(ComposerFiles.ActivePrefix(prefixes, "@report Checkout: button is broken") == "@report Checkout:", "the longest matching prefix is active");
         Check(ComposerFiles.ApplyPrefix(prefixes, "@report Checkout: button is broken", "@other") == "@other button is broken", "choosing another prefix swaps it");
         Check(ComposerFiles.ApplyPrefix(prefixes, "@other button is broken", "@other") == "button is broken", "choosing the active prefix removes it");
+        Check(ComposerFiles.Mentions("see @report next", "report") && !ComposerFiles.Mentions("mail@report.com", "report") && !ComposerFiles.Mentions("/@report", "report"), "skill mentions ignore email addresses and path prefixes");
+        Check(MentionSession.QueryAt("@report", 3, 0) == null, "completion never replaces half a token");
+        var skills = new[] { new SkillChoice { Id = "other", Name = "Other" }, new SkillChoice { Id = "report", Name = "Report" } };
+        var session = new MentionSession();
+        session.Update("@re", 3, 0, skills);
+        Check(session.Open && session.Candidates[0].Id == "report", "@ prefix opens matching completion with report first");
+        Check(MentionSession.Apply("@re", session.Query!.Start, session.Query.Length, "report") == "@report ", "completion replaces the query");
+        Check(MentionSession.Apply("🙂 @ot", MentionSession.QueryAt("🙂 @ot", 6, 0)!.Start, 3, "other") == "🙂 @other ", "completion uses UTF-16 caret offsets");
+
+        var reviewShot = new JsonObject { ["text"] = "AXStaticText: fixture", ["app"] = "Notes", ["title"] = "Scratch" };
+        var reviewContext = new JsonObject
+        {
+            ["device"] = new JsonObject { ["os"] = "Windows 11", ["arch"] = "x64", ["memoryBytes"] = 8L * 1_073_741_824, ["displays"] = new JsonArray(new JsonObject { ["width"] = 1920, ["height"] = 1080, ["scale"] = 1.5 }), ["locale"] = "en-US" },
+            ["app"] = new JsonObject { ["name"] = "Notes" },
+            ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:00Z", ["level"] = "fault", ["message"] = "boom", ["source"] = "app" }) },
+            ["network"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:01Z", ["method"] = "POST", ["url"] = "https://shop.test/api", ["status"] = 502 }) },
+            ["events"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["kind"] = "type", ["role"] = "AXTextField", ["title"] = "Search", ["time"] = "2026-10-29T10:00:05Z", ["app"] = "Notes" }, new JsonObject { ["kind"] = "click", ["role"] = "button", ["name"] = "Run", ["count"] = 2 }, new JsonObject { ["kind"] = "scroll", ["x"] = 0, ["y"] = 400 }) },
+            ["system"] = new JsonObject { ["memory"] = new JsonObject { ["pressure"] = "normal" }, ["battery"] = new JsonObject { ["level"] = 50, ["charging"] = true }, ["storage"] = new JsonObject { ["availableBytes"] = 10L * 1_073_741_824 } },
+        };
+        var reviewShots = new List<JsonObject> { reviewShot };
+        Check(ContextReview.Describe(reviewContext["events"]!["entries"]![0]!.AsObject()) == "Typed into textfield \"Search\"", "typing names the field only");
+        Check(ContextReview.Describe(reviewContext["events"]!["entries"]![1]!.AsObject()) == "Double-clicked button \"Run\"", "browser steps use the role and accessible name");
+        Check(ContextReview.Describe(reviewContext["events"]!["entries"]![2]!.AsObject()) == "Scrolled the page to 0, 400", "page scrolls keep their position");
+        Check(ContextReview.Count("windowText", reviewShots, reviewContext) == 1 && ContextReview.Count("console", reviewShots, reviewContext) == 1 && ContextReview.ErrorCount("console", reviewContext) == 1, "context counts window text and console faults");
+        Check(ContextReview.Render("device", reviewShots, reviewContext).Contains("Windows 11 (x64)") && ContextReview.Render("device", reviewShots, reviewContext).Contains("8 GB memory") && ContextReview.Render("device", reviewShots, reviewContext).Contains("Battery: 50%, charging"), "device preview includes hardware and power");
+        Check(ContextReview.Markdown("device", reviewShots, Array.Empty<JsonObject>(), reviewContext).Contains("- **Memory:** 8 GB"), "device markdown uses labeled pairs");
+        Check(ContextReview.TokenEstimate(0) == "≈0 tokens" && ContextReview.TokenEstimate(4000) == "≈1.0k tokens", "token estimate uses about four characters");
+        var video = new JsonObject { ["source"] = "replay", ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 20 };
+        Check(ContextReview.ClipMoment("2026-10-29T10:00:05Z", new[] { video }) == "Instant replay · 0:05.0", "events inside a clip show the clip time");
+        Check(ContextReview.PressureName(10) == "normal" && ContextReview.PressureName(80) == "warning" && ContextReview.PressureName(95) == "critical" && ContextReview.PressureName(-1) == "unknown", "memory load maps to a pressure name");
+        var facts = ComposerFiles.SystemFacts();
+        Check(facts["memory"]?["pressure"] != null && facts["storage"]?["availableBytes"] != null, "Windows reports memory pressure and free storage");
         Console.WriteLine("Windows composer regressions passed");
     }
 

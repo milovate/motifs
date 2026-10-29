@@ -465,5 +465,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint MonitorFromPoint(NativePoint point, uint flags);
     [DllImport("shcore.dll")] internal static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("kernel32.dll", SetLastError = true)] internal static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] internal static extern bool GetDiskFreeSpaceEx(string directory, out ulong freeBytesAvailable, out ulong totalNumberOfBytes, out ulong totalNumberOfFreeBytes);
+    [DllImport("kernel32.dll")] internal static extern bool GetSystemPowerStatus(out PowerStatus status);
     [DllImport("user32.dll")] internal static extern void mouse_event(uint flags, uint dx, uint dy, uint data, nint extra);
 }

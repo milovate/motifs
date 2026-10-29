@@ -46,8 +46,11 @@ needed, warn about interrupting active work before `opencode service restart`.
    screen capture is the visible pixels in that rectangle.
 3. The composer opens at the bottom of the screen. Add a note, click a thumbnail
    to annotate it, and use **Add** for another capture (up to 8). **Context**
-   chooses which sources are included. **Recents** reopens a saved capture.
-   **@** inserts a skill from the loaded OpenCode project. **Prefix** saves a
+   reviews window text, device, console, network, steps, and logs. Each source
+   has an include switch, a preview, Markdown, and a rough token estimate.
+   **Recents** reopens a saved capture. Type **@** to pick a skill from the
+   loaded project; Up and Down move through the matches, and Enter or Tab inserts
+   one. Escape closes that list before it closes the composer. **Prefix** saves a
    reusable opening, puts it at the start of the note, and removes it when chosen
    again. Nothing is sent while you edit.
 4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
@@ -163,5 +166,7 @@ from the macOS development environment. Before calling Windows support verified:
   and clipboard-image annotation, and confirm handles are absent from the PNG.
 - Open the composer from the shortcut. Send the same capture to Clipboard and
   Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
-  Turn a context source off, reopen a recent capture, and confirm the switch sticks.
+  Open Context, compare the preview with the captured window, switch a source off,
+  and confirm the switch sticks after reopening a recent capture. Type `@` and
+  confirm Enter inserts a skill mention instead of sending.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

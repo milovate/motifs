@@ -56,12 +56,6 @@ internal sealed class BridgeClient : IDisposable
     public void Dispose() => http.Dispose();
 }
 
-internal sealed class SkillChoice
-{
-    internal string Id = "";
-    internal string Name = "";
-}
-
 // Floating review surface: screenshots, a note, destination, context, and a handoff
 // that stops in an unsent draft, on the clipboard, or in a folder.
 internal sealed class ComposerForm : Form
@@ -93,13 +87,16 @@ internal sealed class ComposerForm : Form
     bool submitted;
     bool filling;
     bool skillsReady;
+    readonly MentionSession mentions = new();
+    readonly MentionPopup mentionPopup = new();
+    bool updatingMentions;
 
     internal ComposerForm(string output, IEnumerable<Snapshot> initial)
     {
         this.output = output;
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
-        context = new JsonObject { ["device"] = ComposerFiles.Device() };
+        context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
         foreach (var shot in initial) shots.Add(ComposerFiles.Media(shot));
         Text = "Capture Studio";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -134,7 +131,19 @@ internal sealed class ComposerForm : Form
         note.Dock = DockStyle.Fill;
         note.BackColor = Color.FromArgb(24, 24, 26);
         note.ForeColor = ForeColor;
-        note.TextChanged += (_, _) => { autosave.Stop(); autosave.Start(); RefreshSend(); RefreshPrefix(); };
+        note.TextChanged += (_, _) => { autosave.Stop(); autosave.Start(); RefreshSend(); RefreshPrefix(); UpdateMentions(); };
+        note.MouseUp += (_, _) => UpdateMentions();
+        note.KeyUp += (_, _) => UpdateMentions();
+        note.Leave += (_, _) =>
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            BeginInvoke(() =>
+            {
+                if (IsDisposed || !mentionPopup.Visible || mentionPopup.Bounds.Contains(Cursor.Position)) return;
+                mentions.Dismiss();
+                mentionPopup.Hide();
+            });
+        };
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(12, 4, 12, 10), WrapContents = true };
         destinationBox.FormattingEnabled = true;
         destinationBox.Format += (_, args) => { if (args.ListItem is ComposerDestination item) args.Value = item.Status == "ready" ? item.Label : item.Label + " (unavailable)"; };
@@ -155,6 +164,7 @@ internal sealed class ComposerForm : Form
         RefreshThumbs();
         RefreshContext();
         RefreshPrefix();
+        mentionPopup.Choose = InsertMention;
         Shown += async (_, _) => await Discover();
     }
 
@@ -178,6 +188,8 @@ internal sealed class ComposerForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (sending && !submitted) { e.Cancel = true; return; }
+        mentions.Dismiss();
+        mentionPopup.Hide();
         autosave.Stop();
         try { Persist(); } catch { /* The draft remains in the form until the next open. */ }
         base.OnFormClosing(e);
@@ -185,6 +197,15 @@ internal sealed class ComposerForm : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if (mentions.Open && keyData is Keys.Down or Keys.Up or Keys.Enter or Keys.Tab or Keys.Escape)
+        {
+            if (keyData == Keys.Down) mentions.Move(1);
+            else if (keyData == Keys.Up) mentions.Move(-1);
+            else if (keyData is Keys.Enter or Keys.Tab) InsertMention();
+            else { mentions.Dismiss(); mentionPopup.Hide(); }
+            if (mentions.Open) mentionPopup.Present(this, note, mentions);
+            return true;
+        }
         if (keyData == Keys.Escape && !sending) { Close(); return true; }
         if (keyData == (Keys.Control | Keys.Enter) && send.Enabled) { _ = Send(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
@@ -292,17 +313,10 @@ internal sealed class ComposerForm : Form
         var target = CurrentTarget;
         send.Text = target?.ActionLabel ?? "Continue";
         send.Enabled = !sending && !submitted && skillsReady && Current?.Status == "ready" && target != null && (note.Text.Trim().Length > 0 || shots.Count > 0) && note.Text.Length <= 16_000;
-        int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && SourceCount(source) > 0);
+        int included = ComposerFiles.Sources.Count(source => ComposerFiles.Included(include, source) && ContextReview.Count(source, shots, context) > 0);
         contextButton.Text = included == 0 ? "No context" : "Context " + included;
-    }
-
-    int SourceCount(string source)
-    {
-        if (source == "windowText") return shots.Count(shot => !string.IsNullOrEmpty(shot["text"]?.GetValue<string>()));
-        if (source == "device") return context["device"] is JsonObject ? 1 : 0;
-        if (context[source]?["entries"] is JsonArray entries) return entries.Count;
-        if (source == "customLogs" && context["customLogs"] is JsonArray logs) return logs.Count;
-        return 0;
+        contextButton.AccessibleDescription = ContextReview.TokenEstimate(ContextReview.IncludedCharacters(shots, context, include));
+        if (!skillsReady) { mentions.Dismiss(); mentionPopup.Hide(); }
     }
 
     void RefreshContext()
@@ -375,31 +389,15 @@ internal sealed class ComposerForm : Form
 
     void EditContext()
     {
-        using var dialog = new Form { Text = "Context", ClientSize = new Size(360, 260), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
-        var list = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true };
-        foreach (string source in ComposerFiles.Sources) list.Items.Add($"{LabelFor(source)} · {SourceCount(source)}", ComposerFiles.Included(include, source));
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 32 };
-        dialog.Controls.Add(list);
-        dialog.Controls.Add(ok);
-        dialog.AcceptButton = ok;
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        for (int index = 0; index < ComposerFiles.Sources.Length; index++) include[ComposerFiles.Sources[index]] = list.GetItemChecked(index);
+        mentions.Dismiss();
+        mentionPopup.Hide();
+        using var dialog = new ContextDialog(shots, context, include);
+        dialog.ShowDialog(this);
         settings["include"] = ComposerFiles.Clone(include);
         try { ComposerFiles.SaveSettings(output, settings); } catch (Exception error) { status.Text = error.Message; }
         RefreshSend();
         Touch();
     }
-
-    static string LabelFor(string source) => source switch
-    {
-        "windowText" => "Window",
-        "device" => "Device",
-        "console" => "Console",
-        "network" => "Network",
-        "events" => "Steps",
-        "customLogs" => "Logs",
-        _ => source,
-    };
 
     void ShowRecents()
     {
@@ -452,7 +450,7 @@ internal sealed class ComposerForm : Form
             BeginInvoke(() =>
             {
                 if (args.NewValue == CheckState.Checked) { if (!ComposerFiles.Mentions(note.Text, id)) note.AppendText((note.Text.Length == 0 || note.Text.EndsWith(" ") ? "" : " ") + "@" + id + " "); }
-                else note.Text = Regex.Replace(note.Text, $@"(?<![\w@])@{Regex.Escape(id)}(?![\w-])", "");
+                else note.Text = ComposerFiles.RemoveMention(note.Text, id);
             });
         };
         dialog.Controls.Add(list);
@@ -641,5 +639,83 @@ internal sealed class ComposerForm : Form
         submitted = true;
         sending = false;
         Close();
+    }
+
+    void UpdateMentions()
+    {
+        if (updatingMentions) return;
+        if (sending || !skillsReady) { mentions.Dismiss(); mentionPopup.Hide(); return; }
+        mentions.Update(note.Text, note.SelectionStart, note.SelectionLength, skills);
+        if (!mentions.Open) mentionPopup.Hide();
+        else mentionPopup.Present(this, note, mentions);
+    }
+
+    void InsertMention()
+    {
+        if (!mentions.Open) return;
+        var skill = mentions.Candidates[mentions.Selected];
+        int start = mentions.Query?.Start ?? note.SelectionStart;
+        int length = mentions.Query?.Length ?? note.SelectionLength;
+        updatingMentions = true;
+        note.Text = MentionSession.Apply(note.Text, start, length, skill.Id);
+        note.SelectionStart = Math.Min(note.Text.Length, start + skill.Id.Length + 2);
+        updatingMentions = false;
+        mentions.Dismiss();
+        mentionPopup.Hide();
+        note.Focus();
+    }
+}
+
+// Stays above the note without taking focus. Up and Down move the selection from the composer.
+internal sealed class MentionPopup : Form
+{
+    readonly ListBox list = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false };
+    int visibleStart;
+    MentionSession? session;
+    internal Action? Choose;
+
+    internal MentionPopup()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        TopMost = true;
+        Size = new Size(280, 36);
+        BackColor = Color.FromArgb(28, 28, 30);
+        list.BackColor = BackColor;
+        list.ForeColor = Color.FromArgb(236, 236, 238);
+        Controls.Add(list);
+        list.Click += (_, _) =>
+        {
+            if (session == null || list.SelectedIndex < 0) return;
+            session.Selected = visibleStart + list.SelectedIndex;
+            Choose?.Invoke();
+        };
+    }
+
+    protected override bool ShowWithoutActivation => true;
+
+    internal void Present(Form owner, TextBox note, MentionSession current)
+    {
+        session = current;
+        visibleStart = Math.Max(0, Math.Min(current.Selected - 7, current.Candidates.Count - 8));
+        list.Items.Clear();
+        foreach (var skill in current.Candidates.Skip(visibleStart).Take(8))
+        {
+            string row = "@" + skill.Id;
+            if (skill.Name.Length > 0 && !string.Equals(skill.Name, skill.Id, StringComparison.OrdinalIgnoreCase)) row += "   " + skill.Name;
+            list.Items.Add(row);
+        }
+        int local = current.Selected - visibleStart;
+        if (local >= 0 && local < list.Items.Count) list.SelectedIndex = local;
+        Height = Math.Max(1, list.Items.Count) * 22 + 8;
+        var caret = note.GetPositionFromCharIndex(Math.Max(0, Math.Min(note.SelectionStart, note.Text.Length)));
+        var screenCaret = note.PointToScreen(caret);
+        var area = Screen.FromControl(owner).WorkingArea;
+        int y = screenCaret.Y - Height - 6;
+        if (y < area.Top + 8) y = screenCaret.Y + note.Font.Height + 6;
+        int x = Math.Min(Math.Max(area.Left + 8, screenCaret.X - 8), Math.Max(area.Left + 8, area.Right - Width - 8));
+        Location = new Point(x, y);
+        if (!Visible) base.Show(owner);
     }
 }
