@@ -186,6 +186,7 @@ internal sealed class ComposerForm : Form
     bool skillsReady;
     readonly MentionSession mentions = new();
     readonly MentionPopup mentionPopup = new();
+    Form? skillPopup;
     bool updatingMentions;
     internal static ComposerForm? Open { get; private set; }
     bool addingShot;
@@ -351,6 +352,7 @@ internal sealed class ComposerForm : Form
         Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
         FitNote();
         note.Focus();
+        try { Persist(); } catch { /* Recents still lists a draft that was already saved. */ }
         BeginSlowContext();
     }
 
@@ -366,6 +368,7 @@ internal sealed class ComposerForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (!CloseAllowed()) { e.Cancel = true; return; }
+        if (skillPopup is { IsDisposed: false }) skillPopup.Close();
         dictating = false;
         speech?.Dispose();
         speech = null;
@@ -520,6 +523,7 @@ internal sealed class ComposerForm : Form
         var skillIds = skills.Select(skill => skill.Id).ToList();
         bool hasNote = ComposerFiles.HasNote(note.Text, skillIds);
         bool locked = sending || submitted;
+        if (locked && skillPopup is { IsDisposed: false }) skillPopup.Close();
         bool attachments = !CanEditAttachments;
         note.ReadOnly = locked || dictating;
         destinationBox.Enabled = !locked;
@@ -822,6 +826,7 @@ internal sealed class ComposerForm : Form
     void ShowRecents()
     {
         if (!CanEditAttachments) return;
+        try { Persist(); } catch (Exception error) { status.Text = error.Message; return; }
         var recent = ComposerFiles.Recents(output, ComposerFiles.ComposerRecentLimit);
         using var headingFont = new Font(Font, FontStyle.Bold);
         using var dialog = new Form
@@ -945,34 +950,102 @@ internal sealed class ComposerForm : Form
 
     void ChooseSkills()
     {
-        if (!skillsReady) return;
-        using var dialog = new Form { Text = "Skills", ClientSize = new Size(320, 360), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
-        var search = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Find a skill" };
-        var list = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true };
+        if (!skillsReady || sending || submitted) return;
+        if (skillPopup is { IsDisposed: false }) { skillPopup.Close(); return; }
+        var popup = new Form
+        {
+            Text = "Skills",
+            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            ClientSize = new Size(300, 310),
+            StartPosition = FormStartPosition.Manual,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = BackColor,
+            ForeColor = ForeColor,
+            Font = Font,
+            KeyPreview = true,
+        };
+        skillPopup = popup;
+        popup.FormClosed += (_, _) => { if (skillPopup == popup) skillPopup = null; };
+        popup.KeyDown += (_, key) =>
+        {
+            if (key.KeyCode != Keys.Escape) return;
+            key.Handled = true;
+            popup.Close();
+        };
+        var search = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Find a skill…", AccessibleName = "Find a skill" };
+        var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        var skillTips = new ToolTip { ShowAlways = true };
+        popup.Disposed += (_, _) => skillTips.Dispose();
         bool fillingSkills = false;
         void Fill()
         {
             fillingSkills = true;
-            list.Items.Clear();
-            foreach (var skill in skills.Where(skill => search.Text.Length == 0 || (skill.Id + " " + skill.Name).Contains(search.Text, StringComparison.OrdinalIgnoreCase)))
-                list.Items.Add("@" + skill.Id, ComposerFiles.Mentions(note.Text, skill.Id));
+            while (scroll.Controls.Count > 0)
+            {
+                var child = scroll.Controls[0];
+                scroll.Controls.Remove(child);
+                child.Dispose();
+            }
+            var matches = SkillChoice.ForPicker(skills, search.Text);
+            if (matches.Count == 0)
+            {
+                scroll.Controls.Add(new Label { Text = "No matching skills", AutoSize = true, ForeColor = Color.FromArgb(170, 170, 176), Location = new Point(8, 8) });
+                fillingSkills = false;
+                return;
+            }
+            int top = 4;
+            foreach (var skill in matches)
+            {
+                string id = skill.Id;
+                var box = new CheckBox
+                {
+                    Text = "@" + id,
+                    Checked = ComposerFiles.Mentions(note.Text, id),
+                    AutoSize = true,
+                    Location = new Point(8, top),
+                    ForeColor = ForeColor,
+                };
+                skillTips.SetToolTip(box, skill.Name);
+                box.CheckedChanged += (_, _) =>
+                {
+                    if (fillingSkills) return;
+                    if (box.Checked) InsertSkillMention(id);
+                    else note.Text = ComposerFiles.RemoveMention(note.Text, id);
+                };
+                scroll.Controls.Add(box);
+                top += 28;
+            }
             fillingSkills = false;
         }
         search.TextChanged += (_, _) => Fill();
-        list.ItemCheck += (_, args) =>
-        {
-            if (fillingSkills) return;
-            string id = list.Items[args.Index]?.ToString()?.TrimStart('@') ?? "";
-            BeginInvoke(() =>
-            {
-                if (args.NewValue == CheckState.Checked) { if (!ComposerFiles.Mentions(note.Text, id)) note.AppendText((note.Text.Length == 0 || note.Text.EndsWith(" ") ? "" : " ") + "@" + id + " "); }
-                else note.Text = ComposerFiles.RemoveMention(note.Text, id);
-            });
-        };
-        dialog.Controls.Add(list);
-        dialog.Controls.Add(search);
+        popup.Controls.Add(scroll);
+        popup.Controls.Add(search);
         Fill();
-        dialog.ShowDialog(this);
+        popup.Shown += (_, _) => search.Focus();
+        var origin = skillsButton.PointToScreen(new Point(0, skillsButton.Height + 4));
+        popup.Location = origin;
+        popup.Show(this);
+        var area = Screen.FromControl(popup).WorkingArea;
+        int x = Math.Max(area.Left, Math.Min(popup.Left, area.Right - popup.Width));
+        int y = popup.Bottom > area.Bottom ? skillsButton.PointToScreen(Point.Empty).Y - popup.Height - 4 : popup.Top;
+        popup.Location = new Point(x, Math.Max(area.Top, y));
+    }
+
+    void InsertSkillMention(string id)
+    {
+        if (!skills.Any(skill => skill.Id == id) || ComposerFiles.Mentions(note.Text, id)) return;
+        int start = note.SelectionStart;
+        int length = note.SelectionLength;
+        if (MentionSession.QueryAt(note.Text, start, length) is MentionQuery query)
+        {
+            start = query.Start;
+            length = query.Length;
+        }
+        note.Text = MentionSession.Apply(note.Text, start, length, id);
+        note.SelectionStart = Math.Min(note.Text.Length, start + id.Length + 2);
+        note.Focus();
     }
 
     void ShowPrefixes(Control anchor)
@@ -1051,6 +1124,7 @@ internal sealed class ComposerForm : Form
         if (prefixes.Contains(prefix)) return;
         prefixes.Insert(0, prefix);
         StorePrefixes(prefixes.Take(12).ToList());
+        status.Text = "Saved prefix · choose it from the prefix button next time.";
     }
 
     void StorePrefixes(List<string> prefixes)

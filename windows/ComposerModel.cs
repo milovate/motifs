@@ -738,6 +738,15 @@ internal sealed class SkillChoice
 {
     internal string Id = "";
     internal string Name = "";
+
+    internal static List<SkillChoice> ForPicker(IReadOnlyList<SkillChoice> skills, string query)
+    {
+        string trimmed = query.Trim();
+        return skills.Where(skill => trimmed.Length == 0 || (skill.Id + " " + skill.Name).Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(skill => skill.Id == "report" ? 0 : 1)
+            .ThenBy(skill => skill.Id, StringComparer.Ordinal)
+            .ToList();
+    }
 }
 
 // The note is canonical. Completion offers known skills while an @ query is being typed.
@@ -1111,6 +1120,8 @@ internal static class ComposerTests
         var session = new MentionSession();
         session.Update("@re", 3, 0, skills);
         Check(session.Open && session.Candidates[0].Id == "report", "@ prefix opens matching completion with report first");
+        var picker = SkillChoice.ForPicker(new[] { new SkillChoice { Id = "zeta", Name = "Z" }, new SkillChoice { Id = "alpha", Name = "A" }, new SkillChoice { Id = "report", Name = "Report" } }, "  ");
+        Check(string.Join(",", picker.Select(skill => skill.Id)) == "report,alpha,zeta" && SkillChoice.ForPicker(picker, "alp").Count == 1 && SkillChoice.ForPicker(picker, "nope").Count == 0, "the skill list puts report first and filters by id or name");
         var chosen = session.Query!.Value;
         Check(MentionSession.Apply("@re", chosen.Start, chosen.Length, "report") == "@report ", "completion replaces the query");
         var caret = MentionSession.QueryAt("🙂 @ot", 6, 0)!.Value;

@@ -67,9 +67,9 @@ needed, warn about interrupting active work before `opencode service restart`.
    while a browser was in front, asks the extension for that window's console
    and failed requests instead. The composer opens while that read is still
    going. Reopening a saved capture does not read either source again.
-   **Recents** lists up to 30 saved captures, newest first. Each row has a thumbnail, the screenshot and clip counts, and when it was edited. The capture already open is marked and cannot be chosen again. The composer stays up while a screenshot is being added, a recording is in progress, or a clip is being reviewed, and Send stays off until that finishes. Type **@** to pick a skill from the
+   The draft is saved when the composer opens, and again when **Recents** opens, so the list includes this capture. **Recents** lists up to 30 saved captures, newest first. Each row has a thumbnail, the screenshot and clip counts, and when it was edited. The capture already open is marked and cannot be chosen again. The composer stays up while a screenshot is being added, a recording is in progress, or a clip is being reviewed, and Send stays off until that finishes. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
-   one. A note that is only @mentions does not enable Send until a screenshot or
+   one. The **@** button opens that list beside the button, with **report** first and the skill name on each row. Choosing **@** again closes it. A note that is only @mentions does not enable Send until a screenshot or
    recording is attached. Escape closes that list before it closes the composer. Once those skills
    have loaded, each known **@mention** is drawn in the accent color on a rounded
    tint. The composer grows with the note. **Prefix** saves a
