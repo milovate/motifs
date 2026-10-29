@@ -490,7 +490,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             return ["console": ["entries": [["time": "t", "level": "fault", "message": "late", "source": "app"]]]]
         }
         live.collect(slow)
-        precondition(live.contextButton.title == "Context · collecting…", "the chip says slow sources are still collecting")
+        precondition(live.contextButton.detail == "collecting…", "the chip says slow sources are still collecting")
         live.showWindow(nil)
         live.showContext()
         let picker = live.contextPopover.contentViewController as! ComposerContextPicker
@@ -525,7 +525,16 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(CaptureSettings.load(output: output).knownDestinations.map(\.id) == ["opencode", "clipboard", "linear"], "menu bar learns available destinations")
         composer.include = BundleInclude()
         composer.refreshContextSummary()
-        precondition(composer.contextButton.title.hasPrefix("Context · ≈"), "context chip shows a size estimate")
+        precondition(composer.contextButton.title == "Context" && Int(composer.contextButton.detail) ?? 0 > 0 && composer.contextButton.toolTip?.contains("tokens") == true, "context chip counts included sources and keeps the estimate in its tooltip")
+        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+            let content = composer.window!.contentView!
+            composer.window!.appearance = NSAppearance(named: .darkAqua)
+            content.layoutSubtreeIfNeeded()
+            let representation = content.bitmapImageRepForCachingDisplay(in: content.bounds)!
+            content.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: representation) }
+            try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("context-chip.png"))
+            composer.window!.appearance = nil
+        }
         for unsupported in [["action": "send-message"], ["title": "no session"]] as [[String: Any]] {
             var thrown = false
             var finished = false

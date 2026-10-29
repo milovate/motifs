@@ -109,8 +109,8 @@ installation without planning that permission step.
    every folder on disk. The footer and send button show the destination's action,
    such as **Review in OpenCode**, **Copy Markdown**, or **Save bundle**. The last
    destination you choose becomes the default.
-   The **Context** chip shows the window text and device info that will be included,
-   with a rough token estimate. Switch a source off to leave it out of every destination;
+   The **Context** chip shows how many context sources are included (or **No context**);
+   hover for the per-source counts and a rough token estimate, click to review them. Switch a source off to leave it out of every destination;
    the switches are remembered for the next capture.
 4. No skill is added for you. Type **@** for autocomplete, use Up/Down to choose,
    and press Enter or Tab to insert a skill. Known mentions are highlighted, and

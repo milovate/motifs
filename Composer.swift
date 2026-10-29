@@ -74,7 +74,7 @@ struct ComposerEndpoint: Decodable {
     let textView = ComposerTextView()
     let destinationButton = ComposerProjectButton()
     let projects = ComposerProjectButton()
-    let contextButton = ComposerButton("Context", symbol: "info.circle", treatment: .chip)
+    let contextButton = ComposerButton("Context", symbol: "square.stack.3d.up", treatment: .chip)
     let contextPopover = NSPopover()
     let recentsButton = ComposerButton(symbol: "clock.arrow.circlepath", treatment: .chip)
     let recentsPopover = NSPopover()
@@ -440,12 +440,13 @@ struct ComposerEndpoint: Decodable {
 
     func refreshContextSummary() {
         let characters = contextCharacterCount(shots: shots, context: context, include: include)
-        contextButton.title = "Context · " + (collecting ? "collecting…" : formatTokenEstimate(characters: characters).replacingOccurrences(of: " tokens", with: ""))
-        let parts = BundleInclude.sources.compactMap { source -> String? in
-            let count = ContextText.count(source, shots: shots, context: context)
-            return count == 0 ? nil : "\(ContextText.labels[source] ?? source) \(include[source] ? "\(count)" : "off")"
-        }
-        contextButton.toolTip = (parts.isEmpty ? "No context" : parts.joined(separator: " · ")) + ". Click to review."
+        let available = BundleInclude.sources.filter { ContextText.count($0, shots: shots, context: context) > 0 }
+        let included = available.filter { include[$0] }.count
+        contextButton.title = collecting || included > 0 ? "Context" : "No context"
+        contextButton.detail = collecting ? "collecting…" : included > 0 ? "\(included)" : ""
+        let parts = available.map { "\(ContextText.labels[$0] ?? $0) \(include[$0] ? "\(ContextText.count($0, shots: shots, context: context))" : "off")" }
+        contextButton.toolTip = (parts.isEmpty ? "No context" : parts.joined(separator: " · ") + " · " + formatTokenEstimate(characters: characters)) + ". Click to review."
+        contextButton.setAccessibilityValue(collecting ? "collecting" : "\(included) of \(available.count) sources included, \(formatTokenEstimate(characters: characters))")
     }
 
     @objc func showContext() {

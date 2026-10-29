@@ -171,6 +171,8 @@ extension NSWindow {
     var treatment: Treatment = .quiet { didSet { needsDisplay = true } }
     var symbolName: String? { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     var compact = false
+    // Secondary text drawn after the title in a lighter color, e.g. a count.
+    var detail = "" { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     private var hovered = false
     private var tracking: NSTrackingArea?
 
@@ -185,13 +187,15 @@ extension NSWindow {
         setContentCompressionResistancePriority(.required, for: .horizontal)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    static let detailFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
     override var title: String { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     override var isEnabled: Bool { didSet { needsDisplay = true } }
     override var intrinsicContentSize: NSSize {
         let height: CGFloat = treatment == .primary ? 34 : (compact ? 26 : 30)
         if title.isEmpty { return NSSize(width: height, height: height) }
         let text = (title as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 12)]).width
-        return NSSize(width: ceil(text) + (symbolName == nil ? 20 : 40), height: height)
+        let extra = detail.isEmpty ? 0 : ceil((detail as NSString).size(withAttributes: [.font: Self.detailFont]).width) + 6
+        return NSSize(width: ceil(text) + extra + (symbolName == nil ? 20 : 40), height: height)
     }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
@@ -249,6 +253,11 @@ extension NSWindow {
             let size = (title as NSString).size(withAttributes: attributes)
             let x: CGFloat = symbolName == nil ? (bounds.width - size.width) / 2 : 29
             (title as NSString).draw(at: NSPoint(x: x, y: (bounds.height - size.height) / 2), withAttributes: attributes)
+            if !detail.isEmpty {
+                let secondary: [NSAttributedString.Key: Any] = [.font: Self.detailFont, .foregroundColor: foreground.withAlphaComponent(isEnabled ? 0.55 : 0.4)]
+                let detailSize = (detail as NSString).size(withAttributes: secondary)
+                (detail as NSString).draw(at: NSPoint(x: x + ceil(size.width) + 6, y: (bounds.height - detailSize.height) / 2), withAttributes: secondary)
+            }
         }
     }
 }
