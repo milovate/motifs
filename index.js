@@ -68,12 +68,23 @@ export default {
       });
     });
     if (ctx.options?.hotkey === false) return;
-    const stopComposer = config.platform === "darwin" ? await startComposerBridge(ctx, captures) : undefined;
-    try { await startHotkey(); }
-    catch (error) { await stopComposer?.(); throw error; }
-    return stopComposer;
+    return startDesktopServices(ctx, config);
   },
 };
+
+// The helper reads composer descriptors from the captures folder. Both desktops
+// get the same loopback bridge; it prepares drafts and never starts a model.
+export async function startDesktopServices(ctx, target, io = { run, mkdir, spawnHelper }) {
+  if (!target) throw new Error("Capture Studio requires macOS or Windows.");
+  const stopComposer = await startComposerBridge(ctx, target.captures);
+  try {
+    await startHotkey(io, target);
+  } catch (error) {
+    await stopComposer();
+    throw error;
+  }
+  return stopComposer;
+}
 
 async function spawnHelper(executable, args) {
   await new Promise((resolve, reject) => {

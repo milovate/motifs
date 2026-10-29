@@ -16,6 +16,15 @@ test("Windows native annotation geometry, history, persistence, and pixels", { s
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("Windows composer bundle, destinations, and region geometry", { skip: process.platform !== "win32" }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "appshots-composer-test-"));
+  try {
+    const helper = fileURLToPath(new URL("../windows/dist/Appshots.exe", import.meta.url));
+    const { stdout } = await promisify(execFile)(helper, ["--test-composer", "--output", directory], { windowsHide: true, timeout: 30_000 });
+    assert.match(stdout, /Windows composer regressions passed/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("Windows helper rejects invalid requests without producing capture content", { skip: process.platform !== "win32" }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "appshots-windows-test-"));
   const helper = fileURLToPath(new URL("../windows/dist/Appshots.exe", import.meta.url));

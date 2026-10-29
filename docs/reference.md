@@ -9,13 +9,14 @@ On top of Appshots it adds destinations, bundles, context preview and recent cap
 
 A plugin for OpenCode V2. Captures one app window and the accessibility
 text from that same window, then returns both as native model-visible tool content.
-Supports macOS 14+ and an initial Windows 10/11 implementation. Requires a model
-that accepts images. The macOS implementation was verified against OpenCode 2.0.24;
-native Windows behavior still needs validation on a Windows desktop.
+Supports macOS 14+ and Windows 10/11. Requires a model that accepts images. The
+macOS implementation was verified against OpenCode 2.0.24; native Windows desktop
+behavior still needs validation on a Windows desktop.
 
 **Windows:** see [Windows setup and validation](windows.md). The instructions
-below describe macOS unless noted. Windows supports capture, UI Automation text,
-a tray shortcut, annotation editing, and best-effort draft insertion.
+below describe macOS unless noted. Windows has the capture picker, composer,
+destinations, context switches, recent captures, annotation editing, and
+best-effort draft handoff. Screen recording and instant replay remain on macOS.
 
 ## Installation
 
@@ -355,9 +356,11 @@ under the local captures folder's `composers/` directory. Do not share these fil
 Plugin cleanup closes the endpoint and removes its descriptor. Stale descriptors
 left after a crash are ignored when they cannot authenticate/connect.
 
-This composer is **macOS-only**. Windows retains its existing insertion workflow.
+Windows uses the same bridge and a WinForms composer: capture picker, destinations,
+context switches, prefixes, recent captures, and best-effort draft handoff. Screen
+recording, instant replay, dictation, and the macOS visual treatment stay on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
-contract tests or Swift type-checking does not verify native interaction.
+contract tests or a successful build does not verify native interaction.
 
 ### Existing draft-insertion workflow
 

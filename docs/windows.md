@@ -37,22 +37,29 @@ needed, warn about interrupting active work before `opencode service restart`.
 
 ## Capture and use
 
-1. Run `/capture-studio-start` if the Appshots system tray icon is missing.
-2. Focus a non-sensitive test window and press **Control+Alt+Shift+A**.
-3. Review and annotate the screenshot in the editor (see below). **Cancel** closes
-   it without inserting or sending anything. Escape clears a selection first,
-   then closes the editor. The capture remains saved locally.
-4. **Insert into OpenCode** saves the annotations, then attempts to focus the
-   desktop app's `Prompt` input,
-   append the screenshot and text, and leave the draft unsent. Have exactly one
-   OpenCode conversation window open. Review both the attachment and draft text.
-   Insertion never presses Return or clicks Send, and does not replace the draft.
-   Clipboard restoration is best effort and will not overwrite a newer user copy.
-5. Add your question and send when ready. If insertion fails, use `/capture-studio` in
-   the intended conversation to retrieve the saved screenshot and text instead.
+1. Run `/capture-studio-start` if the Capture Studio system tray icon is missing.
+   The plugin also starts a private loopback bridge, the same one macOS uses, so
+   the helper can list destinations and prepare a draft.
+2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
+   window, or press **Enter** for the whole display. Escape cancels. A window
+   capture uses `PrintWindow` and UI Automation for that window. A region or full
+   screen capture is the visible pixels in that rectangle.
+3. The composer opens at the bottom of the screen. Add a note, click a thumbnail
+   to annotate it, and use **Add** for another capture (up to 8). **Context**
+   chooses which sources are included. **Recents** reopens a saved capture.
+   **@** inserts a skill from the loaded OpenCode project. **Prefix** saves a
+   reusable opening, puts it at the start of the note, and removes it when chosen
+   again. Nothing is sent while you edit.
+4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
+   **Ctrl+Enter** or the action button prepares the bundle through the bridge.
+   OpenCode opens a new unsent session and pastes the screenshots and draft.
+   Clipboard copies Markdown. Save to folder writes the bundle and reveals it.
+   None of these presses Enter or clicks Send.
+5. Review the result and send it yourself. If handoff fails, the bundle remains
+   in the captures folder. `/capture-studio` can still read the latest window capture.
 
-The tray menu can review/reinsert or annotate the latest capture, annotate a
-clipboard image, open the captures folder, or quit the watcher.
+The tray can also open an empty composer, annotate or insert the latest capture,
+annotate a clipboard image, open the captures folder, or quit the watcher.
 `/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
 `{ "hotkey": false }` in plugin options disables automatic watcher startup.
@@ -103,8 +110,10 @@ error rather than replacing the saved capture.
 
 ## Privacy, limits, and differences from macOS
 
-- Captures only the selected top-level window using `PrintWindow`. There is no
-  desktop-crop fallback that could include overlapping unrelated windows.
+- A clicked window is captured with `PrintWindow`. That path has no desktop-crop
+  fallback, so overlapping windows stay out of the image. A dragged region or
+  Enter captures the visible pixels in that rectangle, which can include
+  whatever is on screen there. The composer says which kind you took.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -122,7 +131,7 @@ error rather than replacing the saved capture.
   A paste request is not proof of attachment success: inspect the draft before
   sending or retrying. Clipboard formats may not all round-trip through Windows.
 
-Storage defaults to `%LOCALAPPDATA%\opencode\appshots`, overridable with
+Storage defaults to `%LOCALAPPDATA%\opencode\capture-studio`, overridable with
 `XDG_DATA_HOME`. The helper restricts the capture directory to the current user and
 SYSTEM. PNG files and `latest.json` persist until you delete them; cancellation
 does not erase a saved capture. `status.json` records watcher/capture stages without
@@ -152,4 +161,7 @@ from the macOS development environment. Before calling Windows support verified:
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
   confirm exported marks agree with the editor on mixed-DPI monitors. Test Cancel
   and clipboard-image annotation, and confirm handles are absent from the PNG.
+- Open the composer from the shortcut. Send the same capture to Clipboard and
+  Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
+  Turn a context source off, reopen a recent capture, and confirm the switch sticks.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

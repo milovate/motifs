@@ -183,9 +183,10 @@ internal sealed class AnnotationCanvas : Forms.Control
 internal sealed class Preview : Forms.Form
 {
     readonly AnnotationCanvas canvas;
-    internal Preview(Snapshot shot, string output)
+    internal Snapshot? Result { get; private set; }
+    internal Preview(Snapshot shot, string output, bool returnOnly = false)
     {
-        Text = "Appshot — annotate, review, and insert";
+        Text = returnOnly ? "Annotate screenshot" : "Appshot — annotate, review, and insert";
         Width = 1200; Height = 850; StartPosition = Forms.FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 400);
         string original = shot.originalScreenshot ?? shot.screenshot;
@@ -221,16 +222,26 @@ internal sealed class Preview : Forms.Form
         };
         var bottom = new Forms.FlowLayoutPanel { Dock = Forms.DockStyle.Bottom, Height = 48, Padding = new Forms.Padding(4) };
         var insert = new Forms.Button { Text = "Insert into OpenCode", AutoSize = true };
-        var save = new Forms.Button { Text = "Save only", AutoSize = true };
+        var save = new Forms.Button { Text = returnOnly ? "Done" : "Save only", AutoSize = true };
         var cancel = new Forms.Button { Text = "Cancel", AutoSize = true };
         cancel.Click += (_, _) => Close();
-        save.Click += (_, _) => { try { AnnotationDocument.Export(shot, canvas.Document, output); Close(); } catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Appshots"); } };
-        bottom.Controls.AddRange(new Forms.Control[] { insert, save, cancel });
+        save.Click += (_, _) => {
+            try
+            {
+                var exported = AnnotationDocument.Export(shot, canvas.Document, output);
+                if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
+                Close();
+            }
+            catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Capture Studio"); }
+        };
+        if (!returnOnly) bottom.Controls.Add(insert);
+        bottom.Controls.Add(save);
+        bottom.Controls.Add(cancel);
         var hint = new Forms.Label { Text = "V select · A arrow · R box · P draw · T text · Ctrl+Z undo · Ctrl+D duplicate", AutoSize = true, Padding = new Forms.Padding(8) };
         bottom.Controls.Add(hint);
         Controls.Add(canvas); Controls.Add(toolbar); Controls.Add(bottom);
         // Freeze the editor while an insertion awaits focus/clipboard operations.
-        insert.Click += async (_, _) => {
+        if (!returnOnly) insert.Click += async (_, _) => {
             canvas.Enabled = toolbar.Enabled = bottom.Enabled = false;
             try { var annotated = AnnotationDocument.Export(shot, canvas.Document, output); await Inserter.Insert(annotated, output); Close(); }
             catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Appshot saved — insertion failed"); }
