@@ -74,6 +74,31 @@ internal static class ComposerFiles
 
     internal static bool Mentions(string text, string id) => Regex.IsMatch(text, MentionPattern(id));
 
+    internal readonly record struct MentionSpan(int Start, int Length, string Id);
+
+    // Complete known @mentions, longest id first, in UTF-16 indexes. Email addresses
+    // and paths are not mentions. The note draws a rounded tint behind each span.
+    internal static List<MentionSpan> MentionSpans(string text, IReadOnlyList<string> skills)
+    {
+        var found = new List<MentionSpan>();
+        var ids = skills.Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).OrderByDescending(id => id.Length).ThenBy(id => id, StringComparer.Ordinal).ToList();
+        if (text.Length == 0 || ids.Count == 0) return found;
+        string pattern = "(?<![\\p{L}\\p{N}_@/])@(" + string.Join("|", ids.Select(Regex.Escape)) + ")(?![\\p{L}\\p{N}_-])";
+        foreach (Match match in Regex.Matches(text, pattern))
+            found.Add(new MentionSpan(match.Index, match.Length, match.Groups[1].Value));
+        return found;
+    }
+
+    internal static Rectangle MentionPill(Point origin, int width, int height) =>
+        new(origin.X - 4, origin.Y, Math.Max(8, width) + 8, Math.Max(4, height));
+
+    internal static Color MentionTint(Color background, Color accent)
+    {
+        const float amount = 0.16f;
+        int Channel(byte back, byte fore) => (int)Math.Round(back + (fore - back) * amount);
+        return Color.FromArgb(Channel(background.R, accent.R), Channel(background.G, accent.G), Channel(background.B, accent.B));
+    }
+
     internal static string RemoveMention(string text, string id) => Regex.Replace(text, MentionPattern(id), "");
 
     static string MentionPattern(string id) => $@"(?<![\p{{L}}\p{{N}}_@/])@{Regex.Escape(id)}(?![\p{{L}}\p{{N}}_-])";
@@ -801,6 +826,12 @@ internal static class ComposerTests
         Check(selected == new Rectangle(10, 10, 30, 40), "region uses the drag bounds");
         Check(ComposerFiles.Selection(new Point(-10, -10), new Point(20, 25), new Rectangle(0, 0, 100, 100)) == new Rectangle(0, 0, 20, 25), "region stays on the display");
         Check(ComposerFiles.Mentions("see @report next", "report") && !ComposerFiles.Mentions("mail@report.com", "report"), "skill mentions ignore email addresses");
+        var highlighted = ComposerFiles.MentionSpans("see @report next @other", new[] { "other", "report", "report-long" });
+        Check(highlighted.Count == 2 && highlighted[0] == new ComposerFiles.MentionSpan(4, 7, "report") && highlighted[1].Id == "other", "known mentions are highlighted and email-like text is not");
+        Check(ComposerFiles.MentionSpans("@report-long", new[] { "report", "report-long" }) is { Count: 1 } longer && longer[0].Id == "report-long", "the longer skill name is the highlighted mention");
+        Check(ComposerFiles.MentionSpans("mail@report.com", new[] { "report" }).Count == 0 && ComposerFiles.MentionSpans("/@report", new[] { "report" }).Count == 0, "email addresses and paths are not highlighted");
+        Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
+        Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)).R > 24, "the mention tint keeps some of the accent color");
         Check(ShotSelection.AfterRemove(1, 0, 1) == 0, "removing an earlier thumbnail keeps the later screenshot selected");
         Check(ShotSelection.AfterRemove(1, 1, 2) == 1, "removing the selected thumbnail selects the screenshot that slides into its place");
         Check(ShotSelection.AfterRemove(0, 2, 2) == 0, "removing a later thumbnail leaves the selection");

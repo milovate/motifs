@@ -61,7 +61,9 @@ needed, warn about interrupting active work before `opencode service restart`.
    has an include switch, a preview, Markdown, and a rough token estimate.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
-   one. Escape closes that list before it closes the composer. **Prefix** saves a
+   one. Escape closes that list before it closes the composer. Once those skills
+   have loaded, each known **@mention** is drawn in the accent color on a rounded
+   tint. The composer grows with the note. **Prefix** saves a
    reusable opening, puts it at the start of the note, and removes it when chosen
    again. Nothing is sent while you edit.
 4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.

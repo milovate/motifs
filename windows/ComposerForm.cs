@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Globalization;
 using System.Linq;
@@ -59,6 +60,86 @@ internal sealed class BridgeClient : IDisposable
     public void Dispose() => http.Dispose();
 }
 
+// The note stays plain text. Known @mentions are drawn again in the accent color
+// on a rounded tint, after the edit control has painted, so undo and paste stay plain.
+internal sealed class MentionNote : TextBox
+{
+    List<ComposerFiles.MentionSpan> spans = new();
+    IReadOnlyList<string> skills = Array.Empty<string>();
+
+    internal void SetSkills(IReadOnlyList<string> ids)
+    {
+        skills = ids;
+        RefreshSpans();
+        Invalidate();
+    }
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        RefreshSpans();
+        base.OnTextChanged(e);
+    }
+
+    void RefreshSpans() => spans = ComposerFiles.MentionSpans(Text, skills);
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+        if (m.Msg == 0x000F) PaintMentions();
+    }
+
+    void PaintMentions()
+    {
+        if (!IsHandleCreated || spans.Count == 0 || TextLength == 0) return;
+        using var graphics = Graphics.FromHwnd(Handle);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        Color accent = SystemColors.Highlight;
+        using var fill = new SolidBrush(ComposerFiles.MentionTint(BackColor, accent));
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.NoClipping;
+        int selectedStart = SelectionStart;
+        int selectedEnd = selectedStart + SelectionLength;
+        foreach (var span in spans)
+        {
+            if (span.Start < 0 || span.Length <= 0 || span.Start + span.Length > TextLength) continue;
+            if (SelectionLength > 0 && span.Start < selectedEnd && selectedStart < span.Start + span.Length) continue;
+            int index = span.Start;
+            int end = span.Start + span.Length;
+            while (index < end)
+            {
+                int line = GetLineFromCharIndex(index);
+                int nextLine = GetFirstCharIndexFromLine(line + 1);
+                int segmentEnd = nextLine < 0 ? end : Math.Min(end, nextLine);
+                if (segmentEnd <= index) break;
+                string slice = Text.Substring(index, segmentEnd - index).Replace("\r", "").Replace("\n", "");
+                if (slice.Length == 0) { index = segmentEnd; continue; }
+                Point origin = GetPositionFromCharIndex(index);
+                int width = segmentEnd < TextLength ? GetPositionFromCharIndex(segmentEnd).X - origin.X : 0;
+                if (width < 4) width = TextRenderer.MeasureText(graphics, slice, Font, Size.Empty, flags).Width;
+                int nextTop = nextLine >= 0 ? GetPositionFromCharIndex(nextLine).Y : origin.Y + Font.Height;
+                int height = nextTop - origin.Y;
+                if (height < Font.Height / 2) height = Font.Height;
+                Rectangle pill = ComposerFiles.MentionPill(origin, width, height);
+                using (var path = Round(pill, 5)) graphics.FillPath(fill, path);
+                TextRenderer.DrawText(graphics, slice, Font, origin, accent, flags);
+                index = segmentEnd;
+            }
+        }
+    }
+
+    static GraphicsPath Round(Rectangle rect, int radius)
+    {
+        int diameter = radius * 2;
+        var path = new GraphicsPath();
+        if (rect.Width < diameter || rect.Height < diameter) { path.AddRectangle(rect); return path; }
+        path.AddArc(rect.X, rect.Y, diameter, diameter, 180, 90);
+        path.AddArc(rect.Right - diameter, rect.Y, diameter, diameter, 270, 90);
+        path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(rect.X, rect.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+}
+
 // Floating review surface: screenshots, a note, destination, context, and a handoff
 // that stops in an unsent draft, on the clipboard, or in a folder.
 internal sealed class ComposerForm : Form
@@ -70,7 +151,8 @@ internal sealed class ComposerForm : Form
     readonly List<ComposerEndpoint> endpoints = new();
     readonly List<SkillChoice> skills = new();
     readonly FlowLayoutPanel thumbs = new() { AutoSize = true, WrapContents = false, Height = 64, Dock = DockStyle.Fill };
-    readonly TextBox note = new() { Multiline = true, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 14), PlaceholderText = "What feels wrong?", ScrollBars = ScrollBars.Vertical };
+    readonly MentionNote note = new() { Multiline = true, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 14), PlaceholderText = "What feels wrong?", ScrollBars = ScrollBars.Vertical };
+    bool fittingNote;
     readonly ComboBox destinationBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     readonly ComboBox targetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
     readonly Button contextButton = new() { Text = "Context", AutoSize = true };
@@ -159,7 +241,7 @@ internal sealed class ComposerForm : Form
         note.BackColor = Color.FromArgb(24, 24, 26);
         note.ForeColor = ForeColor;
         note.AccessibleDescription = "Describe what felt wrong. Type here, or use Dictate. Nothing is sent until you click Send.";
-        note.TextChanged += (_, _) => { autosave.Stop(); autosave.Start(); RefreshSend(); RefreshPrefix(); UpdateMentions(); };
+        note.TextChanged += (_, _) => { autosave.Stop(); autosave.Start(); RefreshSend(); RefreshPrefix(); UpdateMentions(); FitNote(); };
         note.MouseUp += (_, _) => UpdateMentions();
         note.KeyUp += (_, _) => UpdateMentions();
         note.Leave += (_, _) =>
@@ -204,6 +286,31 @@ internal sealed class ComposerForm : Form
         Native.ExcludeFromCapture(Handle);
     }
 
+    void FitNote()
+    {
+        if (fittingNote || IsDisposed || !IsHandleCreated || note.Width < 40) return;
+        int lines = 1;
+        if (note.TextLength > 0)
+        {
+            lines = note.GetLineFromCharIndex(note.TextLength - 1) + 1;
+            if (note.Text.EndsWith('\n') || note.Text.EndsWith("\r\n", StringComparison.Ordinal)) lines++;
+        }
+        int wanted = Math.Clamp(lines * note.Font.Height + 14, 52, 180);
+        int chrome = ClientSize.Height - note.Height;
+        if (chrome < 80) return;
+        int height = Math.Clamp(chrome + wanted, 214, 440);
+        if (Math.Abs(ClientSize.Height - height) < 2) return;
+        fittingNote = true;
+        try
+        {
+            int bottomEdge = Bottom;
+            ClientSize = new Size(ClientSize.Width, height);
+            var screen = Screen.FromControl(this).WorkingArea;
+            Location = new Point(Left, Math.Max(screen.Top + 16, Math.Min(bottomEdge - Height, screen.Bottom - Height - 16)));
+        }
+        finally { fittingNote = false; }
+    }
+
     static Button MakeButton(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(4, 16, 0, 0) };
     static void StyleQuiet(Button button)
     {
@@ -219,6 +326,7 @@ internal sealed class ComposerForm : Form
         ActiveSurface.Push(this);
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         Location = new Point(screen.Left + Math.Max(16, (screen.Width - Width) / 2), screen.Bottom - Height - 48);
+        FitNote();
         note.Focus();
     }
 
@@ -349,6 +457,7 @@ internal sealed class ComposerForm : Form
         int generation = ++skillGeneration;
         skillsReady = false;
         skills.Clear();
+        note.SetSkills(Array.Empty<string>());
         RefreshSend();
         var target = CurrentTarget;
         if (target == null || target.Endpoint < 0 || target.Endpoint >= endpoints.Count)
@@ -369,6 +478,7 @@ internal sealed class ComposerForm : Form
             }
             if (generation != skillGeneration) return;
             skillsReady = true;
+            note.SetSkills(skills.Select(skill => skill.Id).ToList());
             status.Text = Current?.Id == "opencode" ? "" : CurrentTarget?.Hint ?? "";
         }
         catch (Exception error)
