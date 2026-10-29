@@ -93,7 +93,9 @@ installation without planning that permission step.
 2. Describe what felt wrong in the borderless input. Click any screenshot thumbnail
    to annotate it, then choose **Done** to return. The small **×** that appears on hover
    removes it from the draft, not from local capture history. Removing all screenshots
-   allows a text-only draft.
+   allows a text-only draft. Right-click a screenshot or recording to **Copy Image** /
+   **Copy Video**, **Share…** (AirDrop, Messages, Mail), **Show in Finder** or **Copy
+   Path**, so a capture can be shared without sending a draft.
    The **viewfinder** button opens a dimmed-screen region picker:
    drag a rectangle and release to attach the selected pixels, or Escape to cancel.
    Each region stays a separate screenshot; up to eight can be attached. Each image

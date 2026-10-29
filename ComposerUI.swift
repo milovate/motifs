@@ -311,6 +311,55 @@ extension NSWindow {
             removeButton.animator().alphaValue = visible ? 1 : 0
         }
     }
+
+    // Right-click menu so a capture can be shared on its own, without sending a draft.
+    private(set) var file: URL?
+    private var isImage = true
+    var pasteboard = NSPasteboard.general
+
+    func installShareMenu(path: String?, image: Bool) {
+        file = path.map { URL(fileURLWithPath: $0) }
+        isImage = image
+        let menu = NSMenu()
+        for (title, action, symbol) in [(image ? "Copy Image" : "Copy Video", #selector(copyFile), "doc.on.doc"), ("Share…", #selector(share), "square.and.arrow.up"), ("Show in Finder", #selector(reveal), "folder"), ("Copy Path", #selector(copyPath), "link")] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            item.isEnabled = file != nil
+            menu.addItem(item)
+        }
+        self.menu = menu
+        imageButton.menu = menu
+    }
+
+    @objc func copyFile() {
+        guard let file else { return }
+        pasteboard.clearContents()
+        if isImage, let data = try? Data(contentsOf: file), let image = NSImage(data: data) {
+            let item = NSPasteboardItem()
+            item.setData(data, forType: .png)
+            if let tiff = image.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+            pasteboard.writeObjects([item])
+        } else {
+            pasteboard.writeObjects([file as NSURL])
+        }
+    }
+
+    @objc func share() {
+        guard let file else { return }
+        NSSharingServicePicker(items: [file]).show(relativeTo: imageButton.bounds, of: imageButton, preferredEdge: .minY)
+    }
+
+    @objc func reveal() {
+        guard let file else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    @objc func copyPath() {
+        guard let file else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(file.path, forType: .string)
+    }
 }
 
 @MainActor final class ScreenshotThumbnailView: AttachmentTileView {
@@ -332,7 +381,8 @@ extension NSWindow {
         imageButton.layer?.masksToBounds = true
         imageButton.layer?.borderWidth = selected ? 1 : 0.5
         imageButton.layer?.borderColor = (selected ? NSColor.controlAccentColor : .separatorColor).cgColor
-        imageButton.toolTip = "Annotate screenshot \(index + 1) — " + (shot["app"] as? String ?? "Image")
+        imageButton.toolTip = "Annotate screenshot \(index + 1) — " + (shot["app"] as? String ?? "Image") + " · Right-click to copy or share"
+        installShareMenu(path: shot["screenshot"] as? String, image: true)
         imageButton.setAccessibilityLabel("Annotate screenshot \(index + 1)")
         imageButton.target = self
         imageButton.action = #selector(annotate)
@@ -377,7 +427,8 @@ extension NSWindow {
         imageButton.layer?.borderWidth = 0.5
         imageButton.layer?.borderColor = NSColor.separatorColor.cgColor
         let target = (video["target"] as? String).map { " of \($0)" } ?? ""
-        imageButton.toolTip = "\(label)\(target), \(Int(seconds.rounded())) s — click to review or trim. Key frames are sent as images; the video stays on this Mac."
+        imageButton.toolTip = "\(label)\(target), \(Int(seconds.rounded())) s — click to review or trim, right-click to copy or share. Key frames are sent as images; the video stays on this Mac."
+        installShareMenu(path: video["video"] as? String, image: false)
         imageButton.setAccessibilityLabel("Review \(label.lowercased())\(target), \(Int(seconds.rounded())) seconds")
         imageButton.target = self
         imageButton.action = #selector(open)

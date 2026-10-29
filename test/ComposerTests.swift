@@ -123,6 +123,14 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let tiles = composer.thumbnailStrip.arrangedSubviews.compactMap { $0 as? ScreenshotThumbnailView }
         precondition(tiles.count == 2, "each screenshot has direct annotate/remove controls")
         precondition(tiles.allSatisfy { $0.removeButton.alphaValue == 0 && !$0.removeButton.isHidden }, "remove appears on hover but stays reachable for keyboard and VoiceOver")
+        precondition(tiles[0].imageButton.menu?.items.map(\.title) == ["Copy Image", "Share…", "Show in Finder", "Copy Path"], "right-click offers copy and share")
+        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("appshots-test-\(UUID().uuidString)"))
+        tiles[0].pasteboard = testPasteboard
+        tiles[0].copyFile()
+        precondition(testPasteboard.data(forType: .png) != nil, "Copy Image puts the PNG on the clipboard")
+        tiles[0].copyPath()
+        precondition(testPasteboard.string(forType: .string) == tiles[0].file?.path, "Copy Path copies the file path")
+        testPasteboard.releaseGlobally()
         if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
             composer.window!.appearance = NSAppearance(named: .aqua)
             composer.textView.string = "@report The second screenshot shows the issue."
