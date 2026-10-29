@@ -210,7 +210,8 @@ error rather than replacing the saved capture.
 
 Storage defaults to `%LOCALAPPDATA%\opencode\capture-studio`, overridable with
 `XDG_DATA_HOME`. The helper restricts the capture directory to the current user and
-SYSTEM. PNG files and `latest.json` persist until you delete them; cancellation
+SYSTEM. The plugin does the same for the composer endpoint file, the context file
+beside a bundle, and a Save to folder export. PNG files and `latest.json` persist until you delete them; cancellation
 does not erase a saved capture. `status.json` records watcher/capture stages without
 including screenshot bytes or accessibility text. `paste_requested` is explicitly
 unverified, not a confirmed insertion. Never commit any capture files.

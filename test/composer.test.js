@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, writeFile, readFile, readdir, stat, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { startComposerBridge, submitComposer } from "../composer-bridge.js";
+import { assertOwnerOnly } from "./owner-only.js";
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), "appshots-composer-test-"));
@@ -40,7 +41,7 @@ test("composer prepares a fresh root session and an unsent draft, never invokes 
   assert.equal(f.prompts.length, 0, "preparation must not admit or generate a message");
   assert.match(first.draftText, /^This button feels broken/);
   assert.match(first.draftText, /untrusted app content/);
-  assert.ok(first.draftText.includes(path.join(f.directory, "capture.png")), "the draft gives the screenshot path");
+  assert.ok(first.draftText.includes(await realpath(path.join(f.directory, "capture.png"))), "the draft gives the screenshot path");
   assert.ok(!first.draftText.includes("Untrusted page text"), "window text is in the context file, not the prompt");
   assert.match(await contextOf(first.draftText), /Accessibility text describes the original capture/);
   assert.match(first.title, /\[[a-f0-9-]{8}\]$/i);
@@ -117,7 +118,7 @@ test("loopback bridge is private, rejects browser traffic, and only explicit sen
   const folder = path.join(f.directory, "composers");
   const [name] = await readdir(folder);
   const file = path.join(folder, name);
-  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  await assertOwnerOnly(file, 0o600);
   const descriptor = JSON.parse(await readFile(file, "utf8"));
   const base = `http://127.0.0.1:${descriptor.port}`;
   const headers = { Authorization: `Bearer ${descriptor.token}`, "Content-Type": "application/json" };
