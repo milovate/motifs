@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
@@ -12,7 +13,7 @@ internal sealed class AnnotationCanvas : Forms.Control
 {
     readonly Bitmap image;
     internal readonly AnnotationDocument Document;
-    string tool = "Select";
+    string tool = "Arrow";
     internal Color Ink = Color.Red;
     internal float Stroke = 4;
     internal string? Selected;
@@ -54,6 +55,7 @@ internal sealed class AnnotationCanvas : Forms.Control
     }
 
     RectangleF ShownPixels => Document.Crop?.Rectangle ?? new RectangleF(0, 0, image.Width, image.Height);
+    internal Size PixelSize => image.Size;
     internal RectangleF ImageRect
     {
         get
@@ -262,7 +264,7 @@ internal sealed class AnnotationCanvas : Forms.Control
         };
         Controls.Add(inline);
         LayoutInline();
-        inline.TextChanged += (_, _) => LayoutInline();
+        inline.TextChanged += (_, _) => { LayoutInline(); Changed?.Invoke(); };
         inline.LostFocus += (_, _) => { if (!closingInline) CommitInline(); };
         inline.KeyDown += (_, args) =>
         {
@@ -307,6 +309,18 @@ internal sealed class AnnotationCanvas : Forms.Control
         else Apply(() => Document.Add(updated));
         Selected = Tool == "Select" && Document.Marks.Any(m => m.Id == mark.Id) ? mark.Id : null;
         RefreshState();
+    }
+    internal bool EditUndo()
+    {
+        if (inline is not Forms.TextBox box) return false;
+        if (box.CanUndo) box.Undo();
+        return true;
+    }
+    internal bool EditCopy()
+    {
+        if (inline is not Forms.TextBox box) return false;
+        box.Copy();
+        return true;
     }
     internal void CancelInline()
     {
@@ -381,101 +395,225 @@ internal sealed class AnnotationCanvas : Forms.Control
     protected override void Dispose(bool disposing) { if (disposing) { CloseInline(); image.Dispose(); } base.Dispose(disposing); }
 }
 
+internal readonly record struct ToolbarOffset(int Center, int Bottom);
+
+// Same limits as the macOS tray: centered, at least 8px from the edges, and clear of the title area.
+internal static class ToolbarPlacement
+{
+    internal static ToolbarOffset Move(ToolbarOffset current, Size client, Size tray, int dx, int dy)
+    {
+        int halfTravel = Math.Max(0, (client.Width - tray.Width) / 2 - 8);
+        int center = Math.Clamp(current.Center + dx, -halfTravel, halfTravel);
+        int maxHeight = Math.Max(8, client.Height - tray.Height - 36);
+        int bottom = Math.Clamp(current.Bottom - dy, 8, maxHeight);
+        return new ToolbarOffset(center, bottom);
+    }
+}
+
 internal sealed class Preview : Forms.Form
 {
     readonly AnnotationCanvas canvas;
+    readonly Forms.FlowLayoutPanel toolRow;
+    readonly Forms.Panel tray;
+    readonly Forms.ToolTip tips = new();
+    readonly bool returnOnly;
+    readonly float[] widths = { 2, 4, 8 };
+    ToolbarOffset toolbarOffset = new(0, 16);
+    Forms.Label? hint;
+    bool adjustingWidth;
+    bool inserting;
+    bool arranged;
     internal Snapshot? Result { get; private set; }
     internal bool Inserted { get; private set; }
     internal bool Saved { get; private set; }
     internal Preview(Snapshot shot, string output, bool returnOnly = false)
     {
-        Text = returnOnly ? "Annotate screenshot" : "Appshot — annotate, review, and insert";
-        Width = 1200; Height = 850; StartPosition = Forms.FormStartPosition.CenterScreen;
-        MinimumSize = new Size(700, 400);
+        this.returnOnly = returnOnly;
+        Text = "Annotate — " + (string.IsNullOrWhiteSpace(shot.app) ? "Image" : shot.app);
+        StartPosition = Forms.FormStartPosition.Manual;
+        MinimumSize = new Size(720, 480);
+        BackColor = Color.FromArgb(35, 35, 35);
         string original = shot.originalScreenshot ?? shot.screenshot;
         Program.ValidateImage(original, output);
         using var source = Image.FromFile(original);
         if ((long)source.Width * source.Height > 40_000_000) throw new Exception("Image exceeds 40 million pixels.");
         ImageCrop? savedCrop = shot.crop == null ? null : AnnotationDocument.ValidCrop(shot.crop.Rectangle, source.Size);
         canvas = new AnnotationCanvas(new Bitmap(source), shot.windowsAnnotations, savedCrop);
-        var toolbar = new Forms.FlowLayoutPanel { Dock = Forms.DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Forms.Padding(4) };
         var tools = new System.Collections.Generic.Dictionary<string, Forms.Button>();
+        toolRow = new Forms.FlowLayoutPanel { AutoSize = true, WrapContents = true, FlowDirection = Forms.FlowDirection.LeftToRight, Margin = new Forms.Padding(0), Padding = new Forms.Padding(0) };
+        var grip = new Forms.Label
+        {
+            Text = "≡",
+            AutoSize = false,
+            Size = new Size(22, 28),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Cursor = Forms.Cursors.SizeAll,
+            AccessibleName = "Move annotation toolbar",
+            Margin = new Forms.Padding(0, 4, 6, 0),
+        };
+        tips.SetToolTip(grip, "Drag to move toolbar");
+        toolRow.Controls.Add(grip);
         foreach (string tool in new[] { "Select", "Arrow", "Box", "Draw", "Text", "Crop" })
         {
-            var button = new Forms.Button { Text = tool, AutoSize = true };
+            var button = new Forms.Button { Text = tool, AutoSize = true, Margin = new Forms.Padding(2) };
             button.Click += (_, _) => { canvas.Tool = tool; canvas.RefreshState(); canvas.Focus(); };
-            tools[tool] = button; toolbar.Controls.Add(button);
+            tools[tool] = button; toolRow.Controls.Add(button);
         }
-        var color = new Forms.Button { Text = "Color", AutoSize = true, ForeColor = canvas.Ink };
-        color.Click += (_, _) => { using var dialog = new Forms.ColorDialog { Color = canvas.Ink }; if (dialog.ShowDialog(this) == Forms.DialogResult.OK) { canvas.Style(color: dialog.Color); color.ForeColor = dialog.Color; } canvas.Focus(); };
-        var width = new Forms.NumericUpDown { Minimum = 1, Maximum = 40, Value = 4, Width = 55, AccessibleName = "Stroke width in image pixels" };
-        width.ValueChanged += (_, _) => canvas.Style(width: (float)width.Value);
-        var undo = new Forms.Button { Text = "Undo", AutoSize = true };
-        var redo = new Forms.Button { Text = "Redo", AutoSize = true };
-        undo.Click += (_, _) => { canvas.Document.Undo(); canvas.CropSelection = null; canvas.RefreshState(); canvas.Focus(); };
-        redo.Click += (_, _) => { canvas.Document.Redo(); canvas.CropSelection = null; canvas.RefreshState(); canvas.Focus(); };
-        var copy = new Forms.Button { Text = "Copy image", AutoSize = true, AccessibleName = "Copy image" };
-        copy.Click += (_, _) => { CopyImage(shot, output, copy); canvas.Focus(); };
-        var applyCrop = new Forms.Button { Text = "Apply Crop", AutoSize = true, Visible = false };
-        var resetCrop = new Forms.Button { Text = "Reset Crop", AutoSize = true, Visible = false };
-        var cancelCrop = new Forms.Button { Text = "Cancel Crop", AutoSize = true, Visible = false };
+        var color = new Forms.Button { Text = "Color", AutoSize = true, Margin = new Forms.Padding(2) };
+        color.Click += (_, _) =>
+        {
+            using var dialog = new Forms.ColorDialog { Color = canvas.Ink };
+            if (dialog.ShowDialog(this) == Forms.DialogResult.OK) { canvas.Style(color: dialog.Color); ShowInk(color, dialog.Color); }
+            canvas.Focus();
+        };
+        var width = new Forms.ComboBox { DropDownStyle = Forms.ComboBoxStyle.DropDownList, Width = 88, AccessibleName = "Stroke width", Margin = new Forms.Padding(2) };
+        width.Items.AddRange(new object[] { "Thin", "Medium", "Thick" });
+        adjustingWidth = true;
+        width.SelectedIndex = 1;
+        adjustingWidth = false;
+        tips.SetToolTip(width, "Stroke width");
+        width.SelectedIndexChanged += (_, _) =>
+        {
+            if (adjustingWidth || width.SelectedIndex < 0) return;
+            canvas.Style(width: widths[width.SelectedIndex]);
+        };
+        var undo = new Forms.Button { Text = "Undo", AutoSize = true, Margin = new Forms.Padding(2) };
+        var redo = new Forms.Button { Text = "Redo", AutoSize = true, Margin = new Forms.Padding(2) };
+        undo.Click += (_, _) =>
+        {
+            if (canvas.EditUndo()) return;
+            canvas.Document.Undo(); canvas.CropSelection = null; canvas.RefreshState(); canvas.Focus();
+        };
+        redo.Click += (_, _) =>
+        {
+            if (canvas.IsEditing) return;
+            canvas.Document.Redo(); canvas.CropSelection = null; canvas.RefreshState(); canvas.Focus();
+        };
+        var copy = new Forms.Button { Text = "Copy image", AutoSize = true, AccessibleName = "Copy image", Margin = new Forms.Padding(2) };
+        copy.Click += (_, _) => { if (canvas.EditCopy()) return; CopyImage(shot, output, copy); canvas.Focus(); };
+        var applyCrop = new Forms.Button { Text = "Apply Crop", AutoSize = true, Visible = false, Margin = new Forms.Padding(2) };
+        var resetCrop = new Forms.Button { Text = "Reset Crop", AutoSize = true, Visible = false, Margin = new Forms.Padding(2) };
+        var cancelCrop = new Forms.Button { Text = "Cancel Crop", AutoSize = true, Visible = false, Margin = new Forms.Padding(2) };
         applyCrop.Click += (_, _) => { canvas.ApplyCrop(); canvas.Focus(); };
         resetCrop.Click += (_, _) => { canvas.ResetCrop(); canvas.Focus(); };
         cancelCrop.Click += (_, _) => { canvas.CancelCrop(); canvas.Focus(); };
-        var edit = new Forms.Button { Text = "Edit text", AutoSize = true };
+        var edit = new Forms.Button { Text = "Edit text", AutoSize = true, Margin = new Forms.Padding(2) };
         edit.Click += (_, _) => canvas.EditText();
-        var delete = new Forms.Button { Text = "Delete", AutoSize = true };
+        var delete = new Forms.Button { Text = "Delete", AutoSize = true, Margin = new Forms.Padding(2) };
         delete.Click += (_, _) => { if (canvas.Selected is string id) canvas.Apply(() => canvas.Document.Delete(id)); canvas.Focus(); };
-        toolbar.Controls.AddRange(new Forms.Control[] { color, width, undo, redo, copy, edit, delete, applyCrop, resetCrop, cancelCrop });
+        var cancel = new Forms.Button { Text = "Cancel", AutoSize = true, Margin = new Forms.Padding(2) };
+        cancel.Click += (_, _) => Close();
+        var save = new Forms.Button { Text = returnOnly ? "Done" : "Save only", AutoSize = true, Margin = new Forms.Padding(2) };
+        save.Click += (_, _) => SaveAnnotated(shot, output);
+        var insert = new Forms.Button { Text = "Insert into OpenCode", AutoSize = true, Margin = new Forms.Padding(2) };
+        tips.SetToolTip(insert, "Insert into OpenCode's draft (Ctrl+Enter)");
+        tips.SetToolTip(save, returnOnly ? "Return to composer (Ctrl+Enter)" : "Save without inserting");
+        toolRow.Controls.AddRange(new Forms.Control[] { color, width, undo, redo, copy, edit, delete, cancel, save });
+        if (!returnOnly) toolRow.Controls.Add(insert);
+        var crops = new Forms.FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Forms.Padding(0, 4, 0, 0), Visible = false };
+        crops.Controls.AddRange(new Forms.Control[] { applyCrop, resetCrop, cancelCrop });
+        hint = new Forms.Label
+        {
+            Text = "Drag ≡ to move · V select · A arrow · R box · P draw · T text · C crop · Enter commits text · Shift+Enter newline · Escape cancels · Ctrl+Enter confirms · Ctrl+C copy · Ctrl+Z undo · Ctrl+D duplicate",
+            AutoSize = true,
+            Margin = new Forms.Padding(0, 6, 0, 0),
+        };
+        var stack = new Forms.FlowLayoutPanel { AutoSize = true, FlowDirection = Forms.FlowDirection.TopDown, WrapContents = false, Margin = new Forms.Padding(0), Padding = new Forms.Padding(0) };
+        stack.Controls.Add(toolRow);
+        stack.Controls.Add(crops);
+        stack.Controls.Add(hint);
+        tray = new Forms.Panel { AutoSize = true, AutoSizeMode = Forms.AutoSizeMode.GrowAndShrink, BackColor = Color.FromArgb(245, 245, 247), Padding = new Forms.Padding(12, 10, 12, 10) };
+        tray.Controls.Add(stack);
+        Point? gripScreen = null;
+        grip.MouseDown += (_, e) => { if (e.Button == Forms.MouseButtons.Left) { gripScreen = grip.PointToScreen(e.Location); grip.Capture = true; } };
+        grip.MouseMove += (_, e) =>
+        {
+            if (gripScreen is not Point previous || e.Button != Forms.MouseButtons.Left) return;
+            var now = grip.PointToScreen(e.Location);
+            toolbarOffset = ToolbarPlacement.Move(toolbarOffset, ClientSize, tray.Size, now.X - previous.X, now.Y - previous.Y);
+            gripScreen = now;
+            PlaceToolbar();
+        };
+        grip.MouseUp += (_, _) => gripScreen = null;
         canvas.CopyRequested += () => CopyImage(shot, output, copy);
-        canvas.Changed += () => {
+        canvas.Changed += () =>
+        {
             foreach (var pair in tools) pair.Value.BackColor = pair.Key == canvas.Tool ? Color.LightSkyBlue : SystemColors.Control;
-            undo.Enabled = canvas.Document.CanUndo; redo.Enabled = canvas.Document.CanRedo;
+            undo.Enabled = canvas.IsEditing ? canvas.InlineEditor!.CanUndo : canvas.Document.CanUndo;
+            redo.Enabled = !canvas.IsEditing && canvas.Document.CanRedo;
             edit.Enabled = canvas.Selection?.Kind == "Text"; delete.Enabled = canvas.Selection != null;
             bool cropping = canvas.Tool == "Crop";
-            applyCrop.Visible = resetCrop.Visible = cancelCrop.Visible = cropping;
+            crops.Visible = applyCrop.Visible = resetCrop.Visible = cancelCrop.Visible = cropping;
             applyCrop.Enabled = canvas.CropSelection != null;
-        };
-        var bottom = new Forms.FlowLayoutPanel { Dock = Forms.DockStyle.Bottom, Height = 48, Padding = new Forms.Padding(4) };
-        var insert = new Forms.Button { Text = "Insert into OpenCode", AutoSize = true };
-        var save = new Forms.Button { Text = returnOnly ? "Done" : "Save only", AutoSize = true };
-        var cancel = new Forms.Button { Text = "Cancel", AutoSize = true };
-        cancel.Click += (_, _) => Close();
-        save.Click += (_, _) => {
-            try
+            if (canvas.Selection is Mark mark)
             {
-                canvas.CommitInline();
-                if (canvas.Tool == "Crop") canvas.ApplyCrop();
-                var exported = AnnotationDocument.Export(shot, canvas.Document, output);
-                Saved = true;
-                if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
-                Close();
+                ShowInk(color, Color.FromArgb(mark.Color));
+                int nearest = 0;
+                float best = float.MaxValue;
+                for (int i = 0; i < widths.Length; i++)
+                {
+                    float distance = Math.Abs(widths[i] - mark.Width);
+                    if (distance < best) { best = distance; nearest = i; }
+                }
+                if (width.SelectedIndex != nearest) { adjustingWidth = true; width.SelectedIndex = nearest; adjustingWidth = false; }
             }
-            catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Capture Studio"); }
+            PlaceToolbar();
         };
-        if (!returnOnly) bottom.Controls.Add(insert);
-        bottom.Controls.Add(save);
-        bottom.Controls.Add(cancel);
-        var hint = new Forms.Label { Text = "V select · A arrow · R box · P draw · T text · C crop · Enter commits text · Shift+Enter newline · Escape cancels · Ctrl+C copy · Ctrl+Z undo · Ctrl+D duplicate", AutoSize = true, Padding = new Forms.Padding(8) };
-        bottom.Controls.Add(hint);
-        Controls.Add(canvas); Controls.Add(toolbar); Controls.Add(bottom);
-        // Freeze the editor while an insertion awaits focus/clipboard operations.
-        if (!returnOnly) insert.Click += async (_, _) => {
-            canvas.Enabled = toolbar.Enabled = bottom.Enabled = false;
-            try
-            {
-                canvas.CommitInline();
-                if (canvas.Tool == "Crop") canvas.ApplyCrop();
-                var annotated = AnnotationDocument.Export(shot, canvas.Document, output);
-                Saved = true;
-                await Inserter.Insert(annotated, output);
-                Inserted = true;
-                Close();
-            }
-            catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Appshot saved — insertion failed"); }
-            finally { if (!IsDisposed) canvas.Enabled = toolbar.Enabled = bottom.Enabled = true; }
-        };
+        Controls.Add(canvas);
+        Controls.Add(tray);
+        tray.BringToFront();
+        ShowInk(color, canvas.Ink);
+        if (!returnOnly) insert.Click += async (_, _) => await InsertIntoOpenCode(shot, output);
+        arranged = true;
         canvas.RefreshState();
+    }
+
+    static void ShowInk(Forms.Button color, Color ink)
+    {
+        color.BackColor = ink;
+        color.ForeColor = ink.GetBrightness() > 0.6f ? Color.Black : Color.White;
+    }
+
+    void PlaceToolbar()
+    {
+        if (!arranged || tray.IsDisposed || ClientSize.Width < 80 || ClientSize.Height < 80) return;
+        int limit = Math.Max(280, ClientSize.Width - 16);
+        toolRow.MaximumSize = new Size(Math.Max(200, limit - 28), 0);
+        if (hint != null) hint.MaximumSize = new Size(Math.Max(160, limit - 36), 0);
+        tray.MaximumSize = new Size(limit, 0);
+        tray.PerformLayout();
+        toolbarOffset = ToolbarPlacement.Move(toolbarOffset, ClientSize, tray.Size, 0, 0);
+        tray.Location = new Point((ClientSize.Width - tray.Width) / 2 + toolbarOffset.Center, ClientSize.Height - tray.Height - toolbarOffset.Bottom);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        var area = Forms.Screen.FromPoint(Forms.Cursor.Position).WorkingArea;
+        int maxW = Math.Max(320, area.Width - 24);
+        int maxH = Math.Max(240, area.Height - 24);
+        MinimumSize = new Size(Math.Min(720, maxW), Math.Min(480, maxH));
+        var pixels = canvas.PixelSize;
+        float scale = Math.Min(maxW / (float)Math.Max(1, pixels.Width), maxH / (float)Math.Max(1, pixels.Height));
+        int width = Math.Min(maxW, Math.Max(MinimumSize.Width, (int)Math.Round(pixels.Width * scale)));
+        int height = Math.Min(maxH, Math.Max(MinimumSize.Height, (int)Math.Round(pixels.Height * scale)));
+        ClientSize = new Size(width, height);
+        int x = Math.Clamp(area.Left + (area.Width - Width) / 2, area.Left, Math.Max(area.Left, area.Right - Width));
+        int y = Math.Clamp(area.Top + (area.Height - Height) / 2, area.Top, Math.Max(area.Top, area.Bottom - Height));
+        Location = new Point(x, y);
+        PlaceToolbar();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        PlaceToolbar();
+    }
+
+    protected override void OnFormClosed(Forms.FormClosedEventArgs e)
+    {
+        tips.Dispose();
+        base.OnFormClosed(e);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -485,14 +623,64 @@ internal sealed class Preview : Forms.Form
     }
     protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData)
     {
-        // Let numeric/text controls handle their own editing shortcuts and arrow keys.
-        if (ActiveControl is Forms.NumericUpDown) return base.ProcessCmdKey(ref msg, keyData);
+        if (ActiveControl is Forms.ComboBox) return base.ProcessCmdKey(ref msg, keyData);
         if (canvas.IsEditing && keyData == Forms.Keys.Escape) { canvas.CancelInline(); return true; }
-        if (canvas.IsEditing && keyData == Forms.Keys.Enter) { canvas.CommitInline(); return true; }
+        bool enter = (keyData & Forms.Keys.KeyCode) == Forms.Keys.Enter;
+        bool shift = (keyData & Forms.Keys.Shift) != 0;
+        if (canvas.IsEditing && enter && !shift) { canvas.CommitInline(); return true; }
         if (canvas.IsEditing) return base.ProcessCmdKey(ref msg, keyData);
+        if (canvas.Enabled && keyData == (Forms.Keys.Control | Forms.Keys.Enter)) { PrimaryAction(); return true; }
         if (canvas.Enabled && canvas.Key(keyData)) return true;
         if (keyData == Forms.Keys.Escape && canvas.Enabled) { Close(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    void PrimaryAction()
+    {
+        if (!canvas.Enabled || inserting) return;
+        foreach (Forms.Control button in toolRow.Controls)
+            if (button is Forms.Button choice && ((returnOnly && choice.Text == "Done") || (!returnOnly && choice.Text.StartsWith("Insert"))))
+            {
+                choice.PerformClick();
+                return;
+            }
+    }
+
+    void SaveAnnotated(Snapshot shot, string output)
+    {
+        try
+        {
+            canvas.CommitInline();
+            if (canvas.Tool == "Crop") canvas.ApplyCrop();
+            var exported = AnnotationDocument.Export(shot, canvas.Document, output);
+            Saved = true;
+            if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
+            Close();
+        }
+        catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Capture Studio"); }
+    }
+
+    async Task InsertIntoOpenCode(Snapshot shot, string output)
+    {
+        if (inserting) return;
+        inserting = true;
+        canvas.Enabled = tray.Enabled = false;
+        try
+        {
+            canvas.CommitInline();
+            if (canvas.Tool == "Crop") canvas.ApplyCrop();
+            var annotated = AnnotationDocument.Export(shot, canvas.Document, output);
+            Saved = true;
+            await Inserter.Insert(annotated, output);
+            Inserted = true;
+            Close();
+        }
+        catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Appshot saved — insertion failed"); }
+        finally
+        {
+            inserting = false;
+            if (!IsDisposed) canvas.Enabled = tray.Enabled = true;
+        }
     }
 
     void CopyImage(Snapshot shot, string output, Forms.Button copy)

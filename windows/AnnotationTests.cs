@@ -188,6 +188,14 @@ internal static class AnnotationTests
         using (var tiny = new Bitmap(100, 100))
         try { _ = AnnotationDocument.Render(tiny, Array.Empty<Mark>(), new ImageCrop(0, 0, 1, 1)); throw new Exception("Invalid crop accepted"); }
         catch (Exception e) when (e.Message == "Crop must contain at least 2 × 2 image pixels.") { }
+        using (var fresh = new AnnotationCanvas(new Bitmap(20, 20), null))
+            Check(fresh.Tool == "Arrow", "Arrow is the starting tool");
+        var parked = ToolbarPlacement.Move(new ToolbarOffset(0, 16), new Size(800, 600), new Size(200, 40), 0, 0);
+        Check(parked == new ToolbarOffset(0, 16), "the toolbar starts just above the bottom edge");
+        var dragged = ToolbarPlacement.Move(parked, new Size(800, 600), new Size(200, 40), 50, -20);
+        Check(dragged == new ToolbarOffset(50, 36), "dragging the grip follows the pointer");
+        var limited = ToolbarPlacement.Move(parked, new Size(800, 600), new Size(200, 40), 5000, 5000);
+        Check(limited == new ToolbarOffset(292, 8), "the toolbar stays inside the window");
         Console.WriteLine("Windows annotation regressions passed");
     }
 }

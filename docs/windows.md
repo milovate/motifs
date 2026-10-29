@@ -158,11 +158,16 @@ without an app captures the foreground window, which may be OpenCode itself.
 
 ## Annotation editing
 
-Choose **Arrow**, **Box**, **Draw**, or **Text**, then drag over the image (click for
-Text). Text puts a caret on the image. Type there; Enter commits, Shift+Enter adds
-a line, and Escape cancels. Clicking elsewhere commits the text. Color and stroke
-width apply to new marks and the selected object. Arrow, Box, Draw, and Text stay
-active, so the next gesture draws again. Press V to select a mark. **Crop** is
+The editor opens nearly as large as the screen, and the image fills the window.
+A toolbar floats over the bottom of the picture. Drag the **≡** grip to move it.
+**Arrow** is selected when the editor opens. Choose **Arrow**, **Box**, **Draw**,
+or **Text**, then drag over the image (click for Text). Text puts a caret on the
+image. Type there; Enter commits, Shift+Enter adds a line, and Escape cancels.
+Clicking elsewhere commits the text. Color and stroke width apply to new marks
+and the selected object. Stroke widths are Thin (2), Medium (4), and Thick (8)
+image pixels. Arrow, Box, Draw, and Text stay active, so the next gesture draws
+again. Press V to select a mark. **Ctrl+Enter** inserts into OpenCode, or returns
+the image to the composer when you opened the editor from there. **Crop** is
 separate: drag a rectangle, then apply it.
 
 - **Select** an object by clicking its stroke, or the body of a text label. Drag to
