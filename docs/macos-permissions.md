@@ -6,13 +6,13 @@ OpenCode's tool approval is separate and does not grant macOS access.
 
 | Permission | Used for | Without it |
 | --- | --- | --- |
-| Screen Recording / Screen & System Audio Recording | Screenshot of the requested app window | Screenshot capture fails with setup instructions |
+| Screen Recording / Screen & System Audio Recording | Screenshot of the requested app window; instant replay and screen recording of the main display, only when you turn them on | Screenshot capture, replay and recording fail with setup instructions |
 | Accessibility | Read the selected window's UI text, insert an attachment into OpenCode's draft, and (only if you turn on **Record recent clicks**) observe clicks and the clicked element's role/label | Screenshot-only results; automatic insertion and click history are unavailable |
 | Microphone | Listen only after clicking Dictate | Type the description instead |
 | Speech Recognition | On-device voice-to-text in the composer | Type or use macOS keyboard dictation instead |
 
-The settings name varies by macOS version. Screen capture does not record system
-audio. Dictate processes microphone audio only while enabled, saves no audio file,
+The settings name varies by macOS version. Screen capture, instant replay and screen
+recording never record system audio or the microphone. Dictate processes microphone audio only while enabled, saves no audio file,
 and requires on-device recognition support; no cloud fallback is used. It does not
 need Full Disk Access or Input Monitoring. Denying voice permissions does not block
 typing. Microphone and Speech Recognition prompts appear only after clicking Dictate.
@@ -128,6 +128,15 @@ memory. Browser context travels only over an owner-only socket in
 `~/Library/Application Support/Capture Studio/browser/` between two copies of the
 same signed Capture Studio binary; each side refuses any other process.
 
+Nothing is recorded unless you turn on **Keep instant replay** or start a screen
+recording; macOS shows its screen-recording indicator whenever either is running.
+The instant replay buffer holds only the last 30 seconds, in memory, and is written
+to disk only when you press Option+G. Recordings stop after 5 minutes. The MP4 and
+its key frames are saved owner-only in the captures folder; OpenCode receives only
+the key frames, and only when you send. Capture Studio's own windows are excluded,
+but everything else on the display, including notifications and other apps'
+content, can appear in the video. Turn replay off before showing sensitive content.
+
 The helper is signed with the hardened runtime and only the microphone
 entitlement, so another process cannot inject code into it to use its Screen
 Recording or Accessibility grants. That does not protect files: anything running
@@ -146,7 +155,7 @@ Removing a thumbnail detaches it from the draft; it does not erase saved capture
 
 To revoke access, quit Appshots and turn off/remove its entries in Screen Recording,
 Accessibility, Microphone, and Speech Recognition as applicable. Turn off
-**Record recent clicks**, remove custom log files from the menu, and remove the
+**Keep instant replay** and **Record recent clicks**, remove custom log files from the menu, and remove the
 browser extension plus the `local.opencode.capturestudio.json` native messaging
 manifests to stop the other context sources. Remove or disable
 the plugin separately to stop future helper launches and its local composer bridge.

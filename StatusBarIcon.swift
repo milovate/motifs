@@ -1,6 +1,6 @@
 import AppKit
 
-enum AppshotStatusIcon { case ready, success, warning }
+enum AppshotStatusIcon { case ready, success, warning, replay, recording }
 
 @MainActor func appshotStatusImage(_ status: AppshotStatusIcon = .ready) -> NSImage {
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
@@ -38,6 +38,12 @@ enum AppshotStatusIcon { case ready, success, warning }
         bubble.close()
         bubble.stroke()
         if status == .success { NSBezierPath(ovalIn: NSRect(x: 14.5, y: 0.5, width: 3, height: 3)).fill() }
+        if status == .recording { NSBezierPath(ovalIn: NSRect(x: 12.5, y: 12.5, width: 5.5, height: 5.5)).fill() }
+        if status == .replay {
+            let ring = NSBezierPath(ovalIn: NSRect(x: 13.25, y: 13.25, width: 4, height: 4))
+            ring.lineWidth = 1.2
+            ring.stroke()
+        }
         if status == .warning {
             let mark = NSBezierPath()
             mark.lineWidth = 1.5

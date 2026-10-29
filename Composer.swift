@@ -24,15 +24,15 @@ struct ComposerEndpoint: Decodable {
     }
 }
 
-@MainActor func composeScreenshot(_ shot: [String: Any], context: [String: Any], pending: Task<[String: Any], Never>?, output: String, returnTo: NSRunningApplication?) async throws {
-    let composer = try AppshotComposer(shots: [shot], note: "", context: context, include: BundleInclude(), output: output, returnTo: returnTo)
+@MainActor func composeCapture(shots: [[String: Any]], videos: [[String: Any]], context: [String: Any], pending: Task<[String: Any], Never>?, output: String, returnTo: NSRunningApplication?) async throws {
+    let composer = try AppshotComposer(shots: shots, videos: videos, note: "", context: context, include: BundleInclude(), output: output, returnTo: returnTo)
     if let pending { composer.collect(pending) }
     await presentComposer(composer)
 }
 
 @MainActor func composeBundle(path: String, output: String, returnTo: NSRunningApplication?) async throws {
     let bundle = try loadCaptureBundle(path: path, output: output)
-    let composer = try AppshotComposer(shots: bundle.shots, note: bundle.note, context: bundle.context, include: bundle.include, output: output, returnTo: returnTo)
+    let composer = try AppshotComposer(shots: bundle.shots, videos: bundle.videos, note: bundle.note, context: bundle.context, include: bundle.include, output: output, returnTo: returnTo)
     if bundle.missingScreenshots > 0 { composer.status.stringValue = "\(bundle.missingScreenshots) screenshot\(bundle.missingScreenshots == 1 ? " was" : "s were") deleted since this bundle was saved." }
     await presentComposer(composer)
 }
@@ -62,6 +62,7 @@ struct ComposerEndpoint: Decodable {
     var endpoints: [ComposerEndpoint]
     var destinations: [ComposerDestination] = []
     var settings: CaptureSettings
+    var videos: [[String: Any]]
     var context: [String: Any]
     var collecting = false
     var include: BundleInclude
@@ -101,8 +102,9 @@ struct ComposerEndpoint: Decodable {
     var skillLoadID = UUID()
     var dictationBase = ""
 
-    init(shots: [[String: Any]], note: String, context: [String: Any], include: BundleInclude, output: String, returnTo: NSRunningApplication?) throws {
+    init(shots: [[String: Any]], videos: [[String: Any]] = [], note: String, context: [String: Any], include: BundleInclude, output: String, returnTo: NSRunningApplication?) throws {
         self.shots = shots
+        self.videos = Array(videos.prefix(1))
         self.context = context
         self.include = include
         self.output = output
@@ -555,7 +557,19 @@ struct ComposerEndpoint: Decodable {
 
     @objc func closeComposer() { window?.performClose(nil) }
 
-    var screenshotBundle: [String: Any] { ["screenshots": shots] }
+    // Recording frames follow the screenshots, matching the numbering in the draft.
+    // They carry no capturedAt so insertion is verified against a screenshot or the text.
+    var screenshotBundle: [String: Any] {
+        let frames = videos.flatMap { video in
+            let label = video["source"] as? String == "recording" ? "Screen recording" : "Instant replay"
+            let list = video["frames"] as? [[String: Any]] ?? []
+            return list.enumerated().compactMap { index, frame -> [String: Any]? in
+                guard let path = frame["screenshot"] as? String else { return nil }
+                return ["screenshot": path, "app": label, "title": "Frame \(index + 1) of \(list.count)"]
+            }
+        }
+        return ["screenshots": shots + frames]
+    }
 
     func refreshAttachments() {
         for view in thumbnailStrip.arrangedSubviews { thumbnailStrip.removeArrangedSubview(view); view.removeFromSuperview() }
@@ -571,7 +585,14 @@ struct ComposerEndpoint: Decodable {
             thumbnail.setEnabled(textView.isEditable && !sending)
             thumbnailStrip.addArrangedSubview(thumbnail)
         }
-        if shots.isEmpty {
+        for video in videos {
+            let thumbnail = VideoThumbnailView(video: video)
+            thumbnail.onOpen = { if let path = video["video"] as? String { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } }
+            thumbnail.onRemove = { [weak self] in self?.removeVideo() }
+            thumbnail.setEnabled(textView.isEditable && !sending)
+            thumbnailStrip.addArrangedSubview(thumbnail)
+        }
+        if shots.isEmpty && videos.isEmpty {
             let empty = NSTextField(labelWithString: "No screenshots · Add a region ↗")
             empty.font = .systemFont(ofSize: 12)
             empty.textColor = .secondaryLabelColor
@@ -587,6 +608,13 @@ struct ComposerEndpoint: Decodable {
         shots.remove(at: index)
         if index < selectedShotIndex { selectedShotIndex -= 1 }
         selectedShotIndex = min(selectedShotIndex, max(0, shots.count - 1))
+        manifest = nil
+        refreshAttachments()
+    }
+
+    func removeVideo() {
+        guard textView.isEditable, !sending, !addingScreenshot, preparedSession == nil, !videos.isEmpty else { return }
+        videos.removeAll()
         manifest = nil
         refreshAttachments()
     }
@@ -785,7 +813,7 @@ struct ComposerEndpoint: Decodable {
             do {
                 if manifest == nil {
                     // The bundle, including the note, is saved only now, on an explicit handoff.
-                    manifest = try writeCaptureBundle(shots: shots, note: text, context: context, include: include, output: output)
+                    manifest = try writeCaptureBundle(shots: shots, videos: videos, note: text, context: context, include: include, output: output)
                 }
                 body["manifest"] = manifest!
                 if preparedSession == nil {
@@ -851,6 +879,7 @@ struct ComposerEndpoint: Decodable {
         annotateButton.isEnabled = enabled
         addScreenshotButton.isEnabled = enabled && shots.count < 8
         for case let thumbnail as ScreenshotThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
+        for case let thumbnail as VideoThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for view in skillChips.arrangedSubviews { (view as? NSButton)?.isEnabled = enabled }
         skillPopover.close()
         contextPopover.close()

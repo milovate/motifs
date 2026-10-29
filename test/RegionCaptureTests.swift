@@ -44,7 +44,9 @@ func saveCaptureManifest(_ shot: [String: Any], output: String) throws { fatalEr
         precondition(multiple.count == 2, "multiple screenshots remain separate ordered image attachments")
         precondition(empty.isEmpty, "removing every screenshot allows text-only handoff")
         precondition(legacy.count == 1, "legacy single-capture manifests remain supported")
-        do { _ = try loadScreenshotAttachments(["screenshots": Array(repeating: shot, count: 9)], output: folder.path); fatalError("oversized collections must fail") } catch {}
+        let full = try loadScreenshotAttachments(["screenshots": Array(repeating: shot, count: 14)], output: folder.path)
+        precondition(full.count == 14, "eight screenshots plus six recording frames fit")
+        do { _ = try loadScreenshotAttachments(["screenshots": Array(repeating: shot, count: 15)], output: folder.path); fatalError("oversized collections must fail") } catch {}
         do { _ = try loadScreenshotAttachments(["screenshots": NSNull()], output: folder.path); fatalError("null does not mean an intentional empty collection") } catch {}
         do { _ = try loadScreenshotAttachments(["screenshot": "/outside.png"], output: folder.path); fatalError("outside files must fail") } catch {}
         print("Region selection, cancellation and screenshot attachment contract checks passed")

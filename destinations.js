@@ -106,16 +106,17 @@ export function clipboardDestination() {
   return {
     id: "clipboard",
     label: "Clipboard",
-    accepts: { image: true, video: false },
+    accepts: { image: true, video: true },
     status: async () => "ready",
     targets: async () => [target],
     actionLabel: () => "Copy Markdown",
-    hint: () => "Copies the note, context and screenshot paths. Nothing is pasted for you.",
+    hint: () => "Copies the note, context and screenshot or recording paths. Nothing is pasted for you.",
     async prepare(bundle, chosen, request) {
       if (chosen.id !== target.id) throw new Error("Unknown clipboard format.");
       const text = markdownBundle(bundle, request.note, (capture) => capture.screenshot);
       const count = bundle.media.length;
-      return { action: "copy-text", text, message: `Copied Markdown${count ? ` with ${count} screenshot path${count === 1 ? "" : "s"}` : ""}.` };
+      const parts = [count ? `${count} screenshot path${count === 1 ? "" : "s"}` : "", bundle.videos.length ? "the recording path" : ""].filter(Boolean);
+      return { action: "copy-text", text, message: `Copied Markdown${parts.length ? ` with ${parts.join(" and ")}` : ""}.` };
     },
   };
 }
@@ -125,11 +126,11 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
   return {
     id: "folder",
     label: "Save to folder",
-    accepts: { image: true, video: false },
+    accepts: { image: true, video: true },
     status: async () => (path.isAbsolute(exportRoot) ? "ready" : "not-installed"),
     targets: async () => [target],
     actionLabel: () => "Save bundle",
-    hint: () => `Writes screenshots, README.md and bundle.json to ${exportRoot}.`,
+    hint: () => `Writes screenshots, any recording, README.md and bundle.json to ${exportRoot}.`,
     async prepare(bundle, chosen, request) {
       if (chosen.id !== target.id) throw new Error("Unknown export folder.");
       await mkdir(exportRoot, { recursive: true, mode: 0o700 });
@@ -139,13 +140,28 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
       await mkdir(folder, { mode: 0o700 });
       const names = bundle.media.map((_, index) => `screenshot-${index + 1}.png`);
       for (const [index, capture] of bundle.media.entries()) await copyFile(capture.screenshot, path.join(folder, names[index]));
-      await writeFile(path.join(folder, "README.md"), markdownBundle(bundle, request.note, (_, index) => names[index]), { mode: 0o600, flag: "wx" });
+      const videoName = (video, index) => (index < 0 ? "recording.mp4" : `recording-frame-${index + 1}.png`);
+      for (const video of bundle.videos) {
+        await copyFile(video.video, path.join(folder, videoName(video, -1)));
+        for (const [index, frame] of video.frames.entries()) await copyFile(frame.screenshot, path.join(folder, videoName(video, index)));
+      }
+      await writeFile(path.join(folder, "README.md"), markdownBundle(bundle, request.note, (_, index) => names[index], videoName), { mode: 0o600, flag: "wx" });
       const exported = {
         schema: BUNDLE_SCHEMA,
         id: bundle.id,
         createdAt: bundle.createdAt,
         note: request.note.trim(),
-        media: bundle.media.map((capture, index) => exportedShot(capture, names[index], bundle.include.windowText)),
+        media: [
+          ...bundle.media.map((capture, index) => exportedShot(capture, names[index], bundle.include.windowText)),
+          ...bundle.videos.map((video) => ({
+            kind: "video",
+            video: videoName(video, -1),
+            source: video.source,
+            startedAt: video.startedAt,
+            durationSeconds: video.durationSeconds,
+            frames: video.frames.map((frame, index) => ({ screenshot: videoName(video, index), offsetSeconds: frame.offsetSeconds })),
+          })),
+        ],
         context: exportedContext(bundle),
         include: bundle.include,
       };

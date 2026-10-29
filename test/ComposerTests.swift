@@ -222,7 +222,40 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(reloaded.recordClicks && reloaded.customLogFiles == ["/tmp/a.log", "/tmp/b.log", "/tmp/c.log"], "at most 4 absolute log paths persist")
         settings.recordClicks = false
         settings.customLogFiles = []
+        precondition(!settings.instantReplay, "instant replay is off by default")
+        settings.instantReplay = true
         try settings.save(output: output)
+        precondition(CaptureSettings.load(output: output).instantReplay, "instant replay persists")
+        settings.instantReplay = false
+        try settings.save(output: output)
+
+        let movie = output + "/replay-fixture.mp4"
+        FileManager.default.createFile(atPath: movie, contents: Data([0, 0, 0, 24]))
+        let frameFiles = (1...3).map { output + "/replay-fixture-frame-\($0).png" }
+        for file in frameFiles { try FileManager.default.copyItem(atPath: screenshot, toPath: file) }
+        let video: [String: Any] = ["video": movie, "source": "replay", "startedAt": "2026-10-29T10:00:00Z", "durationSeconds": 30, "frames": frameFiles.enumerated().map { ["screenshot": $1, "offsetSeconds": Double($0) * 10] } + [["screenshot": output + "/gone.png", "offsetSeconds": 29]]]
+        let videoPath = try writeCaptureBundle(shots: shots, videos: [video, video], note: "With replay", context: [:], include: BundleInclude(), output: output)
+        let videoRaw = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: videoPath))) as! [String: Any]
+        let videoMedia = (videoRaw["media"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String == "video" }
+        precondition(videoMedia.count == 1 && videoMedia[0]["video"] as? String == movie, "bundles store one typed video entry after the screenshots")
+        let reopened = try loadCaptureBundle(path: videoPath, output: output)
+        precondition(reopened.shots.count == 1 && reopened.videos.count == 1 && (reopened.videos[0]["frames"] as? [[String: Any]])?.count == 3 && reopened.missingScreenshots == 0, "reopened bundles restore the recording and drop missing frames")
+        precondition(recentBundles(output: output).first { $0.path.hasSuffix(URL(fileURLWithPath: videoPath).lastPathComponent) }?.screenshots == 1, "recent bundles count screenshots only")
+        try FileManager.default.removeItem(atPath: movie)
+        let withoutMovie = try loadCaptureBundle(path: videoPath, output: output)
+        precondition(withoutMovie.videos.isEmpty && withoutMovie.missingScreenshots == 1, "a deleted recording is reported")
+        FileManager.default.createFile(atPath: movie, contents: Data([0, 0, 0, 24]))
+
+        let withVideo = try AppshotComposer(shots: shots, videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let handoff = withVideo.screenshotBundle["screenshots"] as? [[String: Any]] ?? []
+        precondition(handoff.count == 5 && handoff[0]["screenshot"] as? String == screenshot && handoff[1]["title"] as? String == "Frame 1 of 4", "recording frames follow the screenshots in the OpenCode handoff")
+        precondition(handoff.dropFirst().allSatisfy { $0["capturedAt"] == nil && $0["app"] as? String == "Instant replay" }, "frames never become the insertion marker")
+        precondition(withVideo.thumbnailStrip.arrangedSubviews.contains { $0 is VideoThumbnailView }, "the recording shows as an attachment")
+        withVideo.removeVideo()
+        precondition(withVideo.videos.isEmpty && !withVideo.thumbnailStrip.arrangedSubviews.contains { $0 is VideoThumbnailView } && (withVideo.screenshotBundle["screenshots"] as? [[String: Any]])?.count == 1, "removing the recording drops it and its frames")
+        let videoOnly = try AppshotComposer(shots: [], videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        precondition(!videoOnly.thumbnailStrip.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue.hasPrefix("No screenshots") == true }, "a recording alone is a valid capture")
+        precondition(appshotStatusImage(.recording).isTemplate && appshotStatusImage(.replay).tiffRepresentation != appshotStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
         let settingsMode = try mode(output + "/settings.json")
         precondition(settingsMode == 0o600, "settings are owner-only")
 

@@ -129,13 +129,13 @@ func formatTokenEstimate(characters: Int) -> String {
     return tokens >= 1000 ? String(format: "≈%.1fk tokens", Double(tokens) / 1000) : "≈\(tokens) tokens"
 }
 
-func writeCaptureBundle(shots: [[String: Any]], note: String, context: [String: Any], include: BundleInclude, output: String, id: UUID = UUID(), now: Date = Date()) throws -> String {
+func writeCaptureBundle(shots: [[String: Any]], videos: [[String: Any]] = [], note: String, context: [String: Any], include: BundleInclude, output: String, id: UUID = UUID(), now: Date = Date()) throws -> String {
     let bundle: [String: Any] = [
         "schema": captureBundleSchema,
         "id": id.uuidString.lowercased(),
         "createdAt": ISO8601DateFormatter().string(from: now),
         "note": note,
-        "media": shots.map { $0.merging(["kind": "image"]) { current, _ in current } },
+        "media": shots.map { $0.merging(["kind": "image"]) { current, _ in current } } + videos.prefix(1).map { $0.merging(["kind": "video"]) { _, new in new } },
         "context": context,
         "include": include.dictionary,
     ]
@@ -148,10 +148,25 @@ func writeCaptureBundle(shots: [[String: Any]], note: String, context: [String: 
 struct LoadedBundle {
     let path: String
     let shots: [[String: Any]]
+    let videos: [[String: Any]]
     let note: String
     let context: [String: Any]
     let include: BundleInclude
     let missingScreenshots: Int
+}
+
+// Video entries keep only the MP4 and frame PNGs that still exist in the captures folder.
+func restoredVideo(_ entry: [String: Any], root: URL) -> [String: Any]? {
+    let inRoot = { (path: String?, ext: String) -> String? in
+        guard let path else { return nil }
+        let file = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        return file.deletingLastPathComponent() == root && file.pathExtension == ext && FileManager.default.fileExists(atPath: file.path) ? path : nil
+    }
+    guard let video = inRoot(entry["video"] as? String, "mp4") else { return nil }
+    var restored = entry
+    restored["video"] = video
+    restored["frames"] = (entry["frames"] as? [[String: Any]] ?? []).prefix(6).filter { inRoot($0["screenshot"] as? String, "png") != nil }
+    return restored
 }
 
 // Only bundles and screenshots directly inside the captures folder can be reopened.
@@ -161,7 +176,11 @@ func loadCaptureBundle(path: String, output: String) throws -> LoadedBundle {
     guard file.deletingLastPathComponent() == root, file.lastPathComponent.hasPrefix("bundle-"), file.pathExtension == "json" else { throw captureError("Bundles must be in the Capture Studio captures folder.") }
     let data = try Data(contentsOf: file)
     guard data.count <= 2_000_000, let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-          raw["schema"] as? String == captureBundleSchema, let media = raw["media"] as? [[String: Any]], media.count <= 8 else { throw captureError("This capture bundle is invalid or from a newer version.") }
+          raw["schema"] as? String == captureBundleSchema, let allMedia = raw["media"] as? [[String: Any]] else { throw captureError("This capture bundle is invalid or from a newer version.") }
+    let media = allMedia.filter { $0["kind"] as? String != "video" }
+    let videoEntries = allMedia.filter { $0["kind"] as? String == "video" }
+    guard media.count <= 8, videoEntries.count <= 1 else { throw captureError("This capture bundle is invalid or from a newer version.") }
+    let videos = videoEntries.compactMap { restoredVideo($0, root: root) }
     var shots: [[String: Any]] = []
     for shot in media {
         guard let screenshot = shot["screenshot"] as? String else { continue }
@@ -171,7 +190,7 @@ func loadCaptureBundle(path: String, output: String) throws -> LoadedBundle {
         restored.removeValue(forKey: "kind")
         shots.append(restored)
     }
-    return LoadedBundle(path: file.path, shots: shots, note: raw["note"] as? String ?? "", context: raw["context"] as? [String: Any] ?? [:], include: BundleInclude(raw["include"] as? [String: Any]), missingScreenshots: media.count - shots.count)
+    return LoadedBundle(path: file.path, shots: shots, videos: videos, note: raw["note"] as? String ?? "", context: raw["context"] as? [String: Any] ?? [:], include: BundleInclude(raw["include"] as? [String: Any]), missingScreenshots: media.count - shots.count + videoEntries.count - videos.count)
 }
 
 struct RecentBundle {
@@ -189,7 +208,7 @@ func recentBundles(output: String, limit: Int = 8) -> [RecentBundle] {
         guard let data = try? Data(contentsOf: file), data.count <= 2_000_000,
               let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any], raw["schema"] as? String == captureBundleSchema,
               let created = (raw["createdAt"] as? String).flatMap(parser.date(from:)) else { return nil }
-        let media = raw["media"] as? [[String: Any]] ?? []
+        let media = (raw["media"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String != "video" }
         let note = (raw["note"] as? String ?? "").split(separator: "\n").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
         let fallback = media.first?["app"] as? String ?? "Capture"
         let title = note.isEmpty ? fallback : (note.count > 48 ? String(note.prefix(45)) + "…" : note)
@@ -204,10 +223,11 @@ struct CaptureSettings: Equatable {
     var knownDestinations: [(id: String, label: String)] = CaptureSettings.builtinDestinations
     var recordClicks = false
     var customLogFiles: [String] = []
+    var instantReplay = false
 
     static func == (lhs: CaptureSettings, rhs: CaptureSettings) -> Bool {
         lhs.defaultDestination == rhs.defaultDestination && lhs.knownDestinations.map(\.id) == rhs.knownDestinations.map(\.id) && lhs.knownDestinations.map(\.label) == rhs.knownDestinations.map(\.label)
-            && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles
+            && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles && lhs.instantReplay == rhs.instantReplay
     }
 
     static func load(output: String) -> CaptureSettings {
@@ -221,6 +241,7 @@ struct CaptureSettings: Equatable {
         }
         if !known.isEmpty { settings.knownDestinations = Array(known.prefix(16)) }
         settings.recordClicks = raw["recordClicks"] as? Bool == true
+        settings.instantReplay = raw["instantReplay"] as? Bool == true
         settings.customLogFiles = Array((raw["customLogFiles"] as? [String] ?? []).filter { $0.hasPrefix("/") && $0.count <= 1024 }.prefix(4))
         return settings
     }
@@ -230,6 +251,7 @@ struct CaptureSettings: Equatable {
             "defaultDestination": defaultDestination,
             "knownDestinations": knownDestinations.map { ["id": $0.id, "label": $0.label] },
             "recordClicks": recordClicks,
+            "instantReplay": instantReplay,
             "customLogFiles": Array(customLogFiles.prefix(4)),
         ]
         let path = output + "/settings.json"

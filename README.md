@@ -246,6 +246,38 @@ the same signed Capture Studio binary. Other apps therefore cannot request or re
 browser context, and nothing is written to disk on the way. To disconnect, remove
 the extension and delete those manifest files.
 
+### Instant replay and screen recording
+
+Both record the main display at about 10 frames per second, scaled to at most 1920
+pixels on the long side, as H.264 video without audio. Capture Studio's own windows,
+including the composer, are excluded. Both use the existing Screen Recording
+permission, and macOS shows its own screen-recording indicator while either runs.
+
+- **Instant replay** is off by default. **Appshot → Context sources → Keep instant
+  replay (last 30 s)** keeps the most recent 30 seconds in memory (capped at 150 MB);
+  older video is discarded continuously, and nothing is written to disk. The menu-bar
+  icon shows a ring while it is on. Pressing **Option+G** writes those 30 seconds to an
+  MP4 and attaches it to the composer with the screenshot. Turning it off or quitting
+  the helper discards the buffer. The setting is stored in the owner-only `settings.json`.
+- **Screen recording** starts and stops with **Appshot → Start screen recording** or
+  **Option+Shift+G**. The menu-bar icon shows a filled dot while recording. Recordings
+  stop by themselves after 5 minutes. Stopping opens the composer with the recording
+  and freshly collected context.
+
+The MP4 and six key frames (PNG, at most 1280 pixels on the long side) are saved
+owner-only in the captures folder, and the bundle records the recording's source,
+start time, duration and frame offsets. The composer shows the recording as a
+removable attachment with its duration; click it to open the MP4. On send:
+
+- **OpenCode** attaches the key frames as images after the screenshots. The draft
+  lists their offsets and the time of each click, console message and failed request
+  within the recording. The MP4 itself stays on your Mac.
+- **Clipboard** Markdown links the MP4 and the key frames.
+- **Folder** export copies `recording.mp4` and `recording-frame-N.png`.
+
+A draft holds at most one recording. The local video and frames are untrusted app
+content and are marked as such in the draft.
+
 The composer routes Command+A/C/X/V/Z and Command+Shift+Z locally, including in
 its borderless accessory window. Dictation shows permission/startup/finishing
 states, waits for final recognition results after Stop, and uses the preferred

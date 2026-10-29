@@ -7,8 +7,8 @@ struct ScreenshotAttachment {
 
 func screenshotManifestParts(_ manifest: [String: Any]) throws -> [[String: Any]] {
     guard manifest.keys.contains("screenshots") else { return [manifest] }
-    guard let parts = manifest["screenshots"] as? [[String: Any]], parts.count <= 8 else {
-        throw captureError("A draft can contain up to 8 screenshots.")
+    guard let parts = manifest["screenshots"] as? [[String: Any]], parts.count <= 14 else {
+        throw captureError("A draft can contain up to 8 screenshots and 6 recording frames.")
     }
     return parts
 }

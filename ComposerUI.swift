@@ -276,6 +276,59 @@ import AppKit
     func setEnabled(_ enabled: Bool) { imageButton.isEnabled = enabled; removeButton.isEnabled = enabled }
 }
 
+// A recording attachment: first key frame, a play badge with the duration, open and remove.
+@MainActor final class VideoThumbnailView: NSView {
+    let imageButton = NSButton()
+    let removeButton = NSButton()
+    let badge = NSTextField(labelWithString: "")
+    var onOpen: (() -> Void)?
+    var onRemove: (() -> Void)?
+
+    init(video: [String: Any]) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 76, height: 56))
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 76).isActive = true
+        heightAnchor.constraint(equalToConstant: 56).isActive = true
+        let label = video["source"] as? String == "recording" ? "Screen recording" : "Instant replay"
+        let seconds = (video["durationSeconds"] as? NSNumber)?.doubleValue ?? 0
+        imageButton.frame = NSRect(x: 2, y: 5, width: 64, height: 44)
+        imageButton.image = ((video["frames"] as? [[String: Any]])?.first?["screenshot"] as? String).flatMap { NSImage(contentsOfFile: $0) } ?? NSImage(systemSymbolName: "film", accessibilityDescription: nil)
+        imageButton.imagePosition = .imageOnly
+        imageButton.imageScaling = .scaleProportionallyUpOrDown
+        imageButton.isBordered = false
+        imageButton.wantsLayer = true
+        imageButton.layer?.cornerRadius = 7
+        imageButton.layer?.masksToBounds = true
+        imageButton.layer?.borderWidth = 0.5
+        imageButton.layer?.borderColor = NSColor.separatorColor.cgColor
+        imageButton.toolTip = "\(label), \(Int(seconds.rounded())) s — open the video. Key frames are sent as images; the video stays on this Mac."
+        imageButton.setAccessibilityLabel("Open \(label.lowercased()), \(Int(seconds.rounded())) seconds")
+        imageButton.target = self
+        imageButton.action = #selector(open)
+        badge.stringValue = "▶ \(Int(seconds.rounded()))s"
+        badge.font = .systemFont(ofSize: 10, weight: .semibold)
+        badge.textColor = .white
+        badge.drawsBackground = true
+        badge.backgroundColor = NSColor.black.withAlphaComponent(0.6)
+        badge.frame = NSRect(x: 5, y: 8, width: 38, height: 14)
+        removeButton.frame = NSRect(x: 56, y: 40, width: 17, height: 17)
+        removeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Remove \(label.lowercased())")
+        removeButton.imagePosition = .imageOnly
+        removeButton.isBordered = false
+        removeButton.toolTip = "Remove \(label.lowercased()) from this capture"
+        removeButton.setAccessibilityLabel("Remove \(label.lowercased())")
+        removeButton.target = self
+        removeButton.action = #selector(remove)
+        addSubview(imageButton)
+        addSubview(badge)
+        addSubview(removeButton)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    @objc func open() { onOpen?() }
+    @objc func remove() { onRemove?() }
+    func setEnabled(_ enabled: Bool) { removeButton.isEnabled = enabled }
+}
+
 // Shows exactly what context a destination will receive, with per-source toggles.
 @MainActor final class ComposerContextPicker: NSViewController {
     let sources = NSSegmentedControl(labels: BundleInclude.sources.map { ContextText.labels[$0] ?? $0 }, trackingMode: .selectOne, target: nil, action: nil)

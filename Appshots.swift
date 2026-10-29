@@ -74,8 +74,11 @@ struct Appshots {
     let destinationMenu = NSMenu(title: "Default destination")
     let contextMenu = NSMenu(title: "Context sources")
     let events = UserEventRecorder()
+    let replay = ReplayRecorder()
+    var recordItem: NSMenuItem?
     var item: NSStatusItem?
     var hotkey: EventHotKeyRef?
+    var recordHotkey: EventHotKeyRef?
     var handler: EventHandlerRef?
     var lock: Int32 = -1
     var busy = false
@@ -95,7 +98,7 @@ struct Appshots {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon()
         let menu = NSMenu()
-        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
+        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
             entry.target = self
             menu.addItem(entry)
@@ -104,11 +107,20 @@ struct Appshots {
             submenu.delegate = self
             let entry = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             entry.submenu = submenu
-            menu.insertItem(entry, at: 1 + index)
+            menu.insertItem(entry, at: 2 + index)
         }
-        menu.insertItem(.separator(), at: 4)
+        menu.insertItem(.separator(), at: 5)
         item?.menu = menu
-        if CaptureSettings.load(output: output).recordClicks { events.start() }
+        recordItem = menu.item(at: 1)
+        let settings = CaptureSettings.load(output: output)
+        if settings.recordClicks { events.start() }
+        replay.onChange = { [weak self] in self?.refreshRecordingState() }
+        replay.onRecordingLimit = { [weak self] in self?.stopRecordingAndCompose() }
+        if settings.instantReplay {
+            Task { @MainActor in
+                do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Capture Studio — instant replay could not start: " + error.localizedDescription }
+            }
+        }
         lastExternalApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == helperBundleID ? nil : $0 }
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
@@ -124,25 +136,97 @@ struct Appshots {
         }
         var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let eventTarget = GetEventDispatcherTarget()
-        let handlerStatus = InstallEventHandler(eventTarget, { _, _, pointer in
+        let handlerStatus = InstallEventHandler(eventTarget, { _, event, pointer in
             guard let pointer else { return OSStatus(eventNotHandledErr) }
             let watcher = Unmanaged<Watcher>.fromOpaque(pointer).takeUnretainedValue()
-            Task { @MainActor in watcher.receivedShortcut() }
+            var pressed = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &pressed)
+            let id = pressed.id
+            Task { @MainActor in
+                if id == 2 { watcher.toggleRecording() } else { watcher.receivedShortcut() }
+            }
             return noErr
         }, 1, &event, Unmanaged.passUnretained(self).toOpaque(), &handler)
         let status = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey), EventHotKeyID(signature: 0x43535444, id: 1), eventTarget, 0, &hotkey) : handlerStatus
+        let recordStatus = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey | shiftKey), EventHotKeyID(signature: 0x43535444, id: 2), eventTarget, 0, &recordHotkey) : handlerStatus
         if status != noErr { updateStatusIcon(.warning); item?.button?.toolTip = "Capture Studio — shortcut unavailable. Use the capture menu." }
-        saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Option + G"])
+        saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "recordHotkeyStatus": recordStatus, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Option + G"])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    // Recording always shows; the replay ring shows whenever no other state does.
     func updateStatusIcon(_ status: AppshotStatusIcon = .ready) {
+        let shown: AppshotStatusIcon = replay.recording ? .recording : (status == .ready && replay.replayEnabled ? .replay : status)
         item?.button?.title = ""
-        item?.button?.image = appshotStatusImage(status)
+        item?.button?.image = appshotStatusImage(shown)
         item?.button?.imagePosition = .imageOnly
-        item?.button?.toolTip = "Capture Studio — capture and compose (⌥G)"
-        item?.button?.setAccessibilityLabel("Capture Studio")
+        switch shown {
+        case .recording: item?.button?.toolTip = "Capture Studio — recording the screen. Press ⌥⇧G or use the menu to stop."
+        case .replay: item?.button?.toolTip = "Capture Studio — instant replay keeps the last 30 seconds in memory. ⌥G attaches it."
+        case .ready, .success, .warning: item?.button?.toolTip = "Capture Studio — capture and compose (⌥G)"
+        }
+        item?.button?.setAccessibilityLabel(shown == .recording ? "Capture Studio, recording" : "Capture Studio")
+    }
+
+    func refreshRecordingState() {
+        recordItem?.title = replay.recording ? "Stop screen recording (⌥⇧G)" : "Start screen recording (⌥⇧G)"
+        updateStatusIcon()
+    }
+
+    @objc func toggleRecording() {
+        if replay.recording { stopRecordingAndCompose(); return }
+        Task { @MainActor in
+            do { try await replay.startRecording() } catch {
+                let alert = NSAlert()
+                alert.messageText = "Capture Studio could not start recording"
+                alert.informativeText = error.localizedDescription + "\nScreen recording uses the same Screen Recording permission as screenshots."
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
+    func stopRecordingAndCompose() {
+        guard replay.recording else { return }
+        let foreground = NSWorkspace.shared.frontmostApplication
+        let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
+        Task { @MainActor in
+            do {
+                let video = try await replay.stopRecording(output: output)
+                while busy { try await Task.sleep(nanoseconds: 200_000_000) }
+                busy = true
+                defer { busy = false }
+                let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: events.snapshot())
+                let pid = target?.processIdentifier, bundleID = target?.bundleIdentifier, title = target?.localizedName ?? ""
+                let pending = Task { @MainActor in await CaptureContext.slow(pid: pid, bundleID: bundleID, windowTitle: title) }
+                saveStatus(output: output, phase: "composing")
+                try await composeCapture(shots: [], videos: [video], context: context, pending: pending, output: output, returnTo: target)
+            } catch {
+                refreshRecordingState()
+                let alert = NSAlert()
+                alert.messageText = "Capture Studio could not save the recording"
+                alert.informativeText = error.localizedDescription
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
+    @objc func toggleInstantReplay() {
+        let enabled = !CaptureSettings.load(output: output).instantReplay
+        updateSettings { $0.instantReplay = enabled }
+        Task { @MainActor in
+            do { try await replay.setReplay(enabled) } catch {
+                updateSettings { $0.instantReplay = false }
+                try? await replay.setReplay(false)
+                let alert = NSAlert()
+                alert.messageText = "Instant replay could not start"
+                alert.informativeText = error.localizedDescription + "\nIt uses the same Screen Recording permission as screenshots."
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
     }
 
     func handleCommand(_ action: String) {
@@ -165,16 +249,20 @@ struct Appshots {
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
+        let replayFrames = replay.replayEnabled ? replay.pipeline.replayFrames() : []
         Task { @MainActor in
             defer { busy = false }
             do {
                 saveStatus(output: output, phase: "capturing")
+                let output = output
+                let replayed = Task { replayFrames.isEmpty ? nil : try? await ReplayWriter.export(replayFrames, source: "replay", output: output) }
                 let shot = try await capture(pid: target?.processIdentifier, output: output)
                 let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: events.snapshot())
                 let pid = target?.processIdentifier, bundleID = target?.bundleIdentifier, title = shot["title"] as? String ?? ""
                 let pending = Task { @MainActor in await CaptureContext.slow(pid: pid, bundleID: bundleID, windowTitle: title) }
+                let video = await replayed.value
                 saveStatus(output: output, phase: "composing")
-                try await composeScreenshot(shot, context: context, pending: pending, output: output, returnTo: target)
+                try await composeCapture(shots: [shot], videos: video.map { [$0] } ?? [], context: context, pending: pending, output: output, returnTo: target)
             } catch { showInsertError(error) }
         }
     }
@@ -208,6 +296,10 @@ struct Appshots {
             clicks.state = settings.recordClicks ? .on : .off
             clicks.toolTip = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes. Requires Accessibility."
             menu.addItem(clicks)
+            let replayToggle = NSMenuItem(title: "Keep instant replay (last 30 s)", action: #selector(toggleInstantReplay), keyEquivalent: "")
+            replayToggle.state = settings.instantReplay ? .on : .off
+            replayToggle.toolTip = "Keeps the last 30 seconds of the display in memory only; ⌥G attaches it to the capture. Capture Studio's own windows are not recorded."
+            menu.addItem(replayToggle)
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Custom log files", action: nil, keyEquivalent: ""))
             for path in settings.customLogFiles {
@@ -402,6 +494,7 @@ struct Appshots {
 
     @objc func quit() {
         if let hotkey { UnregisterEventHotKey(hotkey) }
+        if let recordHotkey { UnregisterEventHotKey(recordHotkey) }
         if let handler { RemoveEventHandler(handler) }
         if let commandObserver { DistributedNotificationCenter.default().removeObserver(commandObserver) }
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
