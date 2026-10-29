@@ -83,7 +83,7 @@ struct ComposerEndpoint: Decodable {
     let closeButton = ComposerButton(symbol: "xmark")
     let status = ComposerStatusField(wrappingLabelWithString: "")
     let thumbnailStrip = NSStackView()
-    let addScreenshotButton = ComposerButton(symbol: "plus.viewfinder")
+    let addScreenshotButton = ComposerButton("Add", symbol: "plus", treatment: .chip)
     var addingScreenshot = false
     var recordingClip = false
     var reviewingClip = false
@@ -173,6 +173,7 @@ struct ComposerEndpoint: Decodable {
         annotateButton.toolTip = "Annotate the screenshot"
         addScreenshotButton.target = self
         addScreenshotButton.action = #selector(showAddMenu)
+        addScreenshotButton.compact = true
         addScreenshotButton.toolTip = "Add a screenshot of a region or a screen recording"
         addScreenshotButton.setAccessibilityLabel("Add a screenshot or a screen recording")
         closeButton.target = self
@@ -803,7 +804,7 @@ struct ComposerEndpoint: Decodable {
                 if let target = selectedTarget, selectedDestination?.id != "opencode" {
                     status.stringValue = target.hint
                 } else {
-                    status.stringValue = selectedSkills.contains("report") ? "Review the draft in OpenCode before running." : "Report unavailable · Choose another skill or continue without one."
+                    status.stringValue = selectedSkills.contains("report") ? "" : "Report unavailable · Choose another skill or continue without one."
                 }
             } catch {
                 guard skillLoadID == loadID else { return }

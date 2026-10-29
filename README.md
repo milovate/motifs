@@ -91,9 +91,10 @@ installation without planning that permission step.
 
 1. Focus the app window and press **Option+G**.
 2. Describe what felt wrong in the borderless input. Click any screenshot thumbnail
-   to annotate it, then choose **Done** to return. Its small **×** removes it from the
-   draft, not from local capture history. Removing all screenshots allows a text-only draft.
-   The **viewfinder / Add screenshot** button opens a dimmed-screen region picker:
+   to annotate it, then choose **Done** to return. The small **×** that appears on hover
+   removes it from the draft, not from local capture history. Removing all screenshots
+   allows a text-only draft.
+   **+ Add → Screenshot of a region** opens a dimmed-screen region picker:
    drag a rectangle and release to attach the selected pixels, or Escape to cancel.
    Each region stays a separate screenshot; up to eight can be attached. Each image
    must be under 15 MB and the collection under 30 MB. Region capture does not read
@@ -261,12 +262,13 @@ Recording permission, and macOS shows its own screen-recording indicator while e
   off or quitting the helper discards the buffer. The setting is stored in the
   owner-only `settings.json`.
 - **Screen recording** starts from **Appshot → Start screen recording…**,
-  **Option+Shift+G**, or the composer's add button (**Screen recording…**). A bar asks
+  **Option+Shift+G**, or the composer's **+ Add → Screen recording…**. A bar asks
   what to record: the **Display**, the front **Window** of the app you were using (only
   that window, even when others overlap it), or an **Area** you drag. Return starts and
   Escape cancels. While recording, a floating pill shows the time with **Restart**
   (discard and start over), **Pause**/**Resume** (paused time is left out of the clip)
-  and **Stop**; an area recording also shows a dashed outline. The menu-bar icon shows a
+  and **Stop**, and the time turns orange in the last 30 seconds; an area recording
+  also shows a dashed outline. The menu-bar icon shows a
   filled dot. Recordings stop by themselves after 5 minutes of recorded time. Stopping
   adds the clip to the composer that asked for it, or opens a new composer with
   freshly collected context.

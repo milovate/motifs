@@ -50,34 +50,45 @@ enum RecordingChoice: Int {
 @MainActor final class RecordingCaptureBar: NSObject {
     static var lastChoice = RecordingChoice.display
     let modes: NSSegmentedControl
-    let startButton = ComposerButton("Start recording", symbol: "record.circle", treatment: .primary)
+    let hint = NSTextField(labelWithString: "")
+    let startButton = ComposerButton("Start", symbol: "record.circle", treatment: .primary)
     let cancelButton = ComposerButton(symbol: "xmark")
+    let appName: String?
     private(set) var panel: RecordingPanel!
     private var continuation: CheckedContinuation<RecordingChoice?, Never>?
 
     init(appName: String?) {
-        let window = appName.map { "Window · " + ($0.count > 24 ? String($0.prefix(22)) + "…" : $0) } ?? "Window"
-        modes = NSSegmentedControl(labels: ["Display", window, "Area"], trackingMode: .selectOne, target: nil, action: nil)
+        self.appName = appName
+        modes = NSSegmentedControl(labels: ["Display", "Window", "Area"], trackingMode: .selectOne, target: nil, action: nil)
         super.init()
         modes.segmentStyle = .rounded
+        for (segment, symbol) in ["display", "macwindow", "rectangle.dashed"].enumerated() {
+            modes.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: segment)
+        }
         modes.setEnabled(appName != nil, forSegment: RecordingChoice.window.rawValue)
         modes.selectedSegment = appName == nil && Self.lastChoice == .window ? RecordingChoice.display.rawValue : Self.lastChoice.rawValue
         modes.setToolTip("The whole display. Capture Studio's own windows are left out.", forSegment: 0)
         modes.setToolTip("Only the front window of \(appName ?? "the app"). Other windows on top are left out.", forSegment: 1)
         modes.setToolTip("Drag to choose an area of the screen.", forSegment: 2)
         modes.setAccessibilityLabel("What to record")
+        modes.target = self
+        modes.action = #selector(modeChanged)
         startButton.target = self
         startButton.action = #selector(start)
         startButton.keyEquivalent = "\r"
-        startButton.toolTip = "Start recording (Return)"
+        startButton.toolTip = "Start recording (Return) · No audio · Up to 5 min"
+        startButton.setAccessibilityLabel("Start recording")
         cancelButton.target = self
         cancelButton.action = #selector(cancel)
         cancelButton.compact = true
         cancelButton.toolTip = "Cancel (Escape)"
         cancelButton.setAccessibilityLabel("Cancel recording")
-        let hint = NSTextField(labelWithString: "No audio · up to 5 min")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
+        hint.widthAnchor.constraint(lessThanOrEqualToConstant: 150).isActive = true
+        hint.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+        refreshHint()
         panel = RecordingPanel.pill([cancelButton, modes, hint, startButton], activating: true)
         panel.title = "Screen recording"
         panel.onCancel = { [weak self] in self?.cancel() }
@@ -94,6 +105,16 @@ enum RecordingChoice: Int {
         }
     }
 
+    func refreshHint() {
+        switch choice {
+        case .display: hint.stringValue = "Whole screen"
+        case .window: hint.stringValue = appName ?? "Front window"
+        case .area: hint.stringValue = "Drag after Start"
+        }
+        hint.toolTip = hint.stringValue
+    }
+
+    @objc func modeChanged() { refreshHint() }
     @objc func start() { finish(choice) }
     @objc func cancel() { finish(nil) }
 
@@ -144,8 +165,14 @@ enum RecordingChoice: Int {
 
     func update(seconds: Double, paused: Bool, limit: Double) {
         let remaining = limit - seconds
-        time.stringValue = Self.format(seconds) + (remaining <= 30 ? " · \(Int(max(0, remaining)))s left" : "")
+        let ending = remaining <= 30
+        time.stringValue = Self.format(seconds) + (ending ? " · \(Int(max(0, remaining)))s left" : "")
+        time.textColor = ending ? .systemOrange : .labelColor
         dot.textColor = paused ? .secondaryLabelColor : .systemRed
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.45
+            dot.animator().alphaValue = paused ? 1 : dot.alphaValue > 0.6 ? 0.35 : 1
+        }
         pauseButton.symbolName = paused ? "play.fill" : "pause.fill"
         pauseButton.toolTip = paused ? "Resume recording" : "Pause recording"
         pauseButton.setAccessibilityLabel(pauseButton.toolTip ?? "")

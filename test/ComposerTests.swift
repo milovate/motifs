@@ -120,7 +120,9 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         composer.shots.append(originalShot.merging(["app": "Region 2"]) { _, new in new })
         composer.selectedShotIndex = 1
         composer.refreshAttachments()
-        precondition(composer.thumbnailStrip.arrangedSubviews.compactMap { $0 as? ScreenshotThumbnailView }.count == 2, "each screenshot has direct annotate/remove controls")
+        let tiles = composer.thumbnailStrip.arrangedSubviews.compactMap { $0 as? ScreenshotThumbnailView }
+        precondition(tiles.count == 2, "each screenshot has direct annotate/remove controls")
+        precondition(tiles.allSatisfy { $0.removeButton.alphaValue == 0 && !$0.removeButton.isHidden }, "remove appears on hover but stays reachable for keyboard and VoiceOver")
         if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
             composer.window!.appearance = NSAppearance(named: .aqua)
             composer.textView.string = "@report The second screenshot shows the issue."
@@ -308,8 +310,16 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let bar = RecordingCaptureBar(appName: nil)
         precondition(!bar.modes.isEnabled(forSegment: 1) && bar.choice != .window && bar.panel.sharingType == .none, "window recording needs an app in front")
         let windowBar = RecordingCaptureBar(appName: "A very long application name here")
+        windowBar.modes.selectedSegment = 1
+        windowBar.modeChanged()
+        precondition(windowBar.hint.stringValue == "A very long application name here" && windowBar.modes.label(forSegment: 1) == "Window", "the hint names the app instead of widening the segment")
         windowBar.modes.selectedSegment = 2
-        precondition(windowBar.choice == .area && windowBar.modes.label(forSegment: 1)?.hasSuffix("…") == true, "the bar names the app and offers an area")
+        windowBar.modeChanged()
+        precondition(windowBar.choice == .area && windowBar.hint.stringValue == "Drag after Start", "the bar offers an area")
+        controls.update(seconds: 12, paused: false, limit: 300)
+        precondition(controls.time.stringValue == "00:12" && controls.time.textColor == .labelColor, "the timer stays neutral until the last 30 s")
+        controls.update(seconds: 280, paused: false, limit: 300)
+        precondition(controls.time.textColor == .systemOrange, "the timer turns orange near the limit")
         if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
             func render(_ view: NSView, _ name: String, dark: Bool) throws {
                 view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

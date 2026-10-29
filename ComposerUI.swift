@@ -248,9 +248,36 @@ import AppKit
     override var stringValue: String { didSet { toolTip = stringValue; onChange?() } }
 }
 
-@MainActor final class ScreenshotThumbnailView: NSView {
+// An attachment tile whose remove button appears only while the pointer is over it.
+// The button stays in the accessibility tree and keyboard loop while transparent.
+@MainActor class AttachmentTileView: NSView {
     let imageButton = NSButton()
     let removeButton = NSButton()
+    private var tracking: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        removeButton.alphaValue = 0
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    override func updateTrackingAreas() {
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+        super.updateTrackingAreas()
+    }
+    override func mouseEntered(with event: NSEvent) { revealRemove(true) }
+    override func mouseExited(with event: NSEvent) { revealRemove(false) }
+    func revealRemove(_ visible: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            removeButton.animator().alphaValue = visible ? 1 : 0
+        }
+    }
+}
+
+@MainActor final class ScreenshotThumbnailView: AttachmentTileView {
     var onAnnotate: (() -> Void)?
     var onRemove: (() -> Void)?
 
@@ -291,9 +318,7 @@ import AppKit
 }
 
 // A recording attachment: first key frame, a play badge with the duration, open and remove.
-@MainActor final class VideoThumbnailView: NSView {
-    let imageButton = NSButton()
-    let removeButton = NSButton()
+@MainActor final class VideoThumbnailView: AttachmentTileView {
     let badge = NSTextField(labelWithString: "")
     var onOpen: (() -> Void)?
     var onRemove: (() -> Void)?
@@ -325,6 +350,10 @@ import AppKit
         badge.textColor = .white
         badge.drawsBackground = true
         badge.backgroundColor = NSColor.black.withAlphaComponent(0.6)
+        badge.alignment = .center
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 4
+        badge.layer?.masksToBounds = true
         badge.frame = NSRect(x: 5, y: 8, width: 38, height: 14)
         removeButton.frame = NSRect(x: 56, y: 40, width: 17, height: 17)
         removeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Remove \(label.lowercased())")
