@@ -31,6 +31,25 @@ func saveCaptureManifest(_ shot: [String: Any], output: String) throws { fatalEr
         let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 53)!
         view.keyDown(with: escape)
         precondition(cancellations == 1, "Escape cancels without a capture")
+        let safari = ScreenWindow(id: 42, pid: 7, app: "Safari", frame: CGRect(x: 1600, y: 100, width: 400, height: 300))
+        precondition(overlayRect(safari.frame, screenFrame: CGRect(x: 1512, y: -100, width: 1920, height: 1080), primaryHeight: 982) == CGRect(x: 88, y: 98, width: 400, height: 300), "window frames map into the overlay of their display")
+        var picked: ScreenWindow?
+        var wholeScreen = 0
+        view.onWindow = { picked = $0 }
+        view.onDisplay = { wholeScreen += 1 }
+        view.windows = [(safari, CGRect(x: 400, y: 300, width: 300, height: 200))]
+        view.hover(at: CGPoint(x: 450, y: 350))
+        precondition(view.hovered?.window == safari, "hovering highlights the window under the pointer")
+        view.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 450, y: 350)))
+        view.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 450, y: 350)))
+        precondition(picked == safari, "clicking a highlighted window picks it")
+        view.hover(at: CGPoint(x: 20, y: 20))
+        view.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 20, y: 20)))
+        view.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 20, y: 20)))
+        precondition(view.hovered == nil && wholeScreen == 1, "clicking the desktop picks the whole screen")
+        let enter = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!
+        view.keyDown(with: enter)
+        precondition(wholeScreen == 2, "Return picks the whole screen")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

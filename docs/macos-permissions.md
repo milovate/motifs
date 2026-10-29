@@ -66,7 +66,7 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
    ```
 
 3. Confirm **Appshot** appears in the menu bar.
-4. Focus a non-sensitive test window and press **Option+G**.
+4. Press **Option+G** and click a non-sensitive test window in the dimmed overlay.
 5. Confirm the floating composer opens with a screenshot, a **Context** chip, the
    destination and target selectors, and **@report** selected when available. Close it
    without sending to verify cancellation. Optionally choose **Clipboard** and send to
@@ -130,10 +130,10 @@ memory. Browser context travels only over an owner-only socket in
 same signed Capture Studio binary; each side refuses any other process.
 
 Nothing is recorded unless you turn on **Keep instant replay** or start a screen
-recording and press Start; macOS shows its screen-recording indicator whenever either
+recording and pick what to record; macOS shows its screen-recording indicator whenever either
 is running. The instant replay buffer holds only the last 30 seconds of the display,
 in memory, and is written to disk only when you press Option+G. A screen recording
-captures only what you chose (the display, one window, or a dragged area), leaves
+captures only what you picked in the overlay (one window, a dragged area, or the whole screen), leaves
 paused time out, and stops after 5 minutes. MP4s, trimmed copies and key frames are
 saved owner-only in the captures folder; OpenCode receives up to six key frames as
 images plus the file paths, and only when you send. Once you submit, the agent can open

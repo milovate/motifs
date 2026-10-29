@@ -3,7 +3,7 @@ import AppKit
 func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 @MainActor func saveStatus(output: String, phase: String, details: [String: Any]) {}
 @MainActor func openSessionDraft(sessionID: String, title: String, draftText: String, shot: [String: Any], output: String) async throws { fatalError("Tests must never hand a draft to the real desktop") }
-@MainActor func captureScreenRegion(output: String) async throws -> [String: Any]? { fatalError("Tests must never capture the real desktop") }
+@MainActor func captureScreenSelection(output: String) async throws -> [String: Any]? { fatalError("Tests must never capture the real desktop") }
 
 @main struct ComposerTests {
     @MainActor static func main() throws {
@@ -89,6 +89,19 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         composer.textView.setSelectedRange(NSRange(location: 3, length: 0))
         composer.updateInputSize()
         precondition(composer.mentionCompletion.candidates.first?.id == "report", "@ prefix opens matching completion")
+        composer.mentionCompletion.show(near: composer.textView)
+        let mentionRows = (composer.mentionCompletion.panel.contentView?.subviews.first as? NSStackView)?.arrangedSubviews.compactMap { $0 as? ComposerMentionRow } ?? []
+        mentionRows.first?.layoutSubtreeIfNeeded()
+        let mentionLabel = mentionRows.first?.subviews.first?.subviews.first
+        precondition(mentionRows.first?.skillID == "report" && mentionRows.first?.selected == true && (mentionLabel?.frame.minX ?? 99) <= 10 && composer.mentionCompletion.panel.frame.width == ComposerMentionCompletion.width, "suggestions are compact and left-aligned")
+        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"], let surface = composer.mentionCompletion.panel.contentView {
+            let detached = surface
+            composer.mentionCompletion.panel.contentView = nil
+            detached.appearance = NSAppearance(named: .darkAqua)
+            let representation = detached.bitmapImageRepForCachingDisplay(in: detached.bounds)!
+            detached.effectiveAppearance.performAsCurrentDrawingAppearance { detached.cacheDisplay(in: detached.bounds, to: representation) }
+            try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("mentions.png"))
+        }
         precondition(composer.handleMentionKey(36), "Enter selects the skill instead of submitting")
         precondition(composer.textView.string == "@report ", "completion replaces the query")
         precondition(composer.selectedSkills == ["report"], "recognized mention drives attachments")
@@ -261,6 +274,10 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         settings.instantReplay = true
         try settings.save(output: output)
         precondition(CaptureSettings.load(output: output).instantReplay, "instant replay persists")
+        settings.include = BundleInclude(windowText: false, device: true)
+        try settings.save(output: output)
+        precondition(CaptureSettings.load(output: output).include == BundleInclude(windowText: false, device: true), "context switches are remembered")
+        settings.include = BundleInclude()
         settings.instantReplay = false
         try settings.save(output: output)
 
@@ -342,15 +359,6 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let controls = RecordingControls()
         controls.update(seconds: 280, paused: true, limit: 300)
         precondition(controls.time.stringValue == "04:40 · 20s left" && controls.pauseButton.symbolName == "play.fill" && controls.panel.sharingType == .none, "controls warn near the limit, show resume while paused and are never recorded")
-        let bar = RecordingCaptureBar(appName: nil)
-        precondition(!bar.modes.isEnabled(forSegment: 1) && bar.choice != .window && bar.panel.sharingType == .none, "window recording needs an app in front")
-        let windowBar = RecordingCaptureBar(appName: "A very long application name here")
-        windowBar.modes.selectedSegment = 1
-        windowBar.modeChanged()
-        precondition(windowBar.hint.stringValue == "A very long application name here" && windowBar.modes.label(forSegment: 1) == "Window", "the hint names the app instead of widening the segment")
-        windowBar.modes.selectedSegment = 2
-        windowBar.modeChanged()
-        precondition(windowBar.choice == .area && windowBar.hint.stringValue == "Drag after Start", "the bar offers an area")
         controls.update(seconds: 12, paused: false, limit: 300)
         precondition(controls.time.stringValue == "00:12" && controls.time.textColor == .labelColor, "the timer stays neutral until the last 30 s")
         controls.update(seconds: 280, paused: false, limit: 300)
@@ -364,7 +372,6 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
                 try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
             }
             try render(controls.panel.contentView!, "recording-controls", dark: true)
-            try render(windowBar.panel.contentView!, "recording-bar", dark: true)
             review.timeline.frames = (0..<ClipReviewController.filmstripCount).map { index in
                 NSImage(size: NSSize(width: 160, height: 100), flipped: false) { rect in
                     NSColor(calibratedHue: CGFloat(index) / 14, saturation: 0.35, brightness: 0.85, alpha: 1).setFill()

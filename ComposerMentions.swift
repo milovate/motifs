@@ -80,44 +80,40 @@ enum ComposerMentions {
         if textView.window?.isVisible == true { show(near: textView) }
     }
 
+    static let width: CGFloat = 280
+    static let visibleRows = 8
+
     func show(near textView: NSTextView) {
         guard let parent = textView.window else { return }
-        let start = max(0, min(selectedIndex - 5, candidates.count - 6))
-        let visible = Array(candidates.dropFirst(start).prefix(6))
-        let height = CGFloat(visible.count * 32 + 40)
-        let surface = ComposerSurface(frame: NSRect(x: 0, y: 0, width: 330, height: height), radius: CornerRadius.popup)
+        let start = max(0, min(selectedIndex - (Self.visibleRows - 1), candidates.count - Self.visibleRows))
+        let visible = Array(candidates.dropFirst(start).prefix(Self.visibleRows))
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        surface.addSubview(stack)
+        stack.spacing = 1
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
         for (offset, skill) in visible.enumerated() {
-            let row = ComposerButton("@" + String(skill.id.prefix(34)), treatment: start + offset == selectedIndex ? .chip : .quiet)
-            row.setAccessibilityLabel("Select skill " + skill.id)
-            row.toolTip = skill.name
-            row.identifier = NSUserInterfaceItemIdentifier(skill.id)
-            row.target = self
-            row.action = #selector(choose(_:))
+            let row = ComposerMentionRow(id: skill.id, name: skill.name, selected: start + offset == selectedIndex)
+            row.onChoose = { [weak self] id in self?.onChoose?(id) }
             stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalToConstant: 314).isActive = true
+            row.widthAnchor.constraint(equalToConstant: Self.width - 12).isActive = true
         }
-        let hint = NSTextField(labelWithString: "↑↓ Navigate     ↵ Select     esc Close")
+        let hint = NSTextField(labelWithString: "↑↓ navigate · ↵ select · esc close")
         hint.font = .systemFont(ofSize: 10)
-        hint.textColor = .secondaryLabelColor
+        hint.textColor = .tertiaryLabelColor
+        stack.setCustomSpacing(4, after: stack.arrangedSubviews.last ?? hint)
         stack.addArrangedSubview(hint)
-        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 8), stack.topAnchor.constraint(equalTo: surface.topAnchor, constant: 8)])
+        let height = stack.fittingSize.height
+        let surface = ComposerSurface(frame: NSRect(x: 0, y: 0, width: Self.width, height: height), radius: CornerRadius.popup)
+        stack.frame = surface.bounds
+        stack.autoresizingMask = [.width, .height]
+        surface.addSubview(stack)
         panel.contentView = surface
         let caret = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
         let screen = parent.screen?.visibleFrame ?? NSScreen.main!.visibleFrame
-        panel.setFrame(NSRect(x: min(max(screen.minX + 8, caret.minX), screen.maxX - 338), y: min(screen.maxY - height - 8, max(screen.minY + 8, caret.maxY + 6)), width: 330, height: height), display: true)
+        panel.setFrame(NSRect(x: min(max(screen.minX + 8, caret.minX - 8), screen.maxX - Self.width - 8), y: min(screen.maxY - height - 8, max(screen.minY + 8, caret.maxY + 6)), width: Self.width, height: height), display: true)
         if panel.parent !== parent { panel.parent?.removeChildWindow(panel); parent.addChildWindow(panel, ordered: .above) }
         panel.orderFront(nil)
-    }
-
-    @objc func choose(_ sender: NSButton) {
-        guard let id = sender.identifier?.rawValue else { return }
-        onChoose?(id)
     }
 
     func dismiss() {
@@ -126,4 +122,64 @@ enum ComposerMentions {
         candidates = []
         query = nil
     }
+}
+
+// One suggestion: the mention left-aligned, with the skill's name when it differs.
+@MainActor final class ComposerMentionRow: NSView {
+    let skillID: String
+    let selected: Bool
+    var onChoose: ((String) -> Void)?
+    private var hovering = false
+
+    init(id: String, name: String, selected: Bool) {
+        skillID = id
+        self.selected = selected
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = CornerRadius.small
+        let mention = NSTextField(labelWithString: "@" + id)
+        mention.font = .systemFont(ofSize: 13, weight: .medium)
+        mention.lineBreakMode = .byTruncatingTail
+        mention.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        var views: [NSView] = [mention]
+        if name.caseInsensitiveCompare(id) != .orderedSame, !name.isEmpty {
+            let detail = NSTextField(labelWithString: name)
+            detail.font = .systemFont(ofSize: 12)
+            detail.textColor = .secondaryLabelColor
+            detail.lineBreakMode = .byTruncatingTail
+            detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            views.append(detail)
+        }
+        let row = NSStackView(views: views)
+        row.spacing = 6
+        row.alignment = .firstBaseline
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        toolTip = name
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Select skill " + id)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.backgroundColor = selected ? NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor : NSColor.labelColor.withAlphaComponent(hovering ? 0.08 : 0).cgColor
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
+    override func mouseDown(with event: NSEvent) { onChoose?(skillID) }
+    override func accessibilityPerformPress() -> Bool { onChoose?(skillID); return true }
 }

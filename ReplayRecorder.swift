@@ -413,14 +413,14 @@ enum ReplayWriter {
 
 // What an explicit recording captures. Instant replay always uses the display.
 enum RecordingArea: Equatable {
-    case display
-    case window(pid: pid_t, app: String)
+    case display(CGDirectDisplayID? = nil)
+    case window(pid: pid_t, app: String, id: CGWindowID? = nil)
     case area(CGRect, display: CGDirectDisplayID, scale: CGFloat)
 
     var details: [String: Any] {
         switch self {
         case .display: return ["area": "display"]
-        case let .window(_, app): return ["area": "window", "target": String(app.prefix(120))]
+        case let .window(_, app, _): return ["area": "window", "target": String(app.prefix(120))]
         case let .area(rect, _, _): return ["area": "area", "target": "\(Int(rect.width)) × \(Int(rect.height)) area"]
         }
     }
@@ -460,16 +460,17 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
         let size: (width: Int32, height: Int32)
         let configuration = SCStreamConfiguration()
         switch area {
-        case .display:
-            let screen = NSScreen.main ?? NSScreen.screens.first
-            let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        case let .display(chosen):
+            let number = { (screen: NSScreen) in (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value }
+            let screen = NSScreen.screens.first { chosen != nil && number($0) == chosen } ?? NSScreen.main ?? NSScreen.screens.first
+            let displayID = screen.flatMap(number)
             guard let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays.first else { throw captureError("No display is available to record.") }
             filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
             size = ReplayRecorder.size(width: display.width, height: display.height, scale: Double(screen?.backingScaleFactor ?? 2))
-        case let .window(pid, app):
+        case let .window(pid, app, id):
             let order = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []).compactMap { $0[kCGWindowNumber as String] as? UInt32 }
             let candidates = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 && $0.frame.width > 1 && $0.frame.height > 1 }
-            guard let window = candidates.min(by: { (order.firstIndex(of: $0.windowID) ?? .max) < (order.firstIndex(of: $1.windowID) ?? .max) }) else { throw captureError("No visible window found for \(app). Bring its window on screen and retry.") }
+            guard let window = candidates.first(where: { $0.windowID == id }) ?? candidates.min(by: { (order.firstIndex(of: $0.windowID) ?? .max) < (order.firstIndex(of: $1.windowID) ?? .max) }) else { throw captureError("No visible window found for \(app). Bring its window on screen and retry.") }
             filter = SCContentFilter(desktopIndependentWindow: window)
             configuration.ignoreShadowsSingleWindow = true
             let scale = NSScreen.screens.first { $0.frame.intersects(window.frame) }?.backingScaleFactor ?? 2
@@ -508,7 +509,7 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
     private var recordingStream: ReplayStream?
     private(set) var replayEnabled = false
     private(set) var recording = false
-    private(set) var area = RecordingArea.display
+    private(set) var area = RecordingArea.display()
     var onChange: (() -> Void)?
     var onRecordingLimit: (() -> Void)?
 
@@ -531,7 +532,7 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
         pipeline.setReplay(enabled)
         if enabled, replayStream == nil {
             do {
-                replayStream = try await ReplayStream.start(.display, pipeline: pipeline) { [weak self] in
+                replayStream = try await ReplayStream.start(.display(), pipeline: pipeline) { [weak self] in
                     self?.replayStream = nil
                     self?.replayEnabled = false
                     self?.pipeline.reset()
@@ -557,7 +558,7 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
         return pipeline.replayFrames()
     }
 
-    func startRecording(_ area: RecordingArea = .display) async throws {
+    func startRecording(_ area: RecordingArea = .display()) async throws {
         guard !recording else { return }
         recordingStream = try await ReplayStream.start(area, pipeline: recordingPipeline) { [weak self] in
             guard let self, self.recording else { return }

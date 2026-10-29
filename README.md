@@ -89,15 +89,17 @@ Rebuild the helper and reload the plugin to apply source changes. Rebuilding cha
 its local signature and may require renewing macOS grants; do not replace a running
 installation without planning that permission step.
 
-1. Focus the app window and press **Option+G**.
+1. Press **Option+G**. The screen dims and the window under the pointer is highlighted:
+   **click a window** to capture it (with its accessibility text), **drag** to capture an
+   area, or click the desktop or press **Return** for the whole screen. Escape cancels.
 2. Describe what felt wrong in the borderless input. Click any screenshot thumbnail
    to annotate it, then choose **Done** to return. The small **×** that appears on hover
    removes it from the draft, not from local capture history. Removing all screenshots
    allows a text-only draft. Right-click a screenshot or recording to **Copy Image** /
    **Copy Video**, **Share…** (AirDrop, Messages, Mail), **Show in Finder** or **Copy
    Path**, so a capture can be shared without sending a draft.
-   The **viewfinder** button opens a dimmed-screen region picker:
-   drag a rectangle and release to attach the selected pixels, or Escape to cancel.
+   The **viewfinder** button opens the same picker to add another window, area or
+   screen.
    Each region stays a separate screenshot; up to eight can be attached. Each image
    must be under 15 MB and the collection under 30 MB. Region capture does not read
    accessibility text from outside the selected rectangle or save a whole-display image.
@@ -108,7 +110,8 @@ installation without planning that permission step.
    such as **Review in OpenCode**, **Copy Markdown**, or **Save bundle**. The last
    destination you choose becomes the default.
    The **Context** chip shows the window text and device info that will be included,
-   with a rough token estimate. Switch a source off to leave it out of every destination.
+   with a rough token estimate. Switch a source off to leave it out of every destination;
+   the switches are remembered for the next capture.
 4. **@report** is prefilled into the editable text when available. Type **@** for
    autocomplete, use Up/Down to choose, and press Enter or Tab to insert a skill.
    Known mentions are highlighted. Deleting a mention removes the selection; loading
@@ -277,10 +280,10 @@ Recording permission, and macOS shows its own screen-recording indicator while e
   off or quitting the helper discards the buffer. The setting is stored in the
   owner-only `settings.json`.
 - **Screen recording** starts from **Appshot → Start screen recording…**,
-  **Option+Shift+G**, or the composer's **record** button (it shows "1/3" once clips are attached). A bar asks
-  what to record: the **Display**, the front **Window** of the app you were using (only
-  that window, even when others overlap it), or an **Area** you drag. Return starts and
-  Escape cancels. While recording, a floating pill shows the time with **Restart**
+  **Option+Shift+G**, or the composer's **record** button (it shows "1/3" once clips are attached). The same
+  picker asks what to record: **click a window** (only that window, even when others
+  overlap it), **drag** an area, or click the desktop or press **Return** for the whole
+  screen. Recording starts right away; Escape cancels. While recording, a floating pill shows the time with **Restart**
   (discard and start over), **Pause**/**Resume** (paused time is left out of the clip)
   and **Stop**, and the time turns orange in the last 30 seconds; an area recording
   also shows a dashed outline. The menu-bar icon shows a
@@ -500,7 +503,7 @@ alone may reuse its existing server and does not necessarily reload the plugin.
 The private `status.json` file in the captures folder records shortcut registration,
 current permission checks, and the latest capture/insertion stage. It contains
 diagnostics rather than the accessibility text or screenshot data.
-Press Option+G while the window you want to share is focused.
+Press Option+G and click the window you want to share.
 The shortcut uses the macOS global hotkey dispatcher. `hotkeyStatus: 0` and
 `hotkeyHandlerStatus: 0` confirm registration, not physical key delivery.
 `shortcutCount` and `lastShortcutAt` update when the helper actually receives the

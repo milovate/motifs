@@ -1,9 +1,5 @@
 import AppKit
 
-enum RecordingChoice: Int {
-    case display, window, area
-}
-
 // Floating pills for recording. `sharingType = .none` keeps them out of every
 // capture, including window recordings that ScreenCaptureKit would otherwise composite.
 @MainActor final class RecordingPanel: ComposerPanel {
@@ -42,88 +38,6 @@ enum RecordingChoice: Int {
     func place(on screen: NSScreen?, nearTop: Bool) {
         guard let frame = (screen ?? NSScreen.main)?.visibleFrame else { return }
         setFrameOrigin(NSPoint(x: frame.midX - self.frame.width / 2, y: nearTop ? frame.maxY - self.frame.height - 12 : frame.minY + min(80, frame.height * 0.1)))
-    }
-}
-
-// Chooses what a recording captures: the display, the window of the app that
-// was in front, or a dragged area. Return starts, Escape cancels.
-@MainActor final class RecordingCaptureBar: NSObject {
-    static var lastChoice = RecordingChoice.display
-    let modes: NSSegmentedControl
-    let hint = NSTextField(labelWithString: "")
-    let startButton = ComposerButton("Start", symbol: "record.circle", treatment: .primary)
-    let cancelButton = ComposerButton(symbol: "xmark")
-    let appName: String?
-    private(set) var panel: RecordingPanel!
-    private var continuation: CheckedContinuation<RecordingChoice?, Never>?
-
-    init(appName: String?) {
-        self.appName = appName
-        modes = NSSegmentedControl(labels: ["Display", "Window", "Area"], trackingMode: .selectOne, target: nil, action: nil)
-        super.init()
-        modes.segmentStyle = .rounded
-        for (segment, symbol) in ["display", "macwindow", "rectangle.dashed"].enumerated() {
-            modes.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: segment)
-        }
-        modes.setEnabled(appName != nil, forSegment: RecordingChoice.window.rawValue)
-        modes.selectedSegment = appName == nil && Self.lastChoice == .window ? RecordingChoice.display.rawValue : Self.lastChoice.rawValue
-        modes.setToolTip("The whole display. Capture Studio's own windows are left out.", forSegment: 0)
-        modes.setToolTip("Only the front window of \(appName ?? "the app"). Other windows on top are left out.", forSegment: 1)
-        modes.setToolTip("Drag to choose an area of the screen.", forSegment: 2)
-        modes.setAccessibilityLabel("What to record")
-        modes.target = self
-        modes.action = #selector(modeChanged)
-        startButton.target = self
-        startButton.action = #selector(start)
-        startButton.keyEquivalent = "\r"
-        startButton.toolTip = "Start recording (Return) · No audio · Up to 5 min"
-        startButton.setAccessibilityLabel("Start recording")
-        cancelButton.target = self
-        cancelButton.action = #selector(cancel)
-        cancelButton.compact = true
-        cancelButton.toolTip = "Cancel (Escape)"
-        cancelButton.setAccessibilityLabel("Cancel recording")
-        hint.font = .systemFont(ofSize: 11)
-        hint.textColor = .secondaryLabelColor
-        hint.lineBreakMode = .byTruncatingTail
-        hint.widthAnchor.constraint(lessThanOrEqualToConstant: 150).isActive = true
-        hint.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
-        refreshHint()
-        panel = RecordingPanel.pill([cancelButton, modes, hint, startButton], activating: true)
-        panel.title = "Screen recording"
-        panel.onCancel = { [weak self] in self?.cancel() }
-    }
-
-    var choice: RecordingChoice { RecordingChoice(rawValue: modes.selectedSegment) ?? .display }
-
-    func choose() async -> RecordingChoice? {
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            panel.place(on: NSScreen.main, nearTop: false)
-            NSApp.activate(ignoringOtherApps: true)
-            panel.present { panel.makeKeyAndOrderFront(nil) }
-        }
-    }
-
-    func refreshHint() {
-        switch choice {
-        case .display: hint.stringValue = "Whole screen"
-        case .window: hint.stringValue = appName ?? "Front window"
-        case .area: hint.stringValue = "Drag after Start"
-        }
-        hint.toolTip = hint.stringValue
-    }
-
-    @objc func modeChanged() { refreshHint() }
-    @objc func start() { finish(choice) }
-    @objc func cancel() { finish(nil) }
-
-    func finish(_ choice: RecordingChoice?) {
-        panel.orderOut(nil)
-        if let choice { Self.lastChoice = choice }
-        let continuation = self.continuation
-        self.continuation = nil
-        continuation?.resume(returning: choice)
     }
 }
 

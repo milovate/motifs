@@ -25,7 +25,7 @@ struct ComposerEndpoint: Decodable {
 }
 
 @MainActor func composeCapture(shots: [[String: Any]], videos: [[String: Any]], context: [String: Any], pending: Task<[String: Any], Never>?, output: String, returnTo: NSRunningApplication?) async throws {
-    let composer = try AppshotComposer(shots: shots, videos: videos, note: "", context: context, include: BundleInclude(), output: output, returnTo: returnTo)
+    let composer = try AppshotComposer(shots: shots, videos: videos, note: "", context: context, include: CaptureSettings.load(output: output).include, output: output, returnTo: returnTo)
     if let pending { composer.collect(pending) }
     await presentComposer(composer)
 }
@@ -457,6 +457,10 @@ struct ComposerEndpoint: Decodable {
         picker.onChange = { [weak self] include in
             guard let self, self.textView.isEditable, self.preparedSession == nil else { return }
             self.include = include
+            var remembered = CaptureSettings.load(output: self.output)
+            remembered.include = include
+            try? remembered.save(output: self.output)
+            self.settings.include = include
             self.stateChanged()
             self.refreshContextSummary()
         }
@@ -822,7 +826,7 @@ struct ComposerEndpoint: Decodable {
                 window?.makeFirstResponder(textView)
             }
             do {
-                if let captured = try await captureScreenRegion(output: output) {
+                if let captured = try await captureScreenSelection(output: output) {
                     shots.append(captured)
                     selectedShotIndex = shots.count - 1
                     stateChanged()

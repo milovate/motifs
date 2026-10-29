@@ -237,10 +237,12 @@ struct CaptureSettings: Equatable {
     var recordClicks = false
     var customLogFiles: [String] = []
     var instantReplay = false
+    var include = BundleInclude()
 
     static func == (lhs: CaptureSettings, rhs: CaptureSettings) -> Bool {
         lhs.defaultDestination == rhs.defaultDestination && lhs.knownDestinations.map(\.id) == rhs.knownDestinations.map(\.id) && lhs.knownDestinations.map(\.label) == rhs.knownDestinations.map(\.label)
             && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles && lhs.instantReplay == rhs.instantReplay
+            && lhs.include == rhs.include
     }
 
     static func load(output: String) -> CaptureSettings {
@@ -255,6 +257,7 @@ struct CaptureSettings: Equatable {
         if !known.isEmpty { settings.knownDestinations = Array(known.prefix(16)) }
         settings.recordClicks = raw["recordClicks"] as? Bool == true
         settings.instantReplay = raw["instantReplay"] as? Bool == true
+        settings.include = BundleInclude(raw["include"] as? [String: Any])
         settings.customLogFiles = Array((raw["customLogFiles"] as? [String] ?? []).filter { $0.hasPrefix("/") && $0.count <= 1024 }.prefix(4))
         return settings
     }
@@ -266,6 +269,7 @@ struct CaptureSettings: Equatable {
             "recordClicks": recordClicks,
             "instantReplay": instantReplay,
             "customLogFiles": Array(customLogFiles.prefix(4)),
+            "include": include.dictionary,
         ]
         let path = output + "/settings.json"
         let temporary = path + ".tmp"

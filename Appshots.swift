@@ -198,20 +198,19 @@ struct Appshots {
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
         Task { @MainActor in
             defer { choosingRecording = false }
-            let bar = RecordingCaptureBar(appName: target?.localizedName)
             let area: RecordingArea
-            switch await bar.choose() {
+            switch await chooseScreenTarget(hint: "Record: drag an area · Click a window · Click the desktop or press Return for the whole screen · No audio, up to 5 min") {
             case nil:
                 composer?.recordingFinished(nil)
+                target?.activate()
                 return
-            case .display:
-                area = .display
-            case .window:
-                guard let target else { composer?.recordingFinished(nil); return }
-                area = .window(pid: target.processIdentifier, app: target.localizedName ?? "App")
-                target.activate()
-            case .area:
-                guard let (rect, display, scale) = await chooseScreenRegion(hint: "Drag the area to record · Escape to cancel") else { composer?.recordingFinished(nil); return }
+            case let .display(display, _, _):
+                area = .display(display)
+                target?.activate()
+            case let .window(window):
+                area = .window(pid: window.pid, app: window.app, id: window.id)
+                NSRunningApplication(processIdentifier: window.pid)?.activate()
+            case let .area(rect, display, scale):
                 area = .area(rect, display: display, scale: scale)
                 target?.activate()
             }
@@ -341,10 +340,19 @@ struct Appshots {
         Task { @MainActor in
             defer { busy = false }
             do {
+                guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
+                saveStatus(output: output, phase: "choosing")
+                guard let choice = await chooseScreenTarget(hint: screenshotHint) else {
+                    saveStatus(output: output, phase: "cancelled")
+                    target?.activate()
+                    return
+                }
                 saveStatus(output: output, phase: "capturing")
                 let output = output
                 let replayed = Task { replayFrames.isEmpty ? nil : try? await ReplayWriter.export(replayFrames, source: "replay", output: output) }
-                let shot = try await capture(pid: target?.processIdentifier, output: output)
+                let shot = try await capture(choice, output: output)
+                var target = target
+                if case let .window(window) = choice { target = NSRunningApplication(processIdentifier: window.pid) ?? target }
                 let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: events.snapshot())
                 let pid = target?.processIdentifier, bundleID = target?.bundleIdentifier, title = shot["title"] as? String ?? ""
                 let pending = Task { @MainActor in await CaptureContext.slow(pid: pid, bundleID: bundleID, windowTitle: title) }
@@ -776,10 +784,8 @@ func draftContext(_ shot: [String: Any]) -> String {
     }
 }
 
-@MainActor func capture(appName: String? = nil, pid: pid_t? = nil, output: String) async throws -> [String: Any] {
-    guard CGPreflightScreenCaptureAccess() else {
-        throw captureError("Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access.")
-    }
+@MainActor func capture(appName: String? = nil, pid: pid_t? = nil, windowID: CGWindowID? = nil, output: String) async throws -> [String: Any] {
+    guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
     let app = try targetApp(appName: appName, pid: pid)
     let axEnabled = AXIsProcessTrusted()
     let appElement = AXUIElementCreateApplication(app.processIdentifier)
@@ -798,7 +804,7 @@ func draftContext(_ shot: [String: Any]) -> String {
     let order = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
     let orderedIDs = order.compactMap { $0[kCGWindowNumber as String] as? UInt32 }
     let ordered = candidates.sorted { (orderedIDs.firstIndex(of: $0.windowID) ?? Int.max) < (orderedIDs.firstIndex(of: $1.windowID) ?? Int.max) }
-    guard let window = ordered.first(where: { focusedTitle != nil && $0.title == focusedTitle }) ?? ordered.first else {
+    guard let window = windowID.map({ id in ordered.first { $0.windowID == id } }) ?? ordered.first(where: { focusedTitle != nil && $0.title == focusedTitle }) ?? ordered.first else {
         throw captureError("No visible window found for \(app.localizedName ?? "this app"). Bring its window on screen and retry.")
     }
     let filter = SCContentFilter(desktopIndependentWindow: window)
@@ -840,6 +846,24 @@ func draftContext(_ shot: [String: Any]) -> String {
     try saveCaptureManifest(result, output: output)
     return result
 }
+
+// Captures what the user picked in the selection overlay.
+@MainActor func capture(_ choice: ScreenChoice, output: String) async throws -> [String: Any] {
+    switch choice {
+    case let .window(window): return try await capture(pid: window.pid, windowID: window.id, output: output)
+    case let .area(rect, display, scale): return try await captureScreenArea(rect, displayID: display, scale: scale, output: output)
+    case let .display(display, scale, size): return try await captureScreenArea(CGRect(origin: .zero, size: size), displayID: display, scale: scale, output: output, wholeDisplay: true)
+    }
+}
+
+@MainActor func captureScreenSelection(output: String) async throws -> [String: Any]? {
+    guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
+    guard let choice = await chooseScreenTarget(hint: screenshotHint) else { return nil }
+    return try await capture(choice, output: output)
+}
+
+let screenRecordingRequired = "Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access."
+let screenshotHint = "Drag an area · Click a window · Click the desktop or press Return for the whole screen · Esc to cancel"
 
 func isWindowSharingOverlay(_ window: AXUIElement) -> Bool {
     let children = attribute(window, kAXChildrenAttribute) as? [AXUIElement] ?? []
