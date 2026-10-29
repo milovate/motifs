@@ -58,7 +58,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
    Explorer**, or **Copy Path**. That shares the file and does not send the
    draft. **Context**
-   reviews window text, device, console, network, steps, and logs. Console and network show the first 200 rows and say how many are left out. A failed request shows the method, status, path, and host. Steps show the newest 200, newest first. A time inside a clip uses that clip's time. Hover it to
+   reviews window text, device, console, network, steps, and logs as cards. Console and network show the first 200 cards and say how many are left out. A console card shows the level, where it came from, and the message. A failed request shows the method and status, then the path, time, and host. Steps show the newest 200, newest first, each on its own card. Window text and logs use a titled card, and device details are labeled pairs. A time inside a clip uses that clip's time; any other time is the local clock. Each include checkbox says to send that source with this capture. Hover it to
    see each source's count, or **off** when that source is switched off, and a
    rough token estimate. Each source has an include switch, a preview, and
    Markdown. For a native app, the button says **collecting…** while that app's

@@ -1186,11 +1186,23 @@ internal static class ComposerTests
         var manyConsole = new JsonArray();
         for (int index = 0; index < 205; index++) manyConsole.Add(new JsonObject { ["time"] = "t", ["level"] = "error", ["source"] = "app", ["message"] = "m" + index.ToString(CultureInfo.InvariantCulture) });
         string consolePreview = ContextReview.Preview("console", Array.Empty<JsonObject>(), new JsonObject { ["console"] = new JsonObject { ["entries"] = manyConsole } });
-        Check(consolePreview.Contains("app: m0") && consolePreview.Contains("app: m199") && !consolePreview.Contains("app: m204") && consolePreview.EndsWith("5 more not shown", StringComparison.Ordinal), "the console preview keeps the first 200 messages");
+        Check(consolePreview.Contains("ERROR\nApp\nt\nm0", StringComparison.Ordinal) && consolePreview.Contains("ERROR\nApp\nt\nm199", StringComparison.Ordinal) && !consolePreview.Contains("m204", StringComparison.Ordinal) && consolePreview.EndsWith("5 more not shown", StringComparison.Ordinal), "the console preview keeps the first 200 messages");
         var stepPreview = ContextReview.Preview("events", Array.Empty<JsonObject>(), new JsonObject { ["events"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "t1", ["kind"] = "click", ["app"] = "Notes" }, new JsonObject { ["time"] = "t2", ["kind"] = "app-switch", ["app"] = "Chrome" }) } });
-        Check(stepPreview.StartsWith("[t2]", StringComparison.Ordinal), "steps are shown newest first");
+        Check(stepPreview.StartsWith("Switched to Chrome\nt2\nClicked element\nNotes\nt1", StringComparison.Ordinal), "steps are shown newest first");
         var failedRequest = new JsonObject { ["method"] = "POST", ["url"] = "https://shop.test/api?x=1", ["status"] = 502, ["error"] = "timeout" };
         Check(ContextReview.NetworkPreview(failedRequest, "t") == "POST 502 /api?x=1 · t\nshop.test · timeout" && ContextReview.NetworkPreview(new JsonObject { ["url"] = "https://shop.test" }, "t") == "GET Failed / · t\nshop.test", "a failed request shows the method, status, path, and host");
+        var failedCard = ContextReview.Sheet("network", Array.Empty<JsonObject>(), new JsonObject { ["network"] = new JsonObject { ["entries"] = new JsonArray(failedRequest) } }).Cards[0];
+        var missingStatus = ContextReview.Sheet("network", Array.Empty<JsonObject>(), new JsonObject { ["network"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["url"] = "https://shop.test/missing", ["status"] = 404 }) } }).Cards[0];
+        Check(string.Join("\n", failedCard.Lines) == "POST\n502\n/api?x=1\nshop.test · timeout" && failedCard.Marks[0].Text == "POST" && failedCard.Marks[1].Tone == ContextReview.ContextTone.Danger && missingStatus.Marks[1].Text == "404" && missingStatus.Marks[1].Tone == ContextReview.ContextTone.Warning, "a failed request card shows the method, status, path, and host");
+        var pageCard = ContextReview.Sheet("console", Array.Empty<JsonObject>(), new JsonObject { ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["level"] = "log", ["source"] = "browser", ["message"] = "page", ["time"] = "t" }) } }).Cards[0];
+        Check(pageCard.Marks[0].Text == "LOG" && pageCard.Marks[0].Tone == ContextReview.ContextTone.Neutral && pageCard.Aside == "Page", "a page log names the browser and leaves the level neutral");
+        Check(ContextReview.Preview("windowText", reviewShots, reviewContext) == "Screenshot 1 · Notes · \"Scratch\"\nAXStaticText: fixture", "window text is a titled card");
+        var longShot = new JsonObject { ["text"] = new string('a', ContextReview.TextLimit + 1), ["app"] = "Notes" };
+        Check(ContextReview.Preview("windowText", new[] { longShot }, new JsonObject()).EndsWith("… 1 more characters", StringComparison.Ordinal), "a long window card says how much text was left out");
+        Check(ContextReview.Preview("device", reviewShots, reviewContext).StartsWith("System\nWindows 11 (x64)", StringComparison.Ordinal), "device details are labeled pairs");
+        Check(ContextReview.IncludeTip("windowText") == "Send window with this capture" && ContextReview.IncludeTip("network") == "Send network with this capture", "an include switch says which source it sends");
+        string clock = ContextReview.Moment("2026-10-29T10:00:05Z", Array.Empty<JsonObject>());
+        Check(clock.Length == 8 && clock[2] == ':' && clock[5] == ':', "a time outside a clip is the local clock");
         var timed = new JsonObject { ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:05Z", ["level"] = "error", ["source"] = "app", ["message"] = "boom" }) } };
         Check(ContextReview.Preview("console", Array.Empty<JsonObject>(), timed, new[] { video }).Contains("Instant replay · 0:05.0", StringComparison.Ordinal), "a preview uses the clip time when the message falls inside a clip");
         var pausedClip = new JsonObject

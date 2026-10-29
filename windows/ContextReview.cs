@@ -13,9 +13,30 @@ namespace OpenCode.Appshots;
 // What a destination receives besides the note: counts, preview text, and Markdown.
 internal static class ContextReview
 {
-    internal const int PreviewLimit = 8_000;
     internal const int MarkdownLimit = 20_000;
     internal const int RowLimit = 200;
+    internal const int TextLimit = 8_000;
+
+    internal enum ContextTone { Neutral, Warning, Danger }
+
+    internal readonly record struct ContextMark(string Text, ContextTone Tone);
+
+    internal sealed class ContextCard
+    {
+        internal List<ContextMark> Marks { get; } = new();
+        internal string Aside = "";
+        internal string When = "";
+        internal bool Clip;
+        internal bool InlineBody;
+        internal string Heading = "";
+        internal string Body = "";
+        internal bool Mono;
+        internal string Foot = "";
+        internal List<KeyValuePair<string, string>> Pairs { get; } = new();
+        internal List<string> Lines { get; } = new();
+    }
+
+    internal readonly record struct ContextSheet(List<ContextCard> Cards, string More);
 
     internal static string Label(string source) => source switch
     {
@@ -184,33 +205,156 @@ internal static class ContextReview
         }
     }
 
+    internal static string IncludeTip(string source) => "Send " + Label(source).ToLowerInvariant() + " with this capture";
+
     internal static string Preview(string source, IReadOnlyList<JsonObject> shots, JsonObject context, IReadOnlyList<JsonObject>? videos = null)
     {
-        if (source == "device")
-        {
-            var pairs = DevicePairs(context);
-            return pairs.Count == 0 ? "" : string.Join("\n", pairs.Select(pair => pair.Key + ": " + pair.Value));
-        }
-        if (source is "console" or "network" or "events") return Limited(source, context, videos ?? Array.Empty<JsonObject>());
-        return Render(source, shots, context);
+        var sheet = Sheet(source, shots, context, videos);
+        var lines = sheet.Cards.SelectMany(card => card.Lines).ToList();
+        if (sheet.More.Length > 0) lines.Add(sheet.More);
+        return string.Join("\n", lines);
     }
 
-    static string Limited(string source, JsonObject context, IReadOnlyList<JsonObject> videos)
+    // One card per console message, failed request, step, screenshot, or log.
+    // Device details share a single labeled card. Lines follow the macOS preview's reading order.
+    internal static ContextSheet Sheet(string source, IReadOnlyList<JsonObject> shots, JsonObject context, IReadOnlyList<JsonObject>? videos = null)
     {
-        var entries = Entries(context, source);
-        bool newestFirst = source == "events";
-        IEnumerable<JsonObject> shown = newestFirst ? entries.TakeLast(RowLimit).Reverse() : entries.Take(RowLimit);
-        string When(JsonObject entry) => ClipMoment(Field(entry, "time"), videos) ?? Field(entry, "time");
-        string Line(JsonObject entry) => source switch
+        var clips = videos ?? Array.Empty<JsonObject>();
+        var cards = new List<ContextCard>();
+        string more = "";
+        switch (source)
         {
-            "console" => "[" + When(entry) + "] " + Field(entry, "level").ToUpperInvariant() + " " + (Field(entry, "source") == "browser" ? "page" : (StringOf(entry, "subsystem") ?? "app")) + ": " + Field(entry, "message"),
-            "network" => NetworkPreview(entry, When(entry)),
-            "events" => "[" + When(entry) + "] " + Describe(entry) + (Field(entry, "kind") == "app-switch" || Field(entry, "app").Length == 0 ? "" : " in " + Field(entry, "app")),
-            _ => "",
+            case "windowText":
+                for (int index = 0; index < shots.Count; index++)
+                {
+                    string? text = StringOf(shots[index], "text");
+                    if (string.IsNullOrEmpty(text)) continue;
+                    cards.Add(Titled(ScreenshotTitle(index, shots[index]), Bound(text), false));
+                }
+                break;
+            case "device":
+                var pairs = DevicePairs(context);
+                if (pairs.Count > 0)
+                {
+                    var card = new ContextCard();
+                    foreach (var pair in pairs)
+                    {
+                        card.Pairs.Add(pair);
+                        card.Lines.Add(pair.Key);
+                        card.Lines.Add(pair.Value);
+                    }
+                    cards.Add(card);
+                }
+                break;
+            case "console":
+                var console = Entries(context, "console");
+                foreach (var entry in console.Take(RowLimit)) cards.Add(ConsoleCard(entry, clips));
+                if (console.Count > RowLimit) more = LeftOut(console.Count);
+                break;
+            case "network":
+                var network = Entries(context, "network");
+                foreach (var entry in network.Take(RowLimit)) cards.Add(NetworkCard(entry, clips));
+                if (network.Count > RowLimit) more = LeftOut(network.Count);
+                break;
+            case "events":
+                foreach (var entry in Entries(context, "events").TakeLast(RowLimit).Reverse()) cards.Add(EventCard(entry, clips));
+                break;
+            case "customLogs":
+                foreach (var entry in Logs(context)) cards.Add(Titled(Field(entry, "name"), Bound(Field(entry, "text")), true));
+                break;
+            default:
+                break;
+        }
+        return new ContextSheet(cards, more);
+    }
+
+    static string LeftOut(int count) => (count - RowLimit).ToString(CultureInfo.InvariantCulture) + " more not shown";
+
+    static string Bound(string text)
+    {
+        if (text.Length <= TextLimit) return text;
+        return text[..TextLimit] + "\n… " + (text.Length - TextLimit).ToString(CultureInfo.InvariantCulture) + " more characters";
+    }
+
+    static ContextCard Titled(string title, string body, bool mono)
+    {
+        var card = new ContextCard { Heading = title, Body = body, Mono = mono };
+        card.Lines.Add(title);
+        if (body.Length > 0) card.Lines.Add(body);
+        return card;
+    }
+
+    static ContextCard ConsoleCard(JsonObject entry, IReadOnlyList<JsonObject> videos)
+    {
+        string level = Field(entry, "level").ToLowerInvariant();
+        string shown = level.Length == 0 ? "LOG" : level.ToUpperInvariant();
+        string origin = Field(entry, "source") == "browser" ? "Page" : (StringOf(entry, "subsystem") ?? StringOf(entry, "process") ?? "App");
+        string when = Moment(Field(entry, "time"), videos);
+        var card = new ContextCard { Aside = origin, When = when, Clip = ClipMoment(Field(entry, "time"), videos) != null, Body = Field(entry, "message"), Mono = true };
+        card.Marks.Add(new ContextMark(shown, LevelTone(level)));
+        card.Lines.Add(shown);
+        card.Lines.Add(origin);
+        if (when.Length > 0) card.Lines.Add(when);
+        if (card.Body.Length > 0) card.Lines.Add(card.Body);
+        return card;
+    }
+
+    static ContextTone LevelTone(string level)
+    {
+        if (level is "error" or "fault") return ContextTone.Danger;
+        if (level.StartsWith("warn", StringComparison.Ordinal)) return ContextTone.Warning;
+        return ContextTone.Neutral;
+    }
+
+    static ContextCard NetworkCard(JsonObject entry, IReadOnlyList<JsonObject> videos)
+    {
+        var request = Request(entry);
+        string when = Moment(Field(entry, "time"), videos);
+        var card = new ContextCard
+        {
+            InlineBody = true,
+            Body = request.Path,
+            Mono = true,
+            When = when,
+            Clip = ClipMoment(Field(entry, "time"), videos) != null,
+            Foot = request.HostLine,
         };
-        var lines = shown.Select(Line).ToList();
-        if (!newestFirst && entries.Count > RowLimit) lines.Add((entries.Count - RowLimit).ToString(CultureInfo.InvariantCulture) + " more not shown");
-        return string.Join("\n", lines);
+        card.Marks.Add(new ContextMark(request.Method, ContextTone.Neutral));
+        card.Marks.Add(new ContextMark(request.Status, request.Tone));
+        card.Lines.Add(request.Method);
+        card.Lines.Add(request.Status);
+        card.Lines.Add(request.Path);
+        if (when.Length > 0) card.Lines.Add(when);
+        if (request.HostLine.Length > 0) card.Lines.Add(request.HostLine);
+        return card;
+    }
+
+    static ContextCard EventCard(JsonObject entry, IReadOnlyList<JsonObject> videos)
+    {
+        string kind = Field(entry, "kind");
+        string app = Field(entry, "app");
+        string aside = kind == "app-switch" || app.Length == 0 ? "" : app;
+        string when = Moment(Field(entry, "time"), videos);
+        var card = new ContextCard
+        {
+            InlineBody = true,
+            Body = Describe(entry),
+            Aside = aside,
+            When = when,
+            Clip = ClipMoment(Field(entry, "time"), videos) != null,
+        };
+        if (card.Body.Length > 0) card.Lines.Add(card.Body);
+        if (aside.Length > 0) card.Lines.Add(aside);
+        if (when.Length > 0) card.Lines.Add(when);
+        return card;
+    }
+
+    internal static string Moment(string time, IReadOnlyList<JsonObject> videos)
+    {
+        if (ClipMoment(time, videos) is string clip) return clip;
+        if (DateTimeOffset.TryParse(time, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment))
+            return moment.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        return time;
     }
 
     internal static List<KeyValuePair<string, string>> DevicePairs(JsonObject context)
@@ -312,9 +456,36 @@ internal static class ContextReview
 
     internal static string NetworkPreview(JsonObject entry, string when)
     {
+        var request = Request(entry);
+        string line = request.Method + " " + request.Status + " " + request.Path + " · " + when;
+        if (request.HostLine.Length > 0) line += "\n" + request.HostLine;
+        return line;
+    }
+
+    readonly record struct RequestView(string Method, string Status, string Path, string HostLine, ContextTone Tone);
+
+    static RequestView Request(JsonObject entry)
+    {
         string method = Field(entry, "method");
         if (method.Length == 0) method = "GET";
-        string status = entry["status"] != null ? Field(entry, "status") : "Failed";
+        string status;
+        ContextTone tone;
+        if (entry["status"] == null)
+        {
+            status = "Failed";
+            tone = ContextTone.Danger;
+        }
+        else if (Number(entry, "status") is double value)
+        {
+            int code = (int)value;
+            status = code.ToString(CultureInfo.InvariantCulture);
+            tone = code >= 500 ? ContextTone.Danger : ContextTone.Warning;
+        }
+        else
+        {
+            status = Field(entry, "status");
+            tone = ContextTone.Warning;
+        }
         string url = Field(entry, "url");
         string path = url;
         string host = "";
@@ -324,13 +495,10 @@ internal static class ContextReview
             if (parsed.Query.Length > 0) path += parsed.Query;
             host = parsed.IdnHost;
         }
-        string error = Field(entry, "error");
         var extra = new List<string>();
         if (host.Length > 0) extra.Add(host);
-        if (error.Length > 0) extra.Add(error);
-        string line = method + " " + status + " " + path + " · " + when;
-        if (extra.Count > 0) line += "\n" + string.Join(" · ", extra);
-        return line;
+        if (Field(entry, "error") is string error && error.Length > 0) extra.Add(error);
+        return new RequestView(method, status, path, string.Join(" · ", extra), tone);
     }
 
     static string StatusOrError(JsonObject entry) => entry["status"] != null ? Field(entry, "status") : Field(entry, "error");
@@ -543,8 +711,11 @@ internal sealed class ContextDialog : Form
     readonly IReadOnlyList<JsonObject> videos;
     readonly JsonObject context;
     readonly JsonObject include;
-    readonly ListView sources = new() { View = View.Details, CheckBoxes = true, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.None, MultiSelect = false, HideSelection = false };
-    readonly TextBox detail = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 10) };
+    readonly ListView sources = new() { View = View.Details, CheckBoxes = true, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.None, MultiSelect = false, HideSelection = false, ShowItemToolTips = true };
+    readonly Font proseFont = new("Segoe UI", 10);
+    readonly Font markdownFont = new("Consolas", 10);
+    readonly TextBox detail = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, Visible = false };
+    readonly ContextCardPane cards = new() { Dock = DockStyle.Fill };
     readonly Label banner = new() { Text = "Turned off · Not sent to any destination", AutoSize = true, ForeColor = Color.DarkOrange };
     readonly Label estimate = new() { AutoSize = true };
     readonly RadioButton preview = new() { Text = "Preview", AutoSize = true, Checked = true };
@@ -577,7 +748,13 @@ internal sealed class ContextDialog : Form
         var tips = new ToolTip { ShowAlways = true };
         tips.SetToolTip(estimate, "Rough size of the included context (about 4 characters per token)");
         tips.SetToolTip(copy, "Copy this source as Markdown");
-        Disposed += (_, _) => tips.Dispose();
+        detail.Font = proseFont;
+        Disposed += (_, _) =>
+        {
+            tips.Dispose();
+            proseFont.Dispose();
+            markdownFont.Dispose();
+        };
         preview.ForeColor = ForeColor;
         markdown.ForeColor = ForeColor;
         preview.CheckedChanged += (_, _) => ModeChanged();
@@ -597,12 +774,14 @@ internal sealed class ContextDialog : Form
             RefreshEstimate();
             if (source == selected) RefreshDetail();
         };
-        detail.Dock = DockStyle.Fill;
+        detail.Dock = DockStyle.None;
         detail.BackColor = Color.FromArgb(24, 24, 26);
         detail.ForeColor = ForeColor;
+        cards.BackColor = Color.FromArgb(24, 24, 26);
         var pane = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8, 0, 0, 0) };
         banner.Dock = DockStyle.Top;
         pane.Controls.Add(detail);
+        pane.Controls.Add(cards);
         pane.Controls.Add(banner);
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(16, 0, 16, 0) };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 230));
@@ -644,6 +823,7 @@ internal sealed class ContextDialog : Form
             string countText = count > 0 ? count.ToString(CultureInfo.InvariantCulture) : "";
             if (errors > 0 && source == "console") countText = (countText.Length == 0 ? "0" : countText) + " · " + errors;
             item.SubItems.Add(countText).ForeColor = errors > 0 ? Color.IndianRed : Color.FromArgb(170, 170, 176);
+            item.ToolTipText = ContextReview.IncludeTip(source);
             sources.Items.Add(item);
             item.Checked = ComposerFiles.Included(include, source);
         }
@@ -666,7 +846,11 @@ internal sealed class ContextDialog : Form
     void ModeChanged()
     {
         copy.Visible = markdown.Checked;
-        detail.Font = new Font(markdown.Checked ? "Consolas" : "Segoe UI", 10);
+        detail.Visible = markdown.Checked;
+        detail.Dock = markdown.Checked ? DockStyle.Fill : DockStyle.None;
+        cards.Visible = !markdown.Checked;
+        cards.Dock = markdown.Checked ? DockStyle.None : DockStyle.Fill;
+        detail.Font = markdown.Checked ? markdownFont : proseFont;
         RefreshDetail();
     }
 
@@ -677,12 +861,15 @@ internal sealed class ContextDialog : Form
         bool included = ComposerFiles.Included(include, selected);
         banner.Visible = !included;
         detail.ForeColor = included ? Color.FromArgb(236, 236, 238) : Color.FromArgb(140, 140, 146);
-        string text = markdown.Checked
-            ? ContextReview.Markdown(selected, shots, videos, context)
-            : ContextReview.Preview(selected, shots, context, videos);
+        if (!markdown.Checked)
+        {
+            cards.Show(ContextReview.Sheet(selected, shots, context, videos), ContextReview.EmptyText(selected, Collecting, CollectingNetwork), included);
+            return;
+        }
+        string text = ContextReview.Markdown(selected, shots, videos, context);
         if (text.Length == 0) text = ContextReview.EmptyText(selected, Collecting, CollectingNetwork);
-        int limit = markdown.Checked ? ContextReview.MarkdownLimit : ContextReview.PreviewLimit;
-        if (text.Length > limit) text = text[..limit] + "\n… " + (text.Length - limit) + " more characters" + (markdown.Checked ? " (Copy includes everything)" : "");
+        if (text.Length > ContextReview.MarkdownLimit)
+            text = text[..ContextReview.MarkdownLimit] + "\n… " + (text.Length - ContextReview.MarkdownLimit) + " more characters (Copy includes everything)";
         detail.Text = text;
     }
 
