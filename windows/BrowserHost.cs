@@ -373,7 +373,7 @@ internal static class BrowserHost
         session.Receive(new JsonObject { ["type"] = "snapshot", ["requestID"] = requestId, ["windows"] = windows });
         client.Wait(5000);
         JsonArray? received = reply?["windows"] as JsonArray;
-        Check(received != null && received.Count == 3 && session.Pending == 0, "the reply goes back on the requesting connection only");
+        Check(received != null && received.Count == 3 && session.Pending == 0, "the reply goes back on the requesting connection only (" + (received == null ? "no reply" : received.Count + " windows, " + session.Pending + " pending") + ")");
         Check(Pick(received, "Checkout - Shop - Brave")?["url"]?.GetValue<string>() == "https://shop.test", "the helper picks the captured tab from the reply");
         ExerciseSteps();
         RefuseOtherProcess();
@@ -472,6 +472,7 @@ internal static class BrowserHost
         {
             using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut);
             client.Connect(timeoutMs);
+            try { client.ReadMode = PipeTransmissionMode.Message; } catch { /* A byte-mode peer still returns the one reply. */ }
             if (!ServerIsThisExecutable(client)) return null;
             byte[] body = Encoding.UTF8.GetBytes(new JsonObject { ["type"] = type }.ToJsonString());
             client.Write(body, 0, body.Length);
@@ -596,6 +597,17 @@ internal static class BrowserHost
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(nint process, int flags, StringBuilder name, ref int size);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeClientProcessId(nint pipe, out uint pid);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeServerProcessId(nint pipe, out uint pid);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool FlushFileBuffers(nint handle);
+
+    // Flush() does not wait for the helper to read. Closing first drops the reply.
+    internal static void Drain(PipeStream pipe)
+    {
+        try
+        {
+            if (pipe.SafePipeHandle != null && !pipe.SafePipeHandle.IsInvalid) FlushFileBuffers(pipe.SafePipeHandle.DangerousGetHandle());
+        }
+        catch { /* The helper already disconnected. */ }
+    }
 }
 
 internal sealed class HostSession
@@ -641,6 +653,7 @@ internal sealed class HostSession
             byte[] data = Encoding.UTF8.GetBytes(reply.ToJsonString());
             client.Write(data, 0, data.Length);
             client.Flush();
+            if (client is PipeStream pipe) BrowserHost.Drain(pipe);
         }
         catch { /* The helper stopped waiting. */ }
         finally { try { client.Dispose(); } catch { /* Already closed. */ } }
