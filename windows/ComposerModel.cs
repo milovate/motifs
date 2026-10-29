@@ -115,6 +115,22 @@ internal static class ComposerFiles
         return ids.Count == 0 ? "Add a skill" : "Skills: " + string.Join(", ", ids.Select(id => "@" + id)) + " — click to add or remove";
     }
 
+    internal static bool SameCapture(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right)) return false;
+        try
+        {
+            return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool AllowClose(bool sending, bool addingShot, bool recording, bool reviewing) =>
+        !sending && !addingShot && !recording && !reviewing;
+
     static string MentionPattern(string id) => $@"(?<![\p{{L}}\p{{N}}_@/])@{Regex.Escape(id)}(?![\p{{L}}\p{{N}}_-])";
 
     internal static JsonObject Device()
@@ -850,6 +866,8 @@ internal static class ComposerTests
         Check(ComposerFiles.MentionSpans("mail@report.com", new[] { "report" }).Count == 0 && ComposerFiles.MentionSpans("/@report", new[] { "report" }).Count == 0, "email addresses and paths are not highlighted");
         Check(!ComposerFiles.HasNote("@report ", new[] { "report" }) && !ComposerFiles.HasNote("@other @report", new[] { "report", "other" }) && ComposerFiles.HasNote("@report broken", new[] { "report" }) && ComposerFiles.HasNote("user@report.com", new[] { "report" }), "a skill mention alone is not a note");
         Check(ComposerFiles.SkillsTip(Array.Empty<string>()) == "Add a skill" && ComposerFiles.SkillsTip(new[] { "report", "other" }) == "Skills: @other, @report — click to add or remove", "the skill button names the mentions in the note");
+        Check(ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"c:\captures\bundle-a.json") && !ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"C:\Captures\bundle-b.json") && !ComposerFiles.SameCapture(null, @"C:\Captures\bundle-a.json"), "Recents does not reopen the capture already open");
+        Check(!ComposerFiles.AllowClose(true, false, false, false) && !ComposerFiles.AllowClose(false, true, false, false) && !ComposerFiles.AllowClose(false, false, true, false) && !ComposerFiles.AllowClose(false, false, false, true) && ComposerFiles.AllowClose(false, false, false, false), "the composer stays open while preparing, adding a screenshot, recording, or reviewing a clip");
         Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
         Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)) == Color.FromArgb(20, 39, 56), "the mention tint keeps some of the accent color");
         Check(ShotSelection.AfterRemove(1, 0, 1) == 0, "removing an earlier thumbnail keeps the later screenshot selected");

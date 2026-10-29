@@ -424,28 +424,44 @@ internal static class BrowserHost
     {
         string name = PipeName(1, Environment.ProcessId);
         string script = Path.Combine(Path.GetTempPath(), "capture-studio-impostor-" + Environment.ProcessId + ".ps1");
-        File.WriteAllText(script, "$c = New-Object System.IO.Pipes.NamedPipeClientStream('.', '" + name + "', 'InOut')\n$c.Connect(5000)\n$b = [Text.Encoding]::UTF8.GetBytes('{\"type\":\"snapshot\"}')\n$c.Write($b, 0, $b.Length)\nStart-Sleep -Seconds 2\n");
-        using var ready = new ManualResetEventSlim();
+        File.WriteAllText(script, "$c = New-Object System.IO.Pipes.NamedPipeClientStream('.', '" + name + "', 'InOut')\n$c.Connect(20000)\n$b = [Text.Encoding]::UTF8.GetBytes('{\"type\":\"snapshot\"}')\n$c.Write($b, 0, $b.Length)\nStart-Sleep -Seconds 2\n");
+        try
+        {
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                if (ImpostorRefused(name, script)) return;
+            }
+            throw new Exception("other processes are refused");
+        }
+        finally { try { File.Delete(script); } catch { /* The script is outside the captures folder. */ } }
+    }
+
+    // A foreign client that connects must be refused. A cold PowerShell start can miss a short wait, so a missed connection is tried once. An accepted peer fails immediately.
+    static bool ImpostorRefused(string name, string script)
+    {
+        using var pipeReady = new ManualResetEventSlim();
+        bool connected = false;
         bool refused = false;
         var server = new Thread(() =>
         {
             try
             {
                 using var pipe = OpenPipe(name);
-                ready.Set();
-                if (!pipe.WaitForConnectionAsync().Wait(8000)) return;
+                pipeReady.Set();
+                if (!pipe.WaitForConnectionAsync().Wait(20000)) return;
+                connected = true;
                 refused = !ClientIsThisExecutable(pipe);
             }
-            catch { ready.Set(); }
-        });
-        server.IsBackground = true;
+            catch { pipeReady.Set(); }
+        }) { IsBackground = true };
         server.Start();
-        ready.Wait(5000);
-        using var impostor = Process.Start(new ProcessStartInfo("powershell", "-NoProfile -File \"" + script + "\"") { CreateNoWindow = true, UseShellExecute = false });
-        server.Join(8000);
+        if (!pipeReady.Wait(5000)) return false;
+        string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        using var impostor = Process.Start(new ProcessStartInfo(powershell, "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + script + "\"") { CreateNoWindow = true, UseShellExecute = false });
+        server.Join(20000);
         try { if (impostor is { HasExited: false }) impostor.Kill(entireProcessTree: true); } catch { /* The refused client can exit on its own. */ }
-        try { File.Delete(script); } catch { /* The script is outside the captures folder. */ }
-        if (!refused) throw new Exception("other processes are refused");
+        if (connected && !refused) throw new Exception("other processes are refused");
+        return connected && refused;
     }
 
     static List<HostPipe> HostPipes()

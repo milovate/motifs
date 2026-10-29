@@ -188,7 +188,12 @@ internal sealed class ComposerForm : Form
     readonly MentionPopup mentionPopup = new();
     bool updatingMentions;
     internal static ComposerForm? Open { get; private set; }
-    internal bool CanRecord => !sending && !submitted && !dictating && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
+    bool addingShot;
+    bool recordingClip;
+    bool reviewingClip;
+    internal bool CanRecord => CanEditAttachments && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
+    bool CanEditAttachments => !sending && !submitted && !dictating && !addingShot && !recordingClip && !reviewingClip;
+    bool CloseAllowed() => ComposerFiles.AllowClose(sending && !submitted, addingShot, recordingClip || (RecordingSession.Active && Open == this), reviewingClip);
     bool dictating;
     readonly int consolePid;
     readonly nint browserWindow;
@@ -360,8 +365,7 @@ internal sealed class ComposerForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (RecordingSession.Active && Open == this) { e.Cancel = true; return; }
-        if (sending && !submitted) { e.Cancel = true; return; }
+        if (!CloseAllowed()) { e.Cancel = true; return; }
         dictating = false;
         speech?.Dispose();
         speech = null;
@@ -383,7 +387,7 @@ internal sealed class ComposerForm : Form
             if (mentions.Open) mentionPopup.Present(this, note, mentions);
             return true;
         }
-        if (keyData == Keys.Escape && !sending) { Close(); return true; }
+        if (keyData == Keys.Escape && CloseAllowed()) { Close(); return true; }
         if (keyData == (Keys.Control | Keys.Enter) && send.Enabled) { _ = Send(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
@@ -516,16 +520,17 @@ internal sealed class ComposerForm : Form
         var skillIds = skills.Select(skill => skill.Id).ToList();
         bool hasNote = ComposerFiles.HasNote(note.Text, skillIds);
         bool locked = sending || submitted;
+        bool attachments = !CanEditAttachments;
         note.ReadOnly = locked || dictating;
         destinationBox.Enabled = !locked;
         targetBox.Enabled = !locked;
         contextButton.Enabled = !locked;
-        addButton.Enabled = !locked && shots.Count < 8;
-        recentsButton.Enabled = !locked;
+        addButton.Enabled = !attachments && shots.Count < 8;
+        recentsButton.Enabled = !attachments;
         skillsButton.Enabled = !locked && skillsReady;
         prefixButton.Enabled = !locked;
         dictateButton.Enabled = !locked || dictating;
-        closeButton.Enabled = !sending;
+        closeButton.Enabled = CloseAllowed();
         tips.SetToolTip(addButton, shots.Count < 8 ? "Add a screenshot of a region" : "Up to 8 screenshots per capture");
         tips.SetToolTip(recordButton, videos.Count >= ReplayMath.MaxClips
             ? "Up to " + ReplayMath.MaxClips.ToString(CultureInfo.InvariantCulture) + " recordings per capture"
@@ -533,7 +538,7 @@ internal sealed class ComposerForm : Form
         tips.SetToolTip(skillsButton, ComposerFiles.SkillsTip(skillIds.Where(id => ComposerFiles.Mentions(note.Text, id))));
         tips.SetToolTip(targetBox, target?.Detail ?? target?.Label ?? "Project for the new session");
         tips.SetToolTip(send, (target?.ActionLabel ?? "Continue") + " (Ctrl+Enter). " + (target?.Hint ?? ""));
-        send.Enabled = !locked && !dictating && skillsReady && Current?.Status == "ready" && target != null && (hasNote || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
+        send.Enabled = !attachments && skillsReady && Current?.Status == "ready" && target != null && (hasNote || shots.Count > 0 || videos.Count > 0) && note.Text.Length <= 16_000;
         recordButton.Text = videos.Count == 0 ? "Record" : videos.Count + "/" + ReplayMath.MaxClips.ToString(CultureInfo.InvariantCulture);
         recordButton.Enabled = CanRecord;
         int available = ComposerFiles.Sources.Count(source => ContextReview.Count(source, shots, context) > 0);
@@ -600,7 +605,7 @@ internal sealed class ComposerForm : Form
             remove.AccessibleName = "Remove screenshot " + (index + 1);
             remove.Click += (_, _) =>
             {
-                if (sending || submitted || current < 0 || current >= shots.Count) return;
+                if (!CanEditAttachments || current < 0 || current >= shots.Count) return;
                 shots.RemoveAt(current);
                 selectedShotIndex = ShotSelection.AfterRemove(selectedShotIndex, current, shots.Count);
                 RefreshThumbs();
@@ -777,7 +782,9 @@ internal sealed class ComposerForm : Form
 
     async Task AddShot()
     {
-        if (sending || RecordingSession.Busy || shots.Count >= 8) { if (shots.Count >= 8) status.Text = "A draft can contain up to 8 screenshots."; return; }
+        if (!CanEditAttachments || RecordingSession.Busy || shots.Count >= 8) { if (shots.Count >= 8) status.Text = "A draft can contain up to 8 screenshots."; return; }
+        addingShot = true;
+        RefreshSend();
         Hide();
         try
         {
@@ -791,7 +798,11 @@ internal sealed class ComposerForm : Form
             Touch();
         }
         catch (Exception error) { status.Text = error.Message; }
-        finally { if (!IsDisposed) Show(); }
+        finally
+        {
+            addingShot = false;
+            if (!IsDisposed) { Show(); RefreshSend(); }
+        }
     }
 
     void EditContext()
@@ -810,11 +821,12 @@ internal sealed class ComposerForm : Form
 
     void ShowRecents()
     {
+        if (!CanEditAttachments) return;
         var recent = ComposerFiles.Recents(output);
         if (recent.Count == 0) { status.Text = "No saved captures yet."; return; }
         using var dialog = new Form { Text = "Recent captures", ClientSize = new Size(420, 280), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
         var list = new ListBox { Dock = DockStyle.Fill };
-        foreach (var item in recent) list.Items.Add(item.Title + " · " + item.Screenshots);
+        foreach (var item in recent) list.Items.Add(item.Title + " · " + item.Screenshots + (ComposerFiles.SameCapture(item.Path, manifest) ? " · open" : ""));
         list.DoubleClick += (_, _) => dialog.DialogResult = DialogResult.OK;
         dialog.Controls.Add(list);
         if (dialog.ShowDialog(this) != DialogResult.OK || list.SelectedIndex < 0) return;
@@ -823,6 +835,7 @@ internal sealed class ComposerForm : Form
 
     internal void LoadSaved(string path)
     {
+        if (!CanEditAttachments || ComposerFiles.SameCapture(path, manifest)) return;
         consoleGeneration++;
         collectingConsole = false;
         collectingNetwork = false;
@@ -1091,6 +1104,8 @@ internal sealed class ComposerForm : Form
         if (!CanRecord) { ShowRecordingLimit(); return; }
         mentions.Dismiss();
         mentionPopup.Hide();
+        recordingClip = true;
+        RefreshSend();
         var parked = Location;
         Location = new Point(-32000, -32000);
         try
@@ -1114,39 +1129,53 @@ internal sealed class ComposerForm : Form
             ClickHistory.Shared.TakePublished();
             if (!IsDisposed) status.Text = error.Message;
         }
-        finally { if (!IsDisposed) { Location = parked; Activate(); } }
+        finally
+        {
+            recordingClip = false;
+            if (!IsDisposed) { Location = parked; Activate(); RefreshSend(); }
+        }
     }
 
     void Review(int index)
     {
-        if (sending || submitted || index < 0 || index >= videos.Count) return;
+        if (!CanEditAttachments || index < 0 || index >= videos.Count) return;
         mentions.Dismiss();
         mentionPopup.Hide();
-        using var review = new ClipReviewForm(output, videos[index], context, ReplayMath.FramesPerClip(videos.Count));
-        review.ShowDialog(this);
-        if (review.Outcome == ClipReviewOutcome.Remove)
+        reviewingClip = true;
+        RefreshSend();
+        try
         {
-            videos.RemoveAt(index);
-            status.Text = "Clip removed. The MP4 stays in the captures folder.";
-            RedistributeFrames();
-            RefreshThumbs();
-            RefreshContext();
-            Touch();
+            using var review = new ClipReviewForm(output, videos[index], context, ReplayMath.FramesPerClip(videos.Count));
+            review.ShowDialog(this);
+            if (review.Outcome == ClipReviewOutcome.Remove)
+            {
+                videos.RemoveAt(index);
+                status.Text = "Clip removed. The MP4 stays in the captures folder.";
+                RedistributeFrames();
+                RefreshThumbs();
+                RefreshContext();
+                Touch();
+            }
+            else if (review.Outcome == ClipReviewOutcome.Replace && review.Replacement != null)
+            {
+                double seconds = review.Replacement["durationSeconds"]?.GetValue<double>() ?? 0;
+                videos[index] = review.Replacement;
+                status.Text = "Clip trimmed to " + ((int)Math.Round(seconds)).ToString(CultureInfo.InvariantCulture) + " s.";
+                RefreshThumbs();
+                RefreshContext();
+                Touch();
+            }
         }
-        else if (review.Outcome == ClipReviewOutcome.Replace && review.Replacement != null)
+        finally
         {
-            double seconds = review.Replacement["durationSeconds"]?.GetValue<double>() ?? 0;
-            videos[index] = review.Replacement;
-            status.Text = "Clip trimmed to " + ((int)Math.Round(seconds)).ToString(CultureInfo.InvariantCulture) + " s.";
-            RefreshThumbs();
-            RefreshContext();
-            Touch();
+            reviewingClip = false;
+            if (!IsDisposed) RefreshSend();
         }
     }
 
     void RemoveVideo(int index)
     {
-        if (sending || submitted || index < 0 || index >= videos.Count) return;
+        if (!CanEditAttachments || index < 0 || index >= videos.Count) return;
         videos.RemoveAt(index);
         RedistributeFrames();
         RefreshThumbs();

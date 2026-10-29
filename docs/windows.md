@@ -67,7 +67,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    while a browser was in front, asks the extension for that window's console
    and failed requests instead. The composer opens while that read is still
    going. Reopening a saved capture does not read either source again.
-   **Recents** reopens a saved capture. Type **@** to pick a skill from the
+   **Recents** reopens a saved capture and leaves the one already open alone. That row is marked open. The composer stays up while a screenshot is being added, a recording is in progress, or a clip is being reviewed, and Send stays off until that finishes. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
    one. A note that is only @mentions does not enable Send until a screenshot or
    recording is attached. Escape closes that list before it closes the composer. Once those skills
