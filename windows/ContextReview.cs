@@ -29,8 +29,8 @@ internal static class ContextReview
     {
         "console" => "No console errors. Native apps: errors and faults from the last 5 minutes. Browsers: install the Capture Studio extension from the menu bar.",
         "network" => "No failed network requests. Browser captures need the Capture Studio extension.",
-        "events" => "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the menu bar.",
-        "customLogs" => "No log files. Add up to 4 under “Custom log files” in the menu bar.",
+        "events" => "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the tray menu.",
+        "customLogs" => "No log files. Add up to 4 under “Custom log files” in the tray menu.",
         "windowText" => "No window text was read from the captured app.",
         "device" => "No device details.",
         _ => "Nothing to show.",

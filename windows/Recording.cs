@@ -747,6 +747,7 @@ internal sealed class RecordingSession
     bool stopping;
     bool finishing;
     bool grabbing;
+    bool watching;
     bool? deferredSave;
     Exception? deferredError;
 
@@ -807,6 +808,8 @@ internal sealed class RecordingSession
             controls.Place(source);
             controls.Show();
             if (stopping) return done.Task;
+            ClickHistory.Shared.BeginRecording();
+            watching = true;
             timer.Start();
             Program.Save(output, "status.json", new { phase = "recording" });
         }
@@ -915,6 +918,14 @@ internal sealed class RecordingSession
         return visible.Width < 2 || visible.Height < 2 ? Rectangle.Empty : visible;
     }
 
+    void EndSteps(JsonObject? clip)
+    {
+        if (!watching) return;
+        watching = false;
+        var native = ClickHistory.Shared.EndRecording(ComposerFiles.RecordClicks(ComposerFiles.Settings(output)));
+        if (clip != null) ClickHistory.Shared.Publish(ClickHistory.ForClip(native, clip));
+    }
+
     void Stop(bool save, Exception? error)
     {
         if (finishing) return;
@@ -962,6 +973,8 @@ internal sealed class RecordingSession
         }
         try { controls.CloseFromSession(); timer.Dispose(); }
         catch (Exception blown) { error ??= blown; clip = null; }
+        try { EndSteps(clip); }
+        catch { /* The clip still stands when step collection fails. */ }
         try
         {
             if (clip != null) done.TrySetResult(clip);

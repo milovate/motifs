@@ -7,6 +7,7 @@ using System.IO;
 using Microsoft.Win32;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -162,16 +163,55 @@ internal static class ComposerFiles
         ["prefixes"] = new JsonArray(),
         ["showBubble"] = true,
         ["instantReplay"] = false,
+        ["recordClicks"] = false,
+        ["customLogFiles"] = new JsonArray(),
     };
 
     static JsonObject DestinationEntry(string id, string label) => new() { ["id"] = id, ["label"] = label };
 
     internal static bool InstantReplay(JsonObject settings) => settings["instantReplay"]?.GetValue<bool>() == true;
 
-    // Composer saves can race a tray toggle. Keep the value on disk unless the caller is that toggle.
+    internal static bool RecordClicks(JsonObject settings) => settings["recordClicks"]?.GetValue<bool>() == true;
+
+    // The first four saved paths are kept, including a relative path that load then drops.
+    internal static JsonArray NormalizeLogs(JsonArray? logs)
+    {
+        var kept = new JsonArray();
+        if (logs == null) return kept;
+        foreach (var item in logs)
+        {
+            if (item is not JsonValue value || !value.TryGetValue(out string? path) || string.IsNullOrEmpty(path) || path.Length > 1024) continue;
+            kept.Add(path);
+            if (kept.Count == 4) break;
+        }
+        return kept;
+    }
+
+    internal static List<string> CustomLogFiles(JsonObject settings)
+    {
+        var kept = new List<string>();
+        if (settings["customLogFiles"] is not JsonArray logs) return kept;
+        foreach (var item in logs)
+        {
+            if (item is not JsonValue value || !value.TryGetValue(out string? path) || string.IsNullOrEmpty(path)) continue;
+            if (path.Length > 1024 || !Path.IsPathRooted(path)) continue;
+            kept.Add(path);
+            if (kept.Count == 4) break;
+        }
+        return kept;
+    }
+
+    // Composer saves can race a tray toggle. Keep tray-owned values on disk unless the caller is that toggle.
     internal static void SaveSettings(string output, JsonObject settings, bool preserveReplay = true)
     {
-        if (preserveReplay) settings["instantReplay"] = InstantReplay(Settings(output));
+        if (preserveReplay)
+        {
+            var disk = Settings(output);
+            settings["instantReplay"] = InstantReplay(disk);
+            settings["recordClicks"] = RecordClicks(disk);
+            settings["customLogFiles"] = NormalizeLogs(disk["customLogFiles"] as JsonArray);
+        }
+        else settings["customLogFiles"] = NormalizeLogs(settings["customLogFiles"] as JsonArray);
         Program.Save(output, "settings.json", settings);
     }
 
@@ -590,6 +630,87 @@ internal static class ComposerTests
         kept["defaultDestination"] = "opencode";
         ComposerFiles.SaveSettings(output, kept);
         Check(ComposerFiles.InstantReplay(ComposerFiles.Settings(output)), "saving the composer keeps instant replay");
+        Check(!ComposerFiles.RecordClicks(ComposerFiles.DefaultSettings()) && ComposerFiles.CustomLogFiles(ComposerFiles.DefaultSettings()).Count == 0, "click recording and custom logs are off by default");
+        var clickSettings = ComposerFiles.Settings(output);
+        clickSettings["recordClicks"] = true;
+        clickSettings["customLogFiles"] = new JsonArray(JsonValue.Create("/tmp/a.log"), JsonValue.Create("relative.log"), JsonValue.Create("/tmp/b.log"), JsonValue.Create("/tmp/c.log"), JsonValue.Create("/tmp/d.log"), JsonValue.Create("/tmp/e.log"));
+        ComposerFiles.SaveSettings(output, clickSettings, false);
+        var loadedLogs = ComposerFiles.CustomLogFiles(ComposerFiles.Settings(output));
+        Check(ComposerFiles.RecordClicks(ComposerFiles.Settings(output)) && loadedLogs.SequenceEqual(new[] { "/tmp/a.log", "/tmp/b.log", "/tmp/c.log" }), "at most 4 saved log paths persist and relative paths are dropped");
+        var preservedClicks = ComposerFiles.Settings(output);
+        preservedClicks["defaultDestination"] = "folder";
+        ComposerFiles.SaveSettings(output, preservedClicks);
+        Check(ComposerFiles.RecordClicks(ComposerFiles.Settings(output)) && ComposerFiles.CustomLogFiles(ComposerFiles.Settings(output)).SequenceEqual(loadedLogs), "saving the composer keeps click recording and log files");
+
+        string logDirectory = Path.Combine(output, "logs");
+        Directory.CreateDirectory(logDirectory);
+        string bigLog = Path.Combine(logDirectory, "big.log");
+        string smallLog = Path.Combine(logDirectory, "small.log");
+        File.WriteAllText(bigLog, string.Join("\n", Enumerable.Range(0, 3000).Select(index => "line " + index.ToString(CultureInfo.InvariantCulture) + " " + new string('y', 40))));
+        File.WriteAllText(smallLog, "one\ntwo");
+        var tails = CustomLogs.Tail(new[] { bigLog, logDirectory, Path.Combine(logDirectory, "missing.log"), smallLog }, 64_000);
+        Check(tails.Count == 2, "directories and missing files are skipped");
+        string bigText = tails[0]?["text"]?.GetValue<string>() ?? "";
+        string lastLine = "line 2999 " + new string('y', 40);
+        Check(tails[0]?["truncated"]?.GetValue<bool>() == true && Encoding.UTF8.GetByteCount(bigText) <= 64_000 && bigText.StartsWith("line ", StringComparison.Ordinal) && bigText.EndsWith(lastLine, StringComparison.Ordinal), "large logs keep whole last lines");
+        Check(tails[1]?["text"]?.GetValue<string>() == "one\ntwo" && tails[1]?["truncated"]?.GetValue<bool>() == false && tails[1]?["name"]?.GetValue<string>() == "small.log", "small logs are read whole");
+        Check(CustomLogs.Tail(Enumerable.Repeat(smallLog, 6).ToList()).Count == 4, "at most 4 log files");
+        var joined = new JsonObject();
+        CaptureContext.Apply(joined, new JsonObject { ["customLogFiles"] = new JsonArray(JsonValue.Create(smallLog)) }, new[] { new JsonObject { ["kind"] = "app-switch", ["app"] = "Finder", ["time"] = "t" } });
+        Check(ContextReview.Count("events", Array.Empty<JsonObject>(), joined) == 1 && ContextReview.Count("customLogs", Array.Empty<JsonObject>(), joined) == 1, "events and custom logs join the context");
+        CaptureContext.Apply(joined, ComposerFiles.DefaultSettings(), Array.Empty<JsonObject>());
+        Check(joined["events"] == null && joined["customLogs"] == null, "no events key when the history is empty");
+
+        var history = new ClickHistory();
+        history.RecordAppSwitch("Notes");
+        Check(history.Snapshot().Count == 0, "app switches are ignored while recording is off");
+        var clickNow = DateTimeOffset.UtcNow;
+        history.Append(new JsonObject { ["kind"] = "click", ["app"] = "Old" }, clickNow.AddSeconds(-700));
+        for (int index = 0; index < ClickHistory.Limit + 20; index++) history.Append(new JsonObject { ["kind"] = "click", ["app"] = "App " + index.ToString(CultureInfo.InvariantCulture) }, clickNow);
+        var buffered = history.Snapshot(clickNow);
+        Check(buffered.Count == ClickHistory.Limit && buffered[^1]["app"]?.GetValue<string>() == "App " + (ClickHistory.Limit + 19).ToString(CultureInfo.InvariantCulture) && buffered.All(entry => entry["app"]?.GetValue<string>() != "Old"), "the event buffer is capped and expires old entries");
+        Check(history.Snapshot(clickNow.AddSeconds(601)).Count == 0, "events expire after 10 minutes");
+        history.Stop();
+        Check(history.Snapshot().Count == 0, "stopping clears the buffer");
+        var secure = ClickHistory.Describe("AXSecureTextField", null, "Password");
+        Check(secure["role"]?.GetValue<string>() == "AXSecureTextField" && secure["title"] == null, "secure fields never keep labels");
+        Check(ClickHistory.Describe("AXTextField", "AXSecureTextField", "PIN")["title"] == null, "secure subroles never keep labels");
+        Check(ClickHistory.Describe("AXButton", null, "  " + new string('p', 200))["title"]?.GetValue<string>().Length == 120, "labels are trimmed and capped");
+        Check(ClickHistory.SelectionEntry("  Seattle weather  ", "AXStaticText", null, null)?["text"]?.GetValue<string>() == "Seattle weather", "selected text is kept, trimmed");
+        Check(ClickHistory.SelectionEntry("hunter2", "AXTextField", "AXSecureTextField", "Password") == null, "selections in secure fields are never kept");
+        Check(ClickHistory.SelectionEntry(new string('s', 500), null, null, null)?["text"]?.GetValue<string>().Length == 200, "selected text is capped");
+        var gesture = new ScrollGesture();
+        var scrollStart = DateTimeOffset.UtcNow;
+        Check(gesture.Add("Chrome", 0, 0, 0, -40, scrollStart) && gesture.Add("Chrome", 0, 0, 0, -60, scrollStart.AddSeconds(0.3)), "a continuing scroll joins the gesture");
+        Check(!gesture.Add("Chrome", 0, 0, 0, -10, scrollStart.AddSeconds(2)) && !gesture.Add("Finder", 0, 0, 0, -10, scrollStart.AddSeconds(0.5)), "a pause or another app starts a new gesture");
+        Check(gesture.Entry()?["direction"]?.GetValue<string>() == "down" && gesture.Entry()?["distance"]?.GetValue<int>() == 100, "a gesture becomes one scroll step");
+        var recordingSteps = new ClickHistory();
+        recordingSteps.BeginRecording();
+        Check(recordingSteps.IsRunning && recordingSteps.IsRecording, "recordings capture clicks even when Record recent clicks is off");
+        recordingSteps.Append(new JsonObject { ["kind"] = "click", ["app"] = "Notes" });
+        recordingSteps.Append(new JsonObject { ["kind"] = "type", ["app"] = "Notes", ["role"] = "AXTextArea" });
+        Check(recordingSteps.EndRecording(false).Count == 2 && !recordingSteps.IsRunning && recordingSteps.Snapshot().Count == 0, "ending a recording returns its steps and stops when clicks are off");
+        recordingSteps.Start();
+        recordingSteps.BeginRecording();
+        recordingSteps.Append(new JsonObject { ["kind"] = "click", ["app"] = "Notes" });
+        recordingSteps.Append(new JsonObject { ["kind"] = "scroll", ["app"] = "Notes", ["direction"] = "down", ["distance"] = 10 });
+        _ = recordingSteps.EndRecording(true);
+        var remaining = recordingSteps.Snapshot();
+        Check(recordingSteps.IsRunning && remaining.Count == 1 && remaining[0]["kind"]?.GetValue<string>() == "click", "recording-only steps leave the click history when the recording ends");
+        recordingSteps.Stop();
+        var stepVideo = new JsonObject
+        {
+            ["startedAt"] = "2026-10-29T00:00:00.000Z",
+            ["durationSeconds"] = 5,
+            ["pauses"] = new JsonArray(new JsonObject { ["atSeconds"] = 1, ["durationSeconds"] = 0.5 }),
+        };
+        var clipSteps = ClickHistory.ForClip(new[]
+        {
+            new JsonObject { ["kind"] = "click", ["app"] = "Notes", ["time"] = "2026-10-29T00:00:02.000Z" },
+            new JsonObject { ["kind"] = "click", ["app"] = "Notes", ["time"] = "2026-10-29T00:00:01.200Z" },
+            new JsonObject { ["kind"] = "click", ["app"] = "Notes", ["time"] = "2026-10-29T00:00:10.000Z" },
+        }, stepVideo);
+        Check(clipSteps.Count == 1 && clipSteps[0]["source"]?.GetValue<string>() == "app", "steps outside the clip and inside a pause are left out");
         var replay = new ReplayBuffer();
         for (int second = 0; second <= 40; second++) replay.Add(second, new byte[] { 1 }, 8, 8);
         Check(replay.Count == 31 && Math.Abs(replay.Duration - 30) < 0.001, "instant replay keeps the last 30 seconds");

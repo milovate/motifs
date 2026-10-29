@@ -90,7 +90,19 @@ The sample is visible pixels, so Capture Studio's own windows can appear in it,
 and it has no audio. Sampling pauses while the chooser is open and while a
 screen recording is in progress.
 
-The tray can also open an empty composer, start or stop a recording, keep instant replay, annotate or insert the latest capture,
+**Record recent clicks** stays off until you turn it on from the tray. While it
+is on, the last 10 minutes of clicks and app switches stay in memory (300 at
+most). A screen recording collects steps even when that item is off: clicks,
+scrolls, drags, selected text (up to 200 characters), and which field you typed
+into. The key you pressed is never stored. Password fields keep only their role.
+Clicks on Capture Studio itself are left out. Quitting the watcher, or turning
+the item off while nothing is recording, discards the memory buffer.
+
+**Custom log files** in the tray accepts up to 4 files. A capture reads the last
+64 KB of each regular file at that moment. The paths are saved in `settings.json`.
+What is sent includes the file name and the tail, not a live watch.
+
+The tray can also open an empty composer, start or stop a recording, keep instant replay, record recent clicks, choose log files, annotate or insert the latest capture,
 annotate a clipboard image, open the captures folder, or quit the watcher.
 `/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
@@ -154,6 +166,11 @@ error rather than replacing the saved capture.
   confirmed capture writes that buffer. Cancelling the chooser leaves it in
   memory. The sample is visible pixels and can include Capture Studio's own
   windows. There is no audio.
+- Record recent clicks is off by default. The buffer is memory only. Screen
+  recordings add scrolls, drags, selections, and the field that received typing.
+  Key codes and typed characters are not recorded. Secure fields keep their role
+  and lose their label, and a selection inside one is dropped. Custom logs are
+  read only for files you chose, and only the last 64 KB when you capture.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -216,4 +233,11 @@ from the macOS development environment. Before calling Windows support verified:
   Confirm the composer shows the screenshot and an instant-replay clip. Cancel
   the chooser and confirm the captures folder gains no replay MP4. Turn replay
   off and confirm the tray tooltip returns to the capture shortcut.
+- Turn on **Record recent clicks**, click another app, and capture. Confirm
+  Context shows the click and not a keystroke. Turn it off and confirm a new
+  capture has no leftover steps. Add a log file, capture, and confirm Context
+  shows only the tail of that file. Remove the log file afterward.
+- Record a short clip, click and scroll in another app while it runs, then stop.
+  Confirm Context lists those steps and the clip. Confirm the recording bar's
+  own buttons are not listed.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

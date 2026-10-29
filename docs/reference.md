@@ -16,7 +16,7 @@ behavior still needs validation on a Windows desktop.
 **Windows:** see [Windows setup and validation](windows.md). The instructions
 below describe macOS unless noted. Windows has the capture picker, composer,
 destinations, context review, skill mentions, recent captures, annotation editing,
-screen recording, instant replay, clip trim, and best-effort draft handoff.
+screen recording, instant replay, clip trim, recent clicks, custom logs, and best-effort draft handoff.
 
 ## Installation
 
@@ -358,7 +358,11 @@ left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
 context review, prefixes, skill mentions, recent captures, screen recording, instant
-replay, clip trim, and best-effort draft handoff. Instant replay is off by default.
+replay, clip trim, and best-effort draft handoff. The tray can keep the last 10
+minutes of clicks and app switches, and can tail up to 4 log files (64 KB each)
+when you capture. Both are off until you choose them. A screen recording also
+records scrolls, drags, selected text, and which field was typed into; the key
+itself is never stored. Instant replay is off by default.
 It samples the display under the pointer at 8 frames per second into memory (30
 seconds, 150 MB) and writes an MP4 only after a capture is confirmed. The sample is
 visible pixels, including Capture Studio's own windows. Click a clip to review it:

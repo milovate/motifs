@@ -276,6 +276,7 @@ internal sealed class Tray : Forms.Form
     readonly string output;
     readonly Forms.NotifyIcon icon;
     readonly InstantReplay replay = new();
+    readonly List<Forms.ToolStripItem> logItems = new();
     bool busy;
     internal Tray(string output)
     {
@@ -291,7 +292,35 @@ internal sealed class Tray : Forms.Form
         replayItem.ToolTipText = "Keeps the last 30 seconds of the display in memory. Ctrl+Alt+Shift+A attaches it to the capture.";
         replayItem.Click += (_, _) => ToggleReplay();
         menu.Items.Add(replayItem);
-        menu.Opening += (_, _) => replayItem.Checked = replay.Enabled;
+        var clicksItem = new Forms.ToolStripMenuItem("Record recent clicks");
+        clicksItem.ToolTipText = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes.";
+        clicksItem.Click += (_, _) => ToggleClicks();
+        menu.Items.Add(clicksItem);
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(new Forms.ToolStripMenuItem("Custom log files") { Enabled = false });
+        var addLog = new Forms.ToolStripMenuItem("Add log file…");
+        addLog.ToolTipText = "Capture Studio reads the last 64 KB of this file when you capture.";
+        addLog.Click += (_, _) => AddLog();
+        menu.Items.Add(addLog);
+        menu.Opening += (_, _) =>
+        {
+            replayItem.Checked = replay.Enabled;
+            clicksItem.Checked = ComposerFiles.RecordClicks(ComposerFiles.Settings(output));
+            foreach (var item in logItems) menu.Items.Remove(item);
+            logItems.Clear();
+            var files = ComposerFiles.CustomLogFiles(ComposerFiles.Settings(output));
+            int insertAt = menu.Items.IndexOf(addLog);
+            foreach (string path in files)
+            {
+                string file = path;
+                var remove = new Forms.ToolStripMenuItem("Remove " + Path.GetFileName(file)) { Tag = file, ToolTipText = file };
+                remove.Click += (_, _) => RemoveLog(file);
+                menu.Items.Insert(insertAt, remove);
+                logItems.Add(remove);
+                insertAt++;
+            }
+            addLog.Enabled = files.Count < 4;
+        };
         menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
         menu.Items.Add("Insert latest capture into OpenCode", null, (_, _) => {
             try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
@@ -312,6 +341,12 @@ internal sealed class Tray : Forms.Form
         if (ComposerFiles.InstantReplay(ComposerFiles.Settings(output))) replay.SetEnabled(true);
         UpdateIcon();
         _ = Handle; // The hidden form still needs an HWND for WM_HOTKEY delivery.
+        ClickHistory.Shared.EnableHooks();
+        if (ComposerFiles.RecordClicks(ComposerFiles.Settings(output)))
+        {
+            ClickHistory.Shared.Start();
+            if (!ClickHistory.Shared.Watching) Forms.MessageBox.Show("Capture Studio could not watch clicks. Quit other shortcut apps and try again.", "Capture Studio");
+        }
     }
     protected override void SetVisibleCore(bool value) { base.SetVisibleCore(false); }
     protected override void OnHandleCreated(EventArgs e)
@@ -346,6 +381,65 @@ internal sealed class Tray : Forms.Form
             UpdateIcon();
         }
         catch (Exception e) { Error(e); }
+    }
+
+    void ToggleClicks()
+    {
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            bool enabled = !ComposerFiles.RecordClicks(settings);
+            settings["recordClicks"] = enabled;
+            ComposerFiles.SaveSettings(output, settings, false);
+            if (enabled)
+            {
+                ClickHistory.Shared.Start();
+                if (!ClickHistory.Shared.Watching) Forms.MessageBox.Show("Capture Studio could not watch clicks. Quit other shortcut apps and try again.", "Capture Studio");
+            }
+            else if (!ClickHistory.Shared.IsRecording) ClickHistory.Shared.Stop();
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    void AddLog()
+    {
+        try
+        {
+            using var dialog = new Forms.OpenFileDialog
+            {
+                Title = "Choose a log file. Capture Studio reads its last 64 KB only when you capture.",
+                CheckFileExists = true,
+                Multiselect = false,
+            };
+            if (dialog.ShowDialog() != Forms.DialogResult.OK) return;
+            var settings = ComposerFiles.Settings(output);
+            var files = ComposerFiles.CustomLogFiles(settings);
+            if (files.Count >= 4 || files.Contains(dialog.FileName, StringComparer.OrdinalIgnoreCase)) return;
+            files.Add(dialog.FileName);
+            settings["customLogFiles"] = LogArray(files);
+            ComposerFiles.SaveSettings(output, settings, false);
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    void RemoveLog(string path)
+    {
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            var files = ComposerFiles.CustomLogFiles(settings);
+            files.RemoveAll(item => string.Equals(item, path, StringComparison.OrdinalIgnoreCase));
+            settings["customLogFiles"] = LogArray(files);
+            ComposerFiles.SaveSettings(output, settings, false);
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    static JsonArray LogArray(IReadOnlyList<string> files)
+    {
+        var list = new JsonArray();
+        foreach (string file in files) list.Add(file);
+        return list;
     }
 
     async Task TakeShot()
@@ -392,22 +486,23 @@ internal sealed class Tray : Forms.Form
         try
         {
             var clip = await RecordingSession.Capture(output, 0);
+            var recorded = ClickHistory.Shared.TakePublished();
             if (clip == null) return;
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(Array.Empty<Snapshot>(), new[] { clip });
+            OpenComposer(Array.Empty<Snapshot>(), new[] { clip }, recorded);
         }
-        catch (Exception e) { Error(e); }
+        catch (Exception e) { ClickHistory.Shared.TakePublished(); Error(e); }
         finally { busy = false; }
     }
-    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null)
+    void OpenComposer(IReadOnlyList<Snapshot> shots, IReadOnlyList<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null)
     {
-        try { using var composer = new ComposerForm(output, shots, clips); composer.ShowDialog(); }
+        try { using var composer = new ComposerForm(output, shots, clips, events); composer.ShowDialog(); }
         catch (Exception e) { Error(e); }
     }
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); replay.Dispose(); icon.Dispose(); }
+        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); ClickHistory.Shared.Stop(); ClickHistory.Shared.DisableHooks(); replay.Dispose(); icon.Dispose(); }
         base.Dispose(disposing);
     }
 }

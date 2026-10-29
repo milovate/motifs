@@ -96,12 +96,13 @@ internal sealed class ComposerForm : Form
     internal static ComposerForm? Open { get; private set; }
     internal bool CanRecord => !sending && !submitted && videos.Count < ReplayMath.MaxClips && !RecordingSession.Busy;
 
-    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null)
+    internal ComposerForm(string output, IEnumerable<Snapshot> initial, IEnumerable<JsonObject>? clips = null, IReadOnlyList<JsonObject>? events = null)
     {
         this.output = output;
         settings = ComposerFiles.Settings(output);
         include = settings["include"] is JsonObject saved ? ComposerFiles.Clone(saved) : ComposerFiles.DefaultInclude();
         context = new JsonObject { ["device"] = ComposerFiles.Device(), ["system"] = ComposerFiles.SystemFacts() };
+        CaptureContext.Apply(context, settings, events);
         foreach (var shot in initial) shots.Add(ComposerFiles.Media(shot));
         if (clips != null) videos.AddRange(clips.Take(ReplayMath.MaxClips));
         Text = "Capture Studio";
@@ -726,9 +727,24 @@ internal sealed class ComposerForm : Form
         try
         {
             var clip = await RecordingSession.Capture(output, videos.Count);
-            if (clip != null && !IsDisposed) Attach(clip);
+            var recorded = ClickHistory.Shared.TakePublished();
+            if (clip != null && !IsDisposed)
+            {
+                Attach(clip);
+                if (recorded.Count > 0)
+                {
+                    var list = new JsonArray();
+                    foreach (var entry in recorded) list.Add(entry);
+                    context["events"] = new JsonObject { ["entries"] = list };
+                    RefreshSend();
+                }
+            }
         }
-        catch (Exception error) { if (!IsDisposed) status.Text = error.Message; }
+        catch (Exception error)
+        {
+            ClickHistory.Shared.TakePublished();
+            if (!IsDisposed) status.Text = error.Message;
+        }
         finally { if (!IsDisposed) { Location = parked; Activate(); } }
     }
 
