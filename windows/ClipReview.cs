@@ -61,6 +61,15 @@ internal static class ClipReviewMath
     internal static string SelectionLabel(double trimIn, double trimOut, double duration) =>
         ContextReview.ClipTime(trimIn) + " in · " + ContextReview.ClipTime(Math.Max(0, trimOut - trimIn)) + " selected of " + ContextReview.ClipTime(duration) + " · " + ContextReview.ClipTime(trimOut) + " out";
 
+    internal const string TimelineTip = "Drag the yellow handles to trim · I / O set in and out · ← → step · Space play/pause";
+    internal const string CloseTip = "Close without changes (Escape)";
+    internal const string CancelTip = "Keep the clip as it was (Escape)";
+    internal const string RemoveTip = "Remove this clip from the capture. The MP4 stays in the captures folder.";
+    internal const string LegendTip = "Hover a dot under the strip to see the event";
+    internal const string DragTip = "Drag here to move";
+
+    internal static string UseTip(bool trimmed) => (trimmed ? "Save the selection as a new clip and take key frames from it" : "Keep the whole clip") + " (Enter)";
+
     internal static double MoveIn(double value, double trimOut) => Math.Max(0, Math.Min(value, trimOut - 0.5));
     internal static double MoveOut(double value, double trimIn, double duration) => Math.Min(duration, Math.Max(value, trimIn + 0.5));
 
@@ -657,29 +666,56 @@ internal sealed class ClipReviewForm : Form
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 10);
         KeyPreview = true;
-        var heading = new Label { Text = label + (target.Length == 0 ? "" : " · " + target), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+        var heading = new Label { Text = label + (target.Length == 0 ? "" : " · " + target), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 11, FontStyle.Bold), Cursor = Cursors.SizeAll };
         var close = new Button { Text = "×", Dock = DockStyle.Right, Width = 32 };
         close.AccessibleName = "Close without changes";
+        hover.SetToolTip(close, ClipReviewMath.CloseTip);
         close.Click += (_, _) => { if (!trimming) Finish(ClipReviewOutcome.Keep); };
-        var header = new Panel { Height = 32, Dock = DockStyle.Top };
+        var header = new Panel { Height = 32, Dock = DockStyle.Top, Cursor = Cursors.SizeAll };
         header.Controls.Add(heading);
         header.Controls.Add(close);
+        hover.SetToolTip(header, ClipReviewMath.DragTip);
+        hover.SetToolTip(heading, ClipReviewMath.DragTip);
+        Point? dragAt = null;
+        Point dragOrigin = Point.Empty;
+        void BeginDrag(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left || sender is not Control control) return;
+            dragAt = control.PointToScreen(e.Location);
+            dragOrigin = Location;
+        }
+        void MoveDrag(object? sender, MouseEventArgs e)
+        {
+            if (dragAt is not Point start || e.Button != MouseButtons.Left || sender is not Control control) return;
+            var now = control.PointToScreen(e.Location);
+            Location = new Point(dragOrigin.X + now.X - start.X, dragOrigin.Y + now.Y - start.Y);
+        }
+        header.MouseDown += BeginDrag;
+        header.MouseMove += MoveDrag;
+        header.MouseUp += (_, _) => dragAt = null;
+        heading.MouseDown += BeginDrag;
+        heading.MouseMove += MoveDrag;
+        heading.MouseUp += (_, _) => dragAt = null;
         var playerHost = MakePlayer();
         playerHost.Dock = DockStyle.Fill;
         timeline.Load(duration, markers);
+        hover.SetToolTip(timeline, ClipReviewMath.TimelineTip);
         timeline.Dock = DockStyle.Bottom;
         timeline.TrimChanged += RefreshSelection;
         timeline.Seeked += Seek;
         timeline.MouseMove += (_, args) =>
         {
             var marker = ClipReviewMath.MarkerNear(markers, args.X, timeline.Duration, timeline.Width);
-            hover.SetToolTip(timeline, marker is ClipMarker found ? found.Title + "\n" + found.Label : "Drag the yellow handles to trim · I / O set in and out · ← → step · Space play/pause");
+            hover.SetToolTip(timeline, marker is ClipMarker found ? found.Title + "\n" + found.Label : ClipReviewMath.TimelineTip);
         };
         var legend = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Dock = DockStyle.Right };
+        hover.SetToolTip(legend, ClipReviewMath.LegendTip);
         foreach (ClipMarkerKind kind in new[] { ClipMarkerKind.Click, ClipMarkerKind.Step, ClipMarkerKind.Error, ClipMarkerKind.Warning })
         {
             int count = markers.Count(marker => marker.Kind == kind);
-            legend.Controls.Add(new Label { Text = "● " + ClipReviewMath.KindName(kind) + " " + count.ToString(CultureInfo.InvariantCulture), AutoSize = true, ForeColor = ClipReviewMath.KindColor(kind), Margin = new Padding(12, 6, 0, 0) });
+            var chip = new Label { Text = "● " + ClipReviewMath.KindName(kind) + " " + count.ToString(CultureInfo.InvariantCulture), AutoSize = true, ForeColor = ClipReviewMath.KindColor(kind), Margin = new Padding(12, 6, 0, 0) };
+            hover.SetToolTip(chip, ClipReviewMath.LegendTip);
+            legend.Controls.Add(chip);
         }
         var info = new Panel { Height = 28, Dock = DockStyle.Bottom };
         selection.Dock = DockStyle.Left;
@@ -691,7 +727,10 @@ internal sealed class ClipReviewForm : Form
         useButton.BackColor = Color.FromArgb(232, 232, 234);
         useButton.ForeColor = Color.FromArgb(20, 20, 20);
         removeButton.Click += (_, _) => Finish(ClipReviewOutcome.Remove);
-        removeButton.AccessibleName = "Remove this clip from the capture. The MP4 stays in the captures folder.";
+        removeButton.AccessibleName = ClipReviewMath.RemoveTip;
+        hover.SetToolTip(removeButton, ClipReviewMath.RemoveTip);
+        cancelButton.AccessibleName = ClipReviewMath.CancelTip;
+        hover.SetToolTip(cancelButton, ClipReviewMath.CancelTip);
         cancelButton.Click += (_, _) => Finish(ClipReviewOutcome.Keep);
         useButton.Click += (_, _) => Use();
         AcceptButton = useButton;
@@ -783,7 +822,8 @@ internal sealed class ClipReviewForm : Form
         selection.Text = ClipReviewMath.SelectionLabel(timeline.TrimIn, timeline.TrimOut, duration);
         bool trimmed = ClipReviewMath.IsTrimmed(timeline.TrimIn, timeline.TrimOut, duration);
         useButton.Text = trimmed ? "Use trimmed clip" : "Use clip";
-        useButton.AccessibleName = (trimmed ? "Save the selection as a new clip and take key frames from it" : "Keep the whole clip") + " (Enter)";
+        useButton.AccessibleName = ClipReviewMath.UseTip(trimmed);
+        hover.SetToolTip(useButton, useButton.AccessibleName);
     }
 
     void Seek(double seconds)

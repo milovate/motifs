@@ -106,7 +106,7 @@ The bar and the dashed area outline set display affinity and are hidden while ea
 frame is grabbed. An area recording shows that outline just outside the rectangle. A window
 recording follows that window's rectangle; unlike a still window capture, it is the
 visible pixels there, so overlapping windows can appear. Click a clip in the
-composer to review it. The filmstrip has yellow handles; drag them, or press
+composer to review it. Hovering the timeline explains the handles and keys. Hovering a dot names that event. The buttons say whether they close, cancel, trim, or remove the clip, and dragging the heading moves the review. The filmstrip has yellow handles; drag them, or press
 **I** and **O**, to choose at least half a second. **Space** plays that selection
 and the arrow keys step. **Use trimmed clip** writes a new MP4 and takes key
 frames from the selection. The original file stays in the captures folder.
