@@ -16,7 +16,7 @@ behavior still needs validation on a Windows desktop.
 **Windows:** see [Windows setup and validation](windows.md). The instructions
 below describe macOS unless noted. Windows has the capture picker, composer,
 destinations, context review, skill mentions, recent captures, annotation editing,
-screen recording, instant replay, and best-effort draft handoff. Clip trim stays on macOS.
+screen recording, instant replay, clip trim, and best-effort draft handoff.
 
 ## Installation
 
@@ -358,11 +358,13 @@ left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
 context review, prefixes, skill mentions, recent captures, screen recording, instant
-replay, and best-effort draft handoff. Instant replay is off by default. It samples
-the display under the pointer at 8 frames per second into memory (30 seconds, 150 MB)
-and writes an MP4 only after a capture is confirmed. The sample is visible pixels,
-including Capture Studio's own windows. Clip trim, dictation, and the macOS visual
-treatment stay on macOS.
+replay, clip trim, and best-effort draft handoff. Instant replay is off by default.
+It samples the display under the pointer at 8 frames per second into memory (30
+seconds, 150 MB) and writes an MP4 only after a capture is confirmed. The sample is
+visible pixels, including Capture Studio's own windows. Click a clip to review it:
+yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
+clip** writes a new MP4 beside the original and takes key frames from the selection.
+Dictation and the macOS visual treatment stay on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
 contract tests or a successful build does not verify native interaction.
 

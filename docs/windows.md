@@ -71,7 +71,12 @@ key-frame PNGs into the captures folder and attaches the clip to the open compos
 or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
 The bar sets display affinity and is hidden while each frame is grabbed. A window
 recording follows that window's rectangle; unlike a still window capture, it is the
-visible pixels there, so overlapping windows can appear. Clip trim is still macOS-only.
+visible pixels there, so overlapping windows can appear. Click a clip in the
+composer to review it. The filmstrip has yellow handles; drag them, or press
+**I** and **O**, to choose at least half a second. **Space** plays that selection
+and the arrow keys step. **Use trimmed clip** writes a new MP4 and takes key
+frames from the selection. The original file stays in the captures folder.
+**Remove clip** detaches it and leaves the file. Nothing is sent.
 
 **Keep instant replay (last 30 s)** stays off until you turn it on from the tray.
 The choice is saved in `settings.json` and restored the next time the watcher
@@ -204,7 +209,9 @@ from the macOS development environment. Before calling Windows support verified:
 - Record a short display clip with **Control+Alt+Shift+R**. Pause, restart, and
   stop. Confirm the MP4 and key frames appear in the composer and the control bar
   is absent from those frames. Escape on the bar discards the clip. Confirm nothing
-  is sent. Reopen the capture from Recents.
+  is sent. Reopen the capture from Recents. Click the clip, trim it with the
+  yellow handles, and choose **Use trimmed clip**. Confirm a second MP4 appears
+  and the original file is still in the captures folder.
 - Turn on **Keep instant replay (last 30 s)**, wait a few seconds, and capture.
   Confirm the composer shows the screenshot and an instant-replay clip. Cancel
   the chooser and confirm the captures folder gains no replay MP4. Turn replay

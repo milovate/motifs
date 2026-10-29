@@ -29,7 +29,7 @@ test("Windows screen recording writes an MP4", { skip: process.platform !== "win
   const directory = await mkdtemp(path.join(tmpdir(), "appshots-recording-test-"));
   try {
     const helper = fileURLToPath(new URL("../windows/dist/Appshots.exe", import.meta.url));
-    const { stdout } = await promisify(execFile)(helper, ["--test-recording", "--output", directory], { windowsHide: true, timeout: 60_000 });
+    const { stdout } = await promisify(execFile)(helper, ["--test-recording", "--output", directory], { windowsHide: true, timeout: 120_000 });
     assert.match(stdout, /Windows recording regressions passed/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

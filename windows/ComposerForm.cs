@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -391,8 +392,12 @@ internal sealed class ComposerForm : Form
             double duration = 0;
             try { if (videos[index]["durationSeconds"] is JsonNode seconds) duration = seconds.GetValue<double>(); } catch { duration = 0; }
             string clipKind = videos[index]["source"]?.GetValue<string>() == "recording" ? "Screen recording" : "Instant replay";
-            picture.AccessibleName = clipKind + " " + (index + 1) + ", " + ContextReview.ClipTime(duration);
+            picture.AccessibleName = clipKind + " " + (index + 1) + ", " + ContextReview.ClipTime(duration) + ". Click to review or trim.";
             var caption = new Label { Text = ContextReview.ClipTime(duration), AutoSize = false, Size = new Size(72, 16), Location = new Point(0, 40), ForeColor = Color.White, BackColor = Color.FromArgb(160, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter };
+            picture.Cursor = Cursors.Hand;
+            caption.Cursor = Cursors.Hand;
+            picture.Click += (_, _) => Review(current);
+            caption.Click += (_, _) => Review(current);
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
             remove.AccessibleName = "Remove recording " + (index + 1);
             remove.Click += (_, _) => { videos.RemoveAt(current); RefreshThumbs(); Touch(); };
@@ -727,10 +732,37 @@ internal sealed class ComposerForm : Form
         finally { if (!IsDisposed) { Location = parked; Activate(); } }
     }
 
+    void Review(int index)
+    {
+        if (sending || submitted || index < 0 || index >= videos.Count) return;
+        mentions.Dismiss();
+        mentionPopup.Hide();
+        using var review = new ClipReviewForm(output, videos[index], context, ReplayMath.FramesPerClip(videos.Count));
+        review.ShowDialog(this);
+        if (review.Outcome == ClipReviewOutcome.Remove)
+        {
+            videos.RemoveAt(index);
+            status.Text = "Clip removed. The MP4 stays in the captures folder.";
+            RefreshThumbs();
+            RefreshContext();
+            Touch();
+        }
+        else if (review.Outcome == ClipReviewOutcome.Replace && review.Replacement != null)
+        {
+            double seconds = review.Replacement["durationSeconds"]?.GetValue<double>() ?? 0;
+            videos[index] = review.Replacement;
+            status.Text = "Clip trimmed to " + ((int)Math.Round(seconds)).ToString(CultureInfo.InvariantCulture) + " s.";
+            RefreshThumbs();
+            RefreshContext();
+            Touch();
+        }
+    }
+
     void Attach(JsonObject clip)
     {
         if (videos.Count >= ReplayMath.MaxClips) return;
         videos.Add(clip);
+        status.Text = "Recording added. Click it to review or trim.";
         int each = ReplayMath.FramesPerClip(videos.Count);
         foreach (var video in videos)
         {

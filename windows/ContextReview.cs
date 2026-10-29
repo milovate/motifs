@@ -247,7 +247,7 @@ internal static class ContextReview
         return "Screenshot " + (index + 1) + " · " + (StringOf(shot, "app") ?? "App") + (title.Length == 0 ? "" : " · \"" + title + "\"");
     }
 
-    static double? Offset(DateTimeOffset moment, JsonObject video)
+    internal static double? Offset(DateTimeOffset moment, JsonObject video)
     {
         if (StringOf(video, "startedAt") is not string started || !DateTimeOffset.TryParse(started, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var start)) return null;
         double elapsed = (moment - start).TotalSeconds;

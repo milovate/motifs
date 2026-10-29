@@ -639,6 +639,37 @@ internal static class ComposerTests
         Check(ContextReview.TokenEstimate(0) == "≈0 tokens" && ContextReview.TokenEstimate(4000) == "≈1.0k tokens", "token estimate uses about four characters");
         var video = new JsonObject { ["source"] = "replay", ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 20 };
         Check(ContextReview.ClipMoment("2026-10-29T10:00:05Z", new[] { video }) == "Instant replay · 0:05.0", "events inside a clip show the clip time");
+        var pausedClip = new JsonObject
+        {
+            ["startedAt"] = "2026-10-29T10:00:00.000Z",
+            ["durationSeconds"] = 30,
+            ["source"] = "recording",
+            ["pauses"] = new JsonArray(new JsonObject { ["atSeconds"] = 2, ["durationSeconds"] = 50 }, new JsonObject { ["atSeconds"] = 20, ["durationSeconds"] = 5 }),
+        };
+        var pauseOnly = new JsonObject { ["startedAt"] = "2026-10-29T10:00:00.000Z", ["durationSeconds"] = 30, ["pauses"] = new JsonArray(new JsonObject { ["atSeconds"] = 10, ["durationSeconds"] = 60 }) };
+        Check(ContextReview.Offset(DateTimeOffset.Parse("2026-10-29T10:00:04Z", CultureInfo.InvariantCulture), pauseOnly) == 4, "events before a pause keep their time");
+        Check(ContextReview.Offset(DateTimeOffset.Parse("2026-10-29T10:00:30Z", CultureInfo.InvariantCulture), pauseOnly) == null, "events during a pause are not in the clip");
+        Check(ContextReview.Offset(DateTimeOffset.Parse("2026-10-29T10:01:15Z", CultureInfo.InvariantCulture), pauseOnly) == 15, "events after a pause skip the paused time");
+        var described = ClipReviewMath.Describe(pausedClip, 10, 22);
+        var moved = DateTimeOffset.Parse(described["startedAt"]!.GetValue<string>(), CultureInfo.InvariantCulture);
+        Check(Math.Abs(described["durationSeconds"]!.GetValue<double>() - 12) < 0.001 && Math.Abs((moved - DateTimeOffset.Parse("2026-10-29T10:00:00Z", CultureInfo.InvariantCulture)).TotalSeconds - 60) < 0.01, "the start moves by the trimmed time plus earlier pauses");
+        Check(described["pauses"] is JsonArray keptPauses && keptPauses.Count == 1 && keptPauses[0]!["atSeconds"]!.GetValue<double>() == 10 && keptPauses[0]!["durationSeconds"]!.GetValue<double>() == 5, "pauses inside the selection are kept in clip time");
+        try { ClipReviewMath.Describe(pausedClip, 3, 3.2); Check(false, "tiny selections are refused"); }
+        catch (Exception error) { Check(error.Message.Contains("half a second"), "tiny selections are refused"); }
+        var markerContext = new JsonObject
+        {
+            ["events"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:04Z", ["kind"] = "click", ["app"] = "Safari", ["role"] = "AXButton", ["title"] = "Buy" }, new JsonObject { ["time"] = "2026-10-29T09:00:00Z", ["kind"] = "click", ["app"] = "Old" }) },
+            ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:06.500Z", ["level"] = "error", ["message"] = "boom" }, new JsonObject { ["time"] = "2026-10-29T10:00:07Z", ["level"] = "warning", ["message"] = "slow" }, new JsonObject { ["time"] = "2026-10-29T10:00:08Z", ["level"] = "log", ["message"] = "noise" }) },
+            ["network"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:09Z", ["method"] = "POST", ["status"] = 500, ["url"] = "https://x.test/pay" }) },
+        };
+        var markerVideo = new JsonObject { ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 20, ["source"] = "recording" };
+        var markers = ClipReviewMath.Markers(markerVideo, markerContext);
+        Check(markers.Count == 4 && markers[0].Title == "Click · 0:04.0" && markers[0].Kind == ClipMarkerKind.Click && markers[1].Kind == ClipMarkerKind.Error && markers[2].Kind == ClipMarkerKind.Warning && markers[3].Kind == ClipMarkerKind.Error && markers[3].Label == "POST 500 /pay", "clicks, errors, warnings and failed requests become timeline markers");
+        Check(Math.Abs(markers[1].Time - 6.5) < 0.001 && Math.Abs(markers[2].Time - 7) < 0.001 && Math.Abs(markers[3].Time - 9) < 0.001, "marker times skip events outside the clip");
+        Check(!ClipReviewMath.IsTrimmed(0, 20, 20) && ClipReviewMath.IsTrimmed(5, 12, 20), "the review opens untrimmed");
+        Check(ClipReviewMath.SelectionLabel(5, 12, 20) == "0:05.0 in · 0:07.0 selected of 0:20.0 · 0:12.0 out", "trim handles describe the selection");
+        Check(Math.Abs(ClipReviewMath.TimeAt(ClipReviewMath.X(7, 20, 220), 20, 220) - 7) < 0.01, "timeline positions map to clip time");
+        Check(ClipReviewMath.MarkerNear(markers, ClipReviewMath.X(9, 20, 220) + 3, 20, 220)?.Label == "POST 500 /pay" && ClipReviewMath.MarkerNear(markers, ClipReviewMath.X(2, 20, 220), 20, 220) == null, "hovering near a marker finds it");
         Check(ContextReview.PressureName(10) == "normal" && ContextReview.PressureName(80) == "warning" && ContextReview.PressureName(95) == "critical" && ContextReview.PressureName(-1) == "unknown", "memory load maps to a pressure name");
         var facts = ComposerFiles.SystemFacts();
         Check(facts["memory"]?["pressure"] != null && facts["storage"]?["availableBytes"] != null, "Windows reports memory pressure and free storage");

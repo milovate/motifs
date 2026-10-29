@@ -375,12 +375,21 @@ static class MediaFoundation
     internal static readonly Guid PixelAspect = new("c6376a1e-8d0a-4027-be45-6d9a0ad39bb6");
     internal static readonly Guid DefaultStride = new("644b4e48-1e02-4516-b0eb-c01ca9d49ac6");
     internal static readonly Guid HardwareTransforms = new("a634a91c-822b-41b9-a494-4de4643612b0");
+    internal static readonly Guid EnableVideoProcessing = new("fb394f3d-ccf1-42ee-bbb3-f9b845d5681d");
     internal static readonly Guid Video = new("73646976-0000-0010-8000-00aa00389b71");
     internal static readonly Guid H264 = new("34363248-0000-0010-8000-00aa00389b71");
     internal static readonly Guid Rgb32 = new("00000016-0000-0010-8000-00aa00389b71");
+    internal const uint FirstVideoStream = 0xFFFFFFFC;
 
+    static readonly object startupGate = new();
     static int startups;
-    static bool comReady;
+
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    struct PropVariantI8
+    {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public long value;
+    }
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int Proc(nint self);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int SetU32(nint self, ref Guid key, uint value);
@@ -393,6 +402,14 @@ static class MediaFoundation
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int LengthFn(nint self, uint length);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int TimeFn(nint self, long hundredNanoseconds);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int BufferFn(nint self, nint buffer);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int GetU32(nint self, ref Guid key, out uint value);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int GetU64(nint self, ref Guid key, out ulong value);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int OutPtr(nint self, uint stream, out nint result);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int SetTypeFn(nint self, uint stream, nint reserved, nint mediaType);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int SetPosFn(nint self, ref Guid format, nint variant);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int ReadFn(nint self, uint stream, uint flags, out uint actual, out uint streamFlags, out long timestamp, out nint sample);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int SampleBufferFn(nint self, out nint buffer);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int GetLenFn(nint self, out uint length);
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint reserved, uint model);
     [DllImport("mfplat.dll")] static extern int MFStartup(uint version, uint flags);
@@ -402,25 +419,28 @@ static class MediaFoundation
     [DllImport("mfplat.dll")] static extern int MFCreateMemoryBuffer(uint maxLength, out nint buffer);
     [DllImport("mfplat.dll")] static extern int MFCreateSample(out nint sample);
     [DllImport("mfreadwrite.dll", CharSet = CharSet.Unicode)] static extern int MFCreateSinkWriterFromURL(string url, nint stream, nint attributes, out nint writer);
+    [DllImport("mfreadwrite.dll", CharSet = CharSet.Unicode)] static extern int MFCreateSourceReaderFromURL(string url, nint attributes, out nint reader);
 
     internal static void Startup()
     {
-        if (!comReady)
+        int com = CoInitializeEx(0, 2);
+        if (com < 0 && unchecked((uint)com) != 0x80010106) Check(com, "COM startup");
+        lock (startupGate)
         {
-            int com = CoInitializeEx(0, 2);
-            if (com < 0 && unchecked((uint)com) != 0x80010106) Check(com, "COM startup");
-            comReady = true;
+            if (startups++ > 0) return;
+            int started = MFStartup(Version, 0);
+            if (started < 0) started = MFStartup(Version, 1);
+            if (started < 0) { startups--; Check(started, "Media Foundation startup"); }
         }
-        if (startups++ > 0) return;
-        int started = MFStartup(Version, 0);
-        if (started < 0) started = MFStartup(Version, 1);
-        if (started < 0) { startups--; Check(started, "Media Foundation startup"); }
     }
 
     internal static void Shutdown()
     {
-        if (startups == 0) return;
-        if (--startups == 0) MFShutdown();
+        lock (startupGate)
+        {
+            if (startups == 0) return;
+            if (--startups == 0) MFShutdown();
+        }
     }
 
     internal static nint MediaType() { Check(MFCreateMediaType(out nint type), "Media type"); return type; }
@@ -428,6 +448,32 @@ static class MediaFoundation
     internal static nint MemoryBuffer(int bytes) { Check(MFCreateMemoryBuffer((uint)bytes, out nint buffer), "Frame buffer"); return buffer; }
     internal static nint Sample() { Check(MFCreateSample(out nint sample), "Frame sample"); return sample; }
     internal static nint Sink(string path, nint attributes) { Check(MFCreateSinkWriterFromURL(path, 0, attributes, out nint writer), "Recording file"); return writer; }
+    internal static nint SourceReader(string path, nint attributes) { Check(MFCreateSourceReaderFromURL(path, attributes, out nint reader), "Open recording"); return reader; }
+    internal static nint ReaderType(nint reader) { Check(Fn<OutPtr>(reader, 6)(reader, FirstVideoStream, out nint type), "Recording format"); return type; }
+    internal static void SetReaderType(nint reader, nint mediaType) => Check(Fn<SetTypeFn>(reader, 7)(reader, FirstVideoStream, 0, mediaType), "Decode format");
+    internal static void SetPosition(nint reader, long hundredNanoseconds)
+    {
+        var variant = new PropVariantI8 { vt = 20, value = hundredNanoseconds };
+        nint pointer = Marshal.AllocHGlobal(Marshal.SizeOf<PropVariantI8>());
+        try
+        {
+            Marshal.StructureToPtr(variant, pointer, false);
+            var format = Guid.Empty;
+            Check(Fn<SetPosFn>(reader, 8)(reader, ref format, pointer), "Seek recording");
+        }
+        finally { Marshal.FreeHGlobal(pointer); }
+    }
+    internal static void ReadSample(nint reader, out uint flags, out long timestamp, out nint sample) =>
+        Check(Fn<ReadFn>(reader, 9)(reader, FirstVideoStream, 0, out _, out flags, out timestamp, out sample), "Read frame");
+    internal static nint ContiguousBuffer(nint sample) { Check(Fn<SampleBufferFn>(sample, 41)(sample, out nint buffer), "Read frame"); return buffer; }
+    internal static int CurrentLength(nint buffer) { Check(Fn<GetLenFn>(buffer, 5)(buffer, out uint length), "Frame size"); return (int)length; }
+    internal static ulong GetUint64(nint target, Guid key) { Check(Fn<GetU64>(target, 8)(target, ref key, out ulong value), "Video setting"); return value; }
+    internal static bool TryGetInt32(nint target, Guid key, out int value)
+    {
+        int code = Fn<GetU32>(target, 7)(target, ref key, out uint raw);
+        value = unchecked((int)raw);
+        return code >= 0;
+    }
 
     internal static void SetUint32(nint target, Guid key, uint value) => Check(Fn<SetU32>(target, 21)(target, ref key, value), "Video setting");
     internal static void SetUint64(nint target, Guid key, ulong value) => Check(Fn<SetU64>(target, 22)(target, ref key, value), "Video setting");
@@ -455,7 +501,7 @@ static class MediaFoundation
         if (code >= 0) return;
         uint failure = unchecked((uint)code);
         string hint = failure is 0xC00D36B4 or 0xC00D5212
-            ? " This PC has no H.264 encoder. Install the Media Feature Pack and try again."
+            ? " This PC has no H.264 encoder or decoder. Install the Media Feature Pack and try again."
             : "";
         throw new InvalidOperationException(action + " failed (0x" + failure.ToString("X8", CultureInfo.InvariantCulture) + ")." + hint);
     }
@@ -1005,6 +1051,29 @@ internal static class RecordingTests
         }
         if (header[4] != (byte)'f' || header[5] != (byte)'t' || header[6] != (byte)'y' || header[7] != (byte)'p' || new FileInfo(file).Length < 32)
             throw new Exception("Recording regression: the file is not an MP4.");
+        var clip = new JsonObject
+        {
+            ["kind"] = "video",
+            ["video"] = file,
+            ["source"] = "recording",
+            ["area"] = "display",
+            ["target"] = "",
+            ["startedAt"] = "2026-10-29T10:00:00Z",
+            ["durationSeconds"] = 1.0,
+            ["frames"] = new JsonArray(),
+            ["pauses"] = new JsonArray(),
+        };
+        var trimmed = ClipTrimmer.Trim(output, clip, 0, 1.0, 2);
+        string trimmedPath = trimmed["video"]?.GetValue<string>() ?? "";
+        if (trimmedPath == file || !File.Exists(file) || !File.Exists(trimmedPath)) throw new Exception("Recording regression: trimming keeps the original.");
+        var trimmedHeader = new byte[8];
+        using (var stream = File.OpenRead(trimmedPath))
+        {
+            if (stream.Read(trimmedHeader, 0, 8) != 8) throw new Exception("Recording regression: the trimmed MP4 is empty.");
+        }
+        if (trimmedHeader[4] != (byte)'f' || trimmedHeader[5] != (byte)'t' || trimmedHeader[6] != (byte)'y' || trimmedHeader[7] != (byte)'p')
+            throw new Exception("Recording regression: the trimmed file is not an MP4.");
+        if (trimmed["frames"] is not JsonArray frames || frames.Count == 0) throw new Exception("Recording regression: trimming writes key frames.");
         Console.WriteLine("Windows recording regressions passed");
     }
 }
