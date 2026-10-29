@@ -129,12 +129,14 @@ memory. Browser context travels only over an owner-only socket in
 same signed Capture Studio binary; each side refuses any other process.
 
 Nothing is recorded unless you turn on **Keep instant replay** or start a screen
-recording; macOS shows its screen-recording indicator whenever either is running.
-The instant replay buffer holds only the last 30 seconds, in memory, and is written
-to disk only when you press Option+G. Recordings stop after 5 minutes. The MP4 and
-its key frames are saved owner-only in the captures folder; OpenCode receives only
-the key frames, and only when you send. Capture Studio's own windows are excluded,
-but everything else on the display, including notifications and other apps'
+recording and press Start; macOS shows its screen-recording indicator whenever either
+is running. The instant replay buffer holds only the last 30 seconds of the display,
+in memory, and is written to disk only when you press Option+G. A screen recording
+captures only what you chose (the display, one window, or a dragged area), leaves
+paused time out, and stops after 5 minutes. MP4s, trimmed copies and key frames are
+saved owner-only in the captures folder; OpenCode receives only up to six key frames,
+and only when you send. Capture Studio's own windows are excluded, but everything
+else in the recorded display or area, including notifications and other apps'
 content, can appear in the video. Turn replay off before showing sensitive content.
 
 The helper is signed with the hardened runtime and only the microphone

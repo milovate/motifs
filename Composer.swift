@@ -40,6 +40,7 @@ struct ComposerEndpoint: Decodable {
 @MainActor func presentComposer(_ composer: AppshotComposer) async {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
         composer.completion = { continuation.resume() }
+        AppshotComposer.current = composer
         composer.showWindow(nil)
         composer.positionNearBottom()
         composer.window?.makeKeyAndOrderFront(nil)
@@ -51,6 +52,9 @@ struct ComposerEndpoint: Decodable {
 }
 
 @MainActor final class AppshotComposer: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
+    // The menu-bar helper records the screen; the composer only asks for a clip.
+    static var onRecord: ((AppshotComposer) -> Void)?
+    static weak var current: AppshotComposer?
     var shots: [[String: Any]]
     var selectedShotIndex = 0
     var shot: [String: Any] {
@@ -79,8 +83,12 @@ struct ComposerEndpoint: Decodable {
     let closeButton = ComposerButton(symbol: "xmark")
     let status = ComposerStatusField(wrappingLabelWithString: "")
     let thumbnailStrip = NSStackView()
-    let addScreenshotButton = ComposerButton(symbol: "viewfinder")
+    let addScreenshotButton = ComposerButton(symbol: "plus.viewfinder")
     var addingScreenshot = false
+    var recordingClip = false
+    var reviewingClip = false
+    var preparingFrames = false
+    var frameGeneration = UUID()
     let skillChips = NSStackView()
     let scroll = NSScrollView()
     let contentStack = NSStackView()
@@ -104,7 +112,7 @@ struct ComposerEndpoint: Decodable {
 
     init(shots: [[String: Any]], videos: [[String: Any]] = [], note: String, context: [String: Any], include: BundleInclude, output: String, returnTo: NSRunningApplication?) throws {
         self.shots = shots
-        self.videos = Array(videos.prefix(1))
+        self.videos = Array(videos.prefix(ReplayWriter.maxClips))
         self.context = context
         self.include = include
         self.output = output
@@ -165,9 +173,9 @@ struct ComposerEndpoint: Decodable {
         annotateButton.compact = true
         annotateButton.toolTip = "Annotate the screenshot"
         addScreenshotButton.target = self
-        addScreenshotButton.action = #selector(addScreenshot)
-        addScreenshotButton.toolTip = "Add screenshot — drag to capture a screen region"
-        addScreenshotButton.setAccessibilityLabel("Add screenshot by selecting a screen region")
+        addScreenshotButton.action = #selector(showAddMenu)
+        addScreenshotButton.toolTip = "Add a screenshot of a region or a screen recording"
+        addScreenshotButton.setAccessibilityLabel("Add a screenshot or a screen recording")
         closeButton.target = self
         closeButton.action = #selector(closeComposer)
         closeButton.compact = true
@@ -285,6 +293,7 @@ struct ComposerEndpoint: Decodable {
         ])
         for view in [attachment, scroll, actions, footer] { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         refreshAttachments()
+        redistributeFrames()
         status.onChange = { [weak self] in
             Task { @MainActor in self?.resizeToFit() }
         }
@@ -535,7 +544,7 @@ struct ComposerEndpoint: Decodable {
     }
 
     func refreshSendAvailability() {
-        sendButton.isEnabled = !sending && !submitted && !speech.isRunning && selectedEndpoint != nil && skillsButton.isEnabled && hasDescription
+        sendButton.isEnabled = !sending && !submitted && !speech.isRunning && !preparingFrames && !recordingClip && !reviewingClip && selectedEndpoint != nil && skillsButton.isEnabled && hasDescription
     }
 
     var hasDescription: Bool {
@@ -560,8 +569,8 @@ struct ComposerEndpoint: Decodable {
     // Recording frames follow the screenshots, matching the numbering in the draft.
     // They carry no capturedAt so insertion is verified against a screenshot or the text.
     var screenshotBundle: [String: Any] {
-        let frames = videos.flatMap { video in
-            let label = video["source"] as? String == "recording" ? "Screen recording" : "Instant replay"
+        let frames = videos.enumerated().flatMap { number, video in
+            let label = (video["source"] as? String == "recording" ? "Screen recording" : "Instant replay") + (videos.count > 1 ? " \(number + 1)" : "")
             let list = video["frames"] as? [[String: Any]] ?? []
             return list.enumerated().compactMap { index, frame -> [String: Any]? in
                 guard let path = frame["screenshot"] as? String else { return nil }
@@ -585,22 +594,117 @@ struct ComposerEndpoint: Decodable {
             thumbnail.setEnabled(textView.isEditable && !sending)
             thumbnailStrip.addArrangedSubview(thumbnail)
         }
-        for video in videos {
+        for (index, video) in videos.enumerated() {
             let thumbnail = VideoThumbnailView(video: video)
-            thumbnail.onOpen = { if let path = video["video"] as? String { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } }
-            thumbnail.onRemove = { [weak self] in self?.removeVideo() }
+            thumbnail.onOpen = { [weak self] in self?.reviewVideo(at: index) }
+            thumbnail.onRemove = { [weak self] in self?.removeVideo(at: index) }
             thumbnail.setEnabled(textView.isEditable && !sending)
             thumbnailStrip.addArrangedSubview(thumbnail)
         }
         if shots.isEmpty && videos.isEmpty {
-            let empty = NSTextField(labelWithString: "No screenshots · Add a region ↗")
+            let empty = NSTextField(labelWithString: "No attachments · Add a screenshot or recording ↗")
             empty.font = .systemFont(ofSize: 12)
             empty.textColor = .secondaryLabelColor
             thumbnailStrip.addArrangedSubview(empty)
         }
         thumbnailStrip.addArrangedSubview(NSView())
-        addScreenshotButton.isEnabled = textView.isEditable && !sending && shots.count < 8
+        addScreenshotButton.isEnabled = textView.isEditable && !sending && (shots.count < 8 || canAddRecording)
         refreshContextSummary()
+    }
+
+    var canAddRecording: Bool { AppshotComposer.onRecord != nil && videos.count < ReplayWriter.maxClips }
+    var canEditAttachments: Bool { textView.isEditable && !sending && !addingScreenshot && !recordingClip && !reviewingClip && preparedSession == nil }
+
+    @objc func showAddMenu() {
+        guard canEditAttachments else { return }
+        let menu = NSMenu()
+        let screenshot = NSMenuItem(title: "Screenshot of a region", action: shots.count < 8 ? #selector(addScreenshot) : nil, keyEquivalent: "")
+        screenshot.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: nil)
+        let recording = NSMenuItem(title: videos.isEmpty ? "Screen recording…" : "Another screen recording… (\(videos.count) of \(ReplayWriter.maxClips))", action: canAddRecording ? #selector(addRecording) : nil, keyEquivalent: "")
+        recording.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+        recording.toolTip = "Hides the composer while you record the display, a window or an area, then adds the clip here. ⌥⇧G also works."
+        for item in [screenshot, recording] {
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: addScreenshotButton.bounds.height + 4), in: addScreenshotButton)
+    }
+
+    @objc func addRecording() {
+        guard canEditAttachments, canAddRecording, let record = AppshotComposer.onRecord else { return }
+        recordingClip = true
+        speech.cancel()
+        skillPopover.close()
+        contextPopover.close()
+        mentionCompletion.dismiss()
+        refreshSendAvailability()
+        window?.orderOut(nil)
+        record(self)
+    }
+
+    // Called by the helper when the clip is saved, or with nil when recording was cancelled.
+    func recordingFinished(_ video: [String: Any]?, events: [[String: Any]] = []) {
+        guard recordingClip else { return }
+        recordingClip = false
+        if let video, videos.count < ReplayWriter.maxClips {
+            videos.append(video)
+            if !events.isEmpty { context["events"] = ["entries": events] }
+            manifest = nil
+            status.stringValue = "Recording added · Click it to review or trim."
+        }
+        refreshAttachments()
+        redistributeFrames()
+        refreshSendAvailability()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeFirstResponder(textView)
+    }
+
+    // Each clip gets its share of the six key frames sent to OpenCode.
+    func redistributeFrames() {
+        let count = ReplayWriter.framesPerClip(videos.count)
+        guard videos.contains(where: { ($0["frames"] as? [[String: Any]])?.count != count }) else { return }
+        let generation = UUID()
+        frameGeneration = generation
+        preparingFrames = true
+        refreshSendAvailability()
+        let current = videos
+        Task { @MainActor in
+            var updated: [[String: Any]] = []
+            for video in current { updated.append((try? await ReplayWriter.reframe(video, count: count)) ?? video) }
+            guard frameGeneration == generation else { return }
+            videos = updated
+            preparingFrames = false
+            manifest = nil
+            refreshAttachments()
+            refreshSendAvailability()
+        }
+    }
+
+    func reviewVideo(at index: Int) {
+        guard canEditAttachments, !preparingFrames, videos.indices.contains(index) else { return }
+        let review = ClipReviewController(video: videos[index], context: context, frameCount: ReplayWriter.framesPerClip(videos.count))
+        reviewingClip = true
+        refreshSendAvailability()
+        Task { @MainActor in
+            let result = await review.run()
+            reviewingClip = false
+            switch result {
+            case .keep: break
+            case .remove:
+                removeVideo(at: index)
+            case let .replace(trimmed):
+                if videos.indices.contains(index) {
+                    videos[index] = trimmed
+                    manifest = nil
+                    status.stringValue = "Clip trimmed to \(Int(((trimmed["durationSeconds"] as? NSNumber)?.doubleValue ?? 0).rounded())) s."
+                }
+            }
+            refreshAttachments()
+            refreshSendAvailability()
+            window?.makeKeyAndOrderFront(nil)
+            withExtendedLifetime(review) {}
+        }
     }
 
     func removeScreenshot(at index: Int) {
@@ -612,15 +716,16 @@ struct ComposerEndpoint: Decodable {
         refreshAttachments()
     }
 
-    func removeVideo() {
-        guard textView.isEditable, !sending, !addingScreenshot, preparedSession == nil, !videos.isEmpty else { return }
-        videos.removeAll()
+    func removeVideo(at index: Int) {
+        guard canEditAttachments, videos.indices.contains(index) else { return }
+        videos.remove(at: index)
         manifest = nil
         refreshAttachments()
+        redistributeFrames()
     }
 
     @objc func addScreenshot() {
-        guard textView.isEditable, !sending, !addingScreenshot, preparedSession == nil, shots.count < 8 else { return }
+        guard canEditAttachments, shots.count < 8 else { return }
         addingScreenshot = true
         speech.cancel()
         skillPopover.close()
@@ -795,7 +900,7 @@ struct ComposerEndpoint: Decodable {
     }
 
     @objc func send() {
-        guard !sending, !submitted, !speech.isRunning, let endpoint = selectedEndpoint else { return }
+        guard !sending, !submitted, !speech.isRunning, !preparingFrames, !recordingClip, !reviewingClip, let endpoint = selectedEndpoint else { return }
         guard hasDescription else {
             status.stringValue = "Describe the problem before continuing."
             window?.makeFirstResponder(textView)
@@ -877,7 +982,7 @@ struct ComposerEndpoint: Decodable {
         skillsButton.isEnabled = enabled
         microphone.isEnabled = enabled
         annotateButton.isEnabled = enabled
-        addScreenshotButton.isEnabled = enabled && shots.count < 8
+        addScreenshotButton.isEnabled = enabled && (shots.count < 8 || canAddRecording)
         for case let thumbnail as ScreenshotThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for case let thumbnail as VideoThumbnailView in thumbnailStrip.arrangedSubviews { thumbnail.setEnabled(enabled) }
         for view in skillChips.arrangedSubviews { (view as? NSButton)?.isEnabled = enabled }
@@ -887,9 +992,10 @@ struct ComposerEndpoint: Decodable {
         sendButton.isEnabled = enabled
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool { !sending && !addingScreenshot }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { !sending && !addingScreenshot && !recordingClip && !reviewingClip }
 
     func windowWillClose(_ notification: Notification) {
+        if AppshotComposer.current === self { AppshotComposer.current = nil }
         skillPopover.close()
         contextPopover.close()
         mentionCompletion.dismiss()

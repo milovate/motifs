@@ -60,9 +60,9 @@ test("videos outside the captures folder or with the wrong type are refused", as
     await writeFile(manifest, JSON.stringify({ schema: BUNDLE_SCHEMA, media: [{ kind: "video", video }] }));
     await assert.rejects(readBundle(directory, manifest), message);
   }
-  const two = path.join(directory, `bundle-${randomUUID()}.json`);
-  await writeFile(two, JSON.stringify({ schema: BUNDLE_SCHEMA, media: [{ kind: "video", video: path.join(directory, "replay.mp4") }, { kind: "video", video: path.join(directory, "replay.mp4") }] }));
-  await assert.rejects(readBundle(directory, two), /one screen recording/);
+  const four = path.join(directory, `bundle-${randomUUID()}.json`);
+  await writeFile(four, JSON.stringify({ schema: BUNDLE_SCHEMA, media: Array.from({ length: 4 }, () => ({ kind: "video", video: path.join(directory, "replay.mp4") })) }));
+  await assert.rejects(readBundle(directory, four), /up to 3 screen recordings/);
 });
 
 test("the draft describes the recording, numbers its frames after the screenshots and times events", async (t) => {
@@ -91,12 +91,59 @@ test("Markdown links the recording and the folder export copies it with its fram
   assert.deepEqual(await readFile(path.join(result.path, "recording.mp4")), MP4);
   const exported = JSON.parse(await readFile(path.join(result.path, "bundle.json"), "utf8"));
   const video = exported.media.find((entry) => entry.kind === "video");
-  assert.deepEqual({ ...video, frames: video.frames.length }, { kind: "video", video: "recording.mp4", source: "replay", startedAt: "2026-10-29T10:00:00Z", durationSeconds: 30, frames: 6 });
+  assert.deepEqual({ ...video, frames: video.frames.length }, { kind: "video", video: "recording.mp4", source: "replay", area: "display", startedAt: "2026-10-29T10:00:00Z", durationSeconds: 30, pauses: [], frames: 6 });
   assert.ok(!JSON.stringify(exported).includes(path.basename(directory)), "exports carry no private paths");
   const readme = await readFile(path.join(result.path, "README.md"), "utf8");
   assert.match(readme, /\[Open the MP4\]\(<recording\.mp4>\)/);
   assert.match(readme, /!\[Frame at \+25\.0 s\]\(<recording-frame-6\.png>\)/);
   assert.match(markdownBundle(bundle, "n", () => "s.png"), new RegExp(`<\\/[^>]*${path.basename(directory)}\\/replay-frame-0\\.png>`), "clipboard Markdown uses absolute local frame paths");
+});
+
+test("several clips share six key frames, describe what they recorded and skip paused time", async (t) => {
+  const { directory } = await videoBundle(t);
+  const clip = async (name, extra) => {
+    const mp4 = path.join(directory, `${name}.mp4`);
+    await writeFile(mp4, MP4);
+    const frames = [];
+    for (let index = 0; index < 4; index += 1) {
+      const frame = path.join(directory, `${name}-frame-${index}.png`);
+      await writeFile(frame, PNG);
+      frames.push({ screenshot: frame, offsetSeconds: index });
+    }
+    return { kind: "video", video: mp4, source: "recording", frames, ...extra };
+  };
+  const media = [
+    await clip("one", { area: "window", target: "Safari", startedAt: "2026-10-29T10:00:00Z", durationSeconds: 20, pauses: [{ atSeconds: 5, durationSeconds: 60 }] }),
+    await clip("two", { area: "area", target: "400 × 300 area", startedAt: "2026-10-29T10:05:00Z", durationSeconds: 10 }),
+    await clip("three", { area: "bogus", startedAt: "2026-10-29T10:10:00Z", durationSeconds: 5 }),
+  ];
+  const events = [
+    { time: "2026-10-29T10:00:03Z", kind: "click", app: "Safari", role: "AXButton", title: "Before pause" },
+    { time: "2026-10-29T10:00:30Z", kind: "click", app: "Safari", role: "AXButton", title: "During pause" },
+    { time: "2026-10-29T10:01:10Z", kind: "click", app: "Safari", role: "AXButton", title: "After pause" },
+    { time: "2026-10-29T10:05:04Z", kind: "click", app: "Notes", role: "AXButton", title: "Second clip" },
+  ];
+  const manifest = path.join(directory, `bundle-${randomUUID()}.json`);
+  await writeFile(manifest, JSON.stringify({ schema: BUNDLE_SCHEMA, media, context: { events: { entries: events } }, include: {} }));
+  const bundle = await readBundle(directory, manifest);
+  assert.deepEqual(bundle.videos.map((video) => video.frames.length), [4, 2, 0], "at most six frames across all clips");
+  assert.deepEqual(bundle.videos.map((video) => video.area), ["window", "area", "display"]);
+  const draft = draftText(bundle, "Checkout breaks");
+  assert.match(draft, /Screen recording 1: 20\.0 s of the "Safari" window, starting 2026-10-29T10:00:00Z\. Capture Studio's own windows are not recorded\. Paused 1 time; paused time is not in the clip\.\nKey frames attached as images 1–4/);
+  assert.match(draft, /Screen recording 2: 10\.0 s of a 400 × 300 area of the screen[\s\S]*Key frames attached as images 5–6/);
+  assert.match(draft, /Screen recording 3: 5\.0 s of the display[\s\S]*No key frames were extracted/);
+  assert.match(draft, /"Before pause" in Safari \(\+3\.0 s in screen recording 1\)/);
+  assert.match(draft, /"During pause" in Safari\n/, "events while paused have no offset");
+  assert.match(draft, /"After pause" in Safari \(\+10\.0 s in screen recording 1\)/);
+  assert.match(draft, /"Second clip" in Notes \(\+4\.0 s in screen recording 2\)/);
+  const result = await folderDestination(path.join(directory, "exports")).prepare(bundle, { id: "exports" }, { note: "note", requestID: randomUUID() });
+  const files = (await readdir(result.path)).filter((file) => file.startsWith("recording")).sort();
+  assert.deepEqual(files, ["recording-2-frame-1.png", "recording-2-frame-2.png", "recording-2.mp4", "recording-3.mp4", "recording-frame-1.png", "recording-frame-2.png", "recording-frame-3.png", "recording-frame-4.png", "recording.mp4"]);
+  const exported = JSON.parse(await readFile(path.join(result.path, "bundle.json"), "utf8"));
+  assert.deepEqual(exported.media.map((entry) => [entry.video, entry.target, entry.pauses.length]), [["recording.mp4", "Safari", 1], ["recording-2.mp4", "400 × 300 area", 0], ["recording-3.mp4", undefined, 0]]);
+  const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "note", requestID: randomUUID() });
+  assert.equal(copied.message, "Copied Markdown with 3 recording paths.");
+  assert.match(copied.text, /## Screen recording 2 · 10\.0 s of a 400 × 300 area of the screen/);
 });
 
 test("bundles without video still read as before", async (t) => {

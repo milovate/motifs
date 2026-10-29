@@ -21,7 +21,7 @@ import AppKit
     NSApp.mainMenu = menu
 }
 
-@MainActor final class ComposerPanel: NSPanel {
+@MainActor class ComposerPanel: NSPanel {
     override var contentView: NSView? {
         didSet {
             // Clip the native frame as well as the material. Otherwise the
@@ -95,7 +95,7 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {
         if let layout = layoutManager, let container = textContainer {
             let origin = textContainerOrigin
-            NSColor.controlAccentColor.withAlphaComponent(0.08).setFill()
+            NSColor.controlAccentColor.withAlphaComponent(0.3).setFill()
             for range in mentionRanges where NSMaxRange(range) <= (string as NSString).length {
                 let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
                 layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
@@ -301,8 +301,9 @@ import AppKit
         imageButton.layer?.masksToBounds = true
         imageButton.layer?.borderWidth = 0.5
         imageButton.layer?.borderColor = NSColor.separatorColor.cgColor
-        imageButton.toolTip = "\(label), \(Int(seconds.rounded())) s — open the video. Key frames are sent as images; the video stays on this Mac."
-        imageButton.setAccessibilityLabel("Open \(label.lowercased()), \(Int(seconds.rounded())) seconds")
+        let target = (video["target"] as? String).map { " of \($0)" } ?? ""
+        imageButton.toolTip = "\(label)\(target), \(Int(seconds.rounded())) s — click to review or trim. Key frames are sent as images; the video stays on this Mac."
+        imageButton.setAccessibilityLabel("Review \(label.lowercased())\(target), \(Int(seconds.rounded())) seconds")
         imageButton.target = self
         imageButton.action = #selector(open)
         badge.stringValue = "▶ \(Int(seconds.rounded()))s"
@@ -354,13 +355,19 @@ import AppKit
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
-        scroll.drawsBackground = false
+        // The popover is translucent; an opaque inset keeps the preview readable over any window.
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
+        scroll.wantsLayer = true
+        scroll.layer?.cornerRadius = 8
+        scroll.layer?.masksToBounds = true
         scroll.documentView = preview
         preview.isEditable = false
         preview.isSelectable = true
         preview.drawsBackground = false
+        preview.textContainerInset = NSSize(width: 6, height: 6)
         preview.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        preview.textColor = .secondaryLabelColor
+        preview.textColor = .textColor
         preview.isVerticallyResizable = true
         preview.autoresizingMask = [.width]
         preview.textContainer?.widthTracksTextView = true
@@ -375,7 +382,7 @@ import AppKit
         toggles.spacing = 10
         let privacy = NSTextField(wrappingLabelWithString: "Location and keystrokes are never collected. Logs and page content are untrusted. Unchecked sources are not sent to any destination.")
         privacy.font = .systemFont(ofSize: 10)
-        privacy.textColor = .tertiaryLabelColor
+        privacy.textColor = .secondaryLabelColor
         let stack = NSStackView(views: [sources, scroll, toggles, privacy])
         stack.orientation = .vertical
         stack.alignment = .leading

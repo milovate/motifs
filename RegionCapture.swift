@@ -22,6 +22,7 @@ func screenRegionOutputSize(_ region: CGRect, scale: CGFloat) -> CGSize {
     var selection: CGRect?
     var onSelect: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
+    var hint = "Drag to capture a region · Escape to cancel"
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -38,7 +39,6 @@ func screenRegionOutputSize(_ region: CGRect, scale: CGFloat) -> CGSize {
             let text = "\(Int(selection.width)) × \(Int(selection.height))"
             (text as NSString).draw(at: CGPoint(x: min(bounds.maxX - 110, selection.minX + 6), y: max(8, selection.minY - 24)), withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white, .backgroundColor: NSColor.black.withAlphaComponent(0.6)])
         } else {
-            let hint = "Drag to capture a region · Escape to cancel"
             let size = (hint as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium)])
             (hint as NSString).draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: NSColor.white])
         }
@@ -69,6 +69,7 @@ func screenRegionOutputSize(_ region: CGRect, scale: CGFloat) -> CGSize {
     var panels: [NSPanel] = []
     var completion: (((CGRect, CGDirectDisplayID, CGFloat)?) -> Void)?
     var activationObserver: NSObjectProtocol?
+    var hint: String?
 
     func show() {
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
@@ -91,6 +92,7 @@ func screenRegionOutputSize(_ region: CGRect, scale: CGFloat) -> CGSize {
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
             let view = RegionSelectionView(frame: CGRect(origin: .zero, size: screen.frame.size))
+            if let hint { view.hint = hint }
             view.onSelect = { [weak self] rect in self?.finish((rect, number.uint32Value, screen.backingScaleFactor)) }
             view.onCancel = { [weak self] in self?.finish(nil) }
             panel.contentView = view
@@ -114,16 +116,21 @@ func screenRegionOutputSize(_ region: CGRect, scale: CGFloat) -> CGSize {
 
 // The overlay dims the live desktop; no full-screen image is saved. Only the
 // user's completed region is captured, and no outside accessibility text is read.
-@MainActor func captureScreenRegion(output: String) async throws -> [String: Any]? {
-    guard CGPreflightScreenCaptureAccess() else { throw captureError("Screen Recording permission is required to capture a region.") }
+@MainActor func chooseScreenRegion(hint: String? = nil) async -> (CGRect, CGDirectDisplayID, CGFloat)? {
     let picker = RegionSelectionController()
+    picker.hint = hint
     let selected = await withCheckedContinuation { continuation in
         picker.completion = { continuation.resume(returning: $0) }
         picker.show()
         NSApp.activate(ignoringOtherApps: true)
     }
     withExtendedLifetime(picker) {}
-    guard let (region, displayID, scale) = selected else { return nil }
+    return selected
+}
+
+@MainActor func captureScreenRegion(output: String) async throws -> [String: Any]? {
+    guard CGPreflightScreenCaptureAccess() else { throw captureError("Screen Recording permission is required to capture a region.") }
+    guard let (region, displayID, scale) = await chooseScreenRegion() else { return nil }
     // Let the overlay leave the compositor before starting the capture.
     try await Task.sleep(nanoseconds: 150_000_000)
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)

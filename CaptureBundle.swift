@@ -135,7 +135,7 @@ func writeCaptureBundle(shots: [[String: Any]], videos: [[String: Any]] = [], no
         "id": id.uuidString.lowercased(),
         "createdAt": ISO8601DateFormatter().string(from: now),
         "note": note,
-        "media": shots.map { $0.merging(["kind": "image"]) { current, _ in current } } + videos.prefix(1).map { $0.merging(["kind": "video"]) { _, new in new } },
+        "media": shots.map { $0.merging(["kind": "image"]) { current, _ in current } } + videos.prefix(3).map { $0.merging(["kind": "video"]) { _, new in new } },
         "context": context,
         "include": include.dictionary,
     ]
@@ -179,7 +179,7 @@ func loadCaptureBundle(path: String, output: String) throws -> LoadedBundle {
           raw["schema"] as? String == captureBundleSchema, let allMedia = raw["media"] as? [[String: Any]] else { throw captureError("This capture bundle is invalid or from a newer version.") }
     let media = allMedia.filter { $0["kind"] as? String != "video" }
     let videoEntries = allMedia.filter { $0["kind"] as? String == "video" }
-    guard media.count <= 8, videoEntries.count <= 1 else { throw captureError("This capture bundle is invalid or from a newer version.") }
+    guard media.count <= 8, videoEntries.count <= 3 else { throw captureError("This capture bundle is invalid or from a newer version.") }
     let videos = videoEntries.compactMap { restoredVideo($0, root: root) }
     var shots: [[String: Any]] = []
     for shot in media {

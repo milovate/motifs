@@ -44,23 +44,63 @@ func feed(_ pipeline: ReplayPipeline, from start: Double, seconds: Double, fps: 
         if let delta = replay.first(where: { !$0.keyframe }) { empty.append(delta) }
         precondition(empty.frames.isEmpty, "a buffer never starts with a delta frame")
 
-        pipeline.startRecording()
-        feed(pipeline, from: 1060, seconds: 8, fps: 10)
-        let recorded = pipeline.stopRecording()
-        precondition(recorded.first?.keyframe == true && (recorded.first?.time ?? 0) >= 1060, "recordings start on a forced keyframe at the start")
-        precondition(recorded.count >= 78, "recordings keep every frame since the start (kept \(recorded.count))")
-        precondition(pipeline.stopRecording().isEmpty, "stopping clears the recording")
+        pipeline.seal(at: 1075)
+        let sealed = pipeline.replayFrames()
+        precondition(abs((sealed.last?.time ?? 0) - 1075) < 0.01 && (sealed.last?.time ?? 0) - (sealed.first?.time ?? 0) <= 32.1, "a still screen keeps the replay ending now")
         pipeline.setReplay(false)
         precondition(pipeline.replayFrames().isEmpty, "turning replay off discards the buffer")
+
+        let recorder = ReplayPipeline()
+        _ = recorder.configure(width: 320, height: 240, fps: 10)
+        recorder.startRecording(at: 2000)
+        feed(recorder, from: 2000, seconds: 8, fps: 10)
+        let recorded = recorder.stopRecording().frames
+        precondition(recorded.first?.keyframe == true && (recorded.first?.time ?? 0) >= 2000, "recordings start on a forced keyframe at the start")
+        precondition(recorded.count >= 78, "recordings keep every frame since the start (kept \(recorded.count))")
+        precondition(recorder.stopRecording().frames.isEmpty, "stopping clears the recording")
+
+        recorder.startRecording(at: 3000)
+        feed(recorder, from: 3000, seconds: 5, fps: 10)
+        precondition(abs(recorder.recordedSeconds(at: 3005) - 5) < 0.01, "the timer counts recorded time")
+        recorder.pauseRecording(at: 3005)
+        feed(recorder, from: 3005, seconds: 20, fps: 10)
+        precondition(recorder.isPaused && abs(recorder.recordedSeconds(at: 3020) - 5) < 0.01, "the timer stops while paused")
+        recorder.resumeRecording(at: 3025)
+        feed(recorder, from: 3010, seconds: 1, fps: 10)
+        feed(recorder, from: 3025, seconds: 5, fps: 10)
+        recorder.seal(at: 3035)
+        let paused = recorder.stopRecording()
+        let pausedSpan = (paused.frames.last?.time ?? 0) - (paused.frames.first?.time ?? 0)
+        precondition(abs(pausedSpan - 15) < 0.2, "paused time is cut from the clip and a still ending is kept (span \(pausedSpan))")
+        precondition(zip(paused.frames, paused.frames.dropFirst()).allSatisfy { $0.time < $1.time }, "frames captured during a pause never go back in time")
+        precondition(paused.pauses.count == 1 && abs(paused.pauses[0].at - 5) < 0.2 && abs(paused.pauses[0].duration - 20) < 0.01, "pauses are recorded in clip time (\(paused.pauses))")
+        precondition(paused.frames.contains { $0.keyframe && $0.time > 3005 }, "resuming starts a new keyframe")
+
+        recorder.startRecording(at: 4000)
+        feed(recorder, from: 4000, seconds: 3, fps: 10)
+        recorder.startRecording(at: 4003)
+        feed(recorder, from: 4003, seconds: 2, fps: 10)
+        let restarted = recorder.stopRecording().frames
+        precondition((restarted.first?.time ?? 0) >= 4003 && restarted.first?.keyframe == true, "restarting discards what was recorded")
 
         let limited = ReplayPipeline()
         _ = limited.configure(width: 320, height: 240, fps: 10)
         var limitReached = false
         limited.onRecordingLimit = { limitReached = true }
-        limited.startRecording()
+        limited.startRecording(at: 0)
         feed(limited, from: 0, seconds: 320, fps: 1)
-        let longest = limited.stopRecording()
+        let longest = limited.stopRecording().frames
         precondition(limitReached && (longest.last?.time ?? 0) - (longest.first?.time ?? 0) <= ReplayPipeline.recordingLimit + 1, "recordings stop at 5 minutes")
+
+        let clip: [String: Any] = ["startedAt": "2026-10-29T10:00:00.000Z", "durationSeconds": 30, "pauses": [["atSeconds": 10, "durationSeconds": 60]]]
+        let base = ReplayWriter.parseDate("2026-10-29T10:00:00Z")!
+        precondition(ReplayWriter.offset(of: base.addingTimeInterval(4), in: clip) == 4, "events before a pause keep their time")
+        precondition(ReplayWriter.offset(of: base.addingTimeInterval(30), in: clip) == nil, "events during a pause are not in the clip")
+        precondition(ReplayWriter.offset(of: base.addingTimeInterval(75), in: clip) == 15, "events after a pause skip the paused time")
+        precondition(ReplayWriter.offset(of: base.addingTimeInterval(-1), in: clip) == nil && ReplayWriter.offset(of: base.addingTimeInterval(200), in: clip) == nil, "events outside the clip have no offset")
+        precondition(abs((ReplayWriter.parseDate("2026-10-29 15:30:00.123456+0530")?.timeIntervalSince(base) ?? 99) - 0.123) < 0.001, "unified log times parse")
+        precondition([1, 2, 3, 4].map(ReplayWriter.framesPerClip) == [6, 3, 2, 2], "six frames are split across up to three clips")
+        precondition(RecordingArea.window(pid: 1, app: "Safari").details["target"] as? String == "Safari" && RecordingArea.area(CGRect(x: 0, y: 0, width: 400, height: 300), display: 1, scale: 2).details["area"] as? String == "area", "recordings describe what they captured")
 
         precondition(ReplayWriter.offsets(duration: 30, count: 6).map { ($0 * 100).rounded() / 100 } == [0, 5.98, 11.96, 17.94, 23.92, 29.9], "six evenly spaced key frames")
         precondition(ReplayWriter.offsets(duration: 0, count: 6) == [0], "a single frame for an instant recording")
@@ -79,7 +119,7 @@ func feed(_ pipeline: ReplayPipeline, from start: Double, seconds: Double, fps: 
         precondition(tracks.count == 1 && abs(duration - span) < 0.5, "the MP4 plays for the buffered span (\(duration) s)")
         let durationSeconds = (video["durationSeconds"] as? NSNumber)?.doubleValue ?? 0
         precondition(abs(durationSeconds - duration) < 0.3 && video["source"] as? String == "replay" && video["kind"] as? String == "video", "the media entry describes the recording")
-        precondition((video["startedAt"] as? String).flatMap(ISO8601DateFormatter().date(from:)) != nil, "the start time is recorded")
+        precondition((video["startedAt"] as? String).flatMap(ReplayWriter.parseDate) != nil, "the start time is recorded")
         let frames = video["frames"] as? [[String: Any]] ?? []
         let offsets = frames.compactMap { ($0["offsetSeconds"] as? NSNumber)?.doubleValue }
         precondition(frames.count == 6 && offsets == offsets.sorted() && (offsets.last ?? 0) <= duration && (offsets.last ?? 0) > 25, "six key frames span the recording (\(offsets))")
@@ -97,6 +137,28 @@ func feed(_ pipeline: ReplayPipeline, from start: Double, seconds: Double, fps: 
         precondition(brightness(images[0]) < brightness(images[5]), "frames come from increasing times in the recording")
 
         do { _ = try await ReplayWriter.export([], source: "recording", output: output.path); preconditionFailure("empty recordings are refused") } catch {}
+
+        let three = try await ReplayWriter.reframe(video, count: 3)
+        let threeFrames = three["frames"] as? [[String: Any]] ?? []
+        precondition(threeFrames.count == 3 && threeFrames.allSatisfy { ($0["screenshot"] as? String)?.contains("-3-frame-") == true } && (video["frames"] as? [[String: Any]])?.allSatisfy { FileManager.default.fileExists(atPath: $0["screenshot"] as! String) } == true, "fewer frames per clip are extracted without touching the originals")
+        let unchanged = try await ReplayWriter.reframe(video, count: 6)
+        precondition((unchanged["frames"] as? [[String: Any]])?.map { $0["screenshot"] as! String } == (video["frames"] as? [[String: Any]])?.map { $0["screenshot"] as! String }, "an unchanged count is kept")
+
+        var withPauses = video
+        withPauses["pauses"] = [["atSeconds": 2, "durationSeconds": 50], ["atSeconds": 20, "durationSeconds": 5]]
+        let trimmed = try await ReplayWriter.trim(withPauses, from: 10, to: 22, frameCount: 2)
+        let trimmedMovie = trimmed["video"] as! String
+        let trimmedDuration = try await AVURLAsset(url: URL(fileURLWithPath: trimmedMovie)).load(.duration).seconds
+        precondition(trimmedMovie != movie.path && FileManager.default.fileExists(atPath: movie.path), "trimming writes a new MP4 and keeps the original")
+        precondition(abs(trimmedDuration - 12) < 0.3 && abs(((trimmed["durationSeconds"] as? NSNumber)?.doubleValue ?? 0) - 12) < 0.3, "the trimmed clip covers the selection (\(trimmedDuration) s)")
+        let trimmedStart = (trimmed["startedAt"] as? String).flatMap(ReplayWriter.parseDate)!
+        let originalStart = (video["startedAt"] as? String).flatMap(ReplayWriter.parseDate)!
+        precondition(abs(trimmedStart.timeIntervalSince(originalStart) - 60) < 0.01, "the start moves by the trimmed time plus earlier pauses")
+        precondition(ReplayWriter.pauses(of: trimmed) == [RecordingPause(at: 10, duration: 5)], "pauses inside the selection are kept in clip time")
+        let trimmedFrames = trimmed["frames"] as? [[String: Any]] ?? []
+        let firstTrimmed = try Data(contentsOf: URL(fileURLWithPath: trimmedFrames[0]["screenshot"] as! String))
+        precondition(trimmedFrames.count == 2 && brightness(firstTrimmed) > brightness(images[0]), "key frames come from the selected range")
+        do { _ = try await ReplayWriter.trim(video, from: 3, to: 3.2, frameCount: 6); preconditionFailure("tiny selections are refused") } catch {}
         print("Capture Studio replay buffer, recording, MP4 writer and key frame checks passed")
     }
 }

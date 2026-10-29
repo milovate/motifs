@@ -248,35 +248,49 @@ the extension and delete those manifest files.
 
 ### Instant replay and screen recording
 
-Both record the main display at about 10 frames per second, scaled to at most 1920
-pixels on the long side, as H.264 video without audio. Capture Studio's own windows,
-including the composer, are excluded. Both use the existing Screen Recording
-permission, and macOS shows its own screen-recording indicator while either runs.
+Both record at about 10 frames per second, scaled to at most 1920 pixels on the long
+side, as H.264 video without audio. Capture Studio's own windows, including the
+composer and the recording controls, are excluded. Both use the existing Screen
+Recording permission, and macOS shows its own screen-recording indicator while either runs.
 
 - **Instant replay** is off by default. **Appshot → Context sources → Keep instant
-  replay (last 30 s)** keeps the most recent 30 seconds in memory (capped at 150 MB);
-  older video is discarded continuously, and nothing is written to disk. The menu-bar
-  icon shows a ring while it is on. Pressing **Option+G** writes those 30 seconds to an
-  MP4 and attaches it to the composer with the screenshot. Turning it off or quitting
-  the helper discards the buffer. The setting is stored in the owner-only `settings.json`.
-- **Screen recording** starts and stops with **Appshot → Start screen recording** or
-  **Option+Shift+G**. The menu-bar icon shows a filled dot while recording. Recordings
-  stop by themselves after 5 minutes. Stopping opens the composer with the recording
-  and freshly collected context.
+  replay (last 30 s)** keeps the most recent 30 seconds of the main display in memory
+  (capped at 150 MB); older video is discarded continuously, and nothing is written to
+  disk. The menu-bar icon shows a ring while it is on. Pressing **Option+G** writes those
+  30 seconds to an MP4 and attaches it to the composer with the screenshot. Turning it
+  off or quitting the helper discards the buffer. The setting is stored in the
+  owner-only `settings.json`.
+- **Screen recording** starts from **Appshot → Start screen recording…**,
+  **Option+Shift+G**, or the composer's add button (**Screen recording…**). A bar asks
+  what to record: the **Display**, the front **Window** of the app you were using (only
+  that window, even when others overlap it), or an **Area** you drag. Return starts and
+  Escape cancels. While recording, a floating pill shows the time with **Restart**
+  (discard and start over), **Pause**/**Resume** (paused time is left out of the clip)
+  and **Stop**; an area recording also shows a dashed outline. The menu-bar icon shows a
+  filled dot. Recordings stop by themselves after 5 minutes of recorded time. Stopping
+  adds the clip to the composer that asked for it, or opens a new composer with
+  freshly collected context.
 
-The MP4 and six key frames (PNG, at most 1280 pixels on the long side) are saved
-owner-only in the captures folder, and the bundle records the recording's source,
-start time, duration and frame offsets. The composer shows the recording as a
-removable attachment with its duration; click it to open the MP4. On send:
+A composer holds up to three clips. Each is saved owner-only in the captures folder
+as an MP4 plus key frames (PNG, at most 1280 pixels on the long side). Six key frames
+are sent in total, split across the clips: six for one clip, three each for two, two
+each for three. The bundle records each clip's source, what it captured, start time,
+duration, pauses and frame offsets.
+
+Click a clip to review it: play it, see blue markers for clicks, red for console
+errors and failed requests, and orange for warnings, and drag the handles (or press
+I and O) to trim. **Use trimmed clip** writes a new MP4 for the selection and takes
+key frames from it; the original file is left in the captures folder. **Remove clip**
+detaches it. On send:
 
 - **OpenCode** attaches the key frames as images after the screenshots. The draft
-  lists their offsets and the time of each click, console message and failed request
-  within the recording. The MP4 itself stays on your Mac.
-- **Clipboard** Markdown links the MP4 and the key frames.
-- **Folder** export copies `recording.mp4` and `recording-frame-N.png`.
+  says what each clip recorded, lists the frame offsets, and gives the time of each
+  click, console message and failed request within its clip. The MP4s stay on your Mac.
+- **Clipboard** Markdown links the MP4s and the key frames.
+- **Folder** export copies `recording.mp4`, `recording-2.mp4`, … and their
+  `recording-frame-N.png` / `recording-2-frame-N.png` key frames.
 
-A draft holds at most one recording. The local video and frames are untrusted app
-content and are marked as such in the draft.
+The local video and frames are untrusted app content and are marked as such in the draft.
 
 The composer routes Command+A/C/X/V/Z and Command+Shift+Z locally, including in
 its borderless accessory window. Dictation shows permission/startup/finishing

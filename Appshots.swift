@@ -86,6 +86,11 @@ struct Appshots {
     var commandObserver: NSObjectProtocol?
     var workspaceObserver: NSObjectProtocol?
     var lastExternalApp: NSRunningApplication?
+    var choosingRecording = false
+    var controls: RecordingControls?
+    var outline: RecordingAreaOutline?
+    var controlsTimer: Timer?
+    weak var recordingComposer: AppshotComposer?
 
     init(output: String) { self.output = output }
 
@@ -98,7 +103,7 @@ struct Appshots {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon()
         let menu = NSMenu()
-        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
+        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording… (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
             entry.target = self
             menu.addItem(entry)
@@ -116,6 +121,7 @@ struct Appshots {
         if settings.recordClicks { events.start() }
         replay.onChange = { [weak self] in self?.refreshRecordingState() }
         replay.onRecordingLimit = { [weak self] in self?.stopRecordingAndCompose() }
+        AppshotComposer.onRecord = { [weak self] composer in self?.beginRecording(for: composer) }
         if settings.instantReplay {
             Task { @MainActor in
                 do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Capture Studio — instant replay could not start: " + error.localizedDescription }
@@ -170,30 +176,111 @@ struct Appshots {
     }
 
     func refreshRecordingState() {
-        recordItem?.title = replay.recording ? "Stop screen recording (⌥⇧G)" : "Start screen recording (⌥⇧G)"
+        recordItem?.title = replay.recording ? "Stop screen recording (⌥⇧G)" : "Start screen recording… (⌥⇧G)"
         updateStatusIcon()
+        controls?.update(seconds: replay.recordedSeconds, paused: replay.paused, limit: ReplayPipeline.recordingLimit)
     }
 
+    // With a composer open, the clip is added to it; otherwise stopping opens a new one.
     @objc func toggleRecording() {
         if replay.recording { stopRecordingAndCompose(); return }
+        if let composer = AppshotComposer.current, composer.canEditAttachments, composer.canAddRecording {
+            composer.addRecording()
+        } else if AppshotComposer.current == nil {
+            beginRecording(for: nil)
+        }
+    }
+
+    func beginRecording(for composer: AppshotComposer?) {
+        guard !replay.recording, !choosingRecording else { composer?.recordingFinished(nil); return }
+        choosingRecording = true
+        let foreground = NSWorkspace.shared.frontmostApplication
+        let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
         Task { @MainActor in
-            do { try await replay.startRecording() } catch {
+            defer { choosingRecording = false }
+            let bar = RecordingCaptureBar(appName: target?.localizedName)
+            let area: RecordingArea
+            switch await bar.choose() {
+            case nil:
+                composer?.recordingFinished(nil)
+                return
+            case .display:
+                area = .display
+            case .window:
+                guard let target else { composer?.recordingFinished(nil); return }
+                area = .window(pid: target.processIdentifier, app: target.localizedName ?? "App")
+                target.activate()
+            case .area:
+                guard let (rect, display, scale) = await chooseScreenRegion(hint: "Drag the area to record · Escape to cancel") else { composer?.recordingFinished(nil); return }
+                area = .area(rect, display: display, scale: scale)
+                target?.activate()
+            }
+            do {
+                try await replay.startRecording(area)
+            } catch {
+                composer?.recordingFinished(nil)
                 let alert = NSAlert()
                 alert.messageText = "Capture Studio could not start recording"
                 alert.informativeText = error.localizedDescription + "\nScreen recording uses the same Screen Recording permission as screenshots."
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 alert.runModal()
+                return
+            }
+            recordingComposer = composer
+            showRecordingControls(area: area)
+        }
+    }
+
+    func showRecordingControls(area: RecordingArea) {
+        let controls = RecordingControls()
+        controls.onStop = { [weak self] in self?.stopRecordingAndCompose() }
+        controls.onRestart = { [weak self] in self?.replay.restartRecording() }
+        controls.onPause = { [weak self] in
+            guard let self else { return }
+            self.replay.setPaused(!self.replay.paused)
+        }
+        var screen = NSScreen.main
+        if case let .area(rect, display, _) = area, let match = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display }) {
+            screen = match
+            outline = RecordingAreaOutline(rect: rect, on: match)
+            outline?.show()
+        }
+        controls.show(on: screen)
+        self.controls = controls
+        refreshRecordingState()
+        controlsTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.replay.recording else { return }
+                self.refreshRecordingState()
+                if self.replay.recordedSeconds >= ReplayPipeline.recordingLimit { self.stopRecordingAndCompose() }
             }
         }
     }
 
+    func closeRecordingControls() {
+        controlsTimer?.invalidate()
+        controlsTimer = nil
+        controls?.close()
+        controls = nil
+        outline?.close()
+        outline = nil
+    }
+
     func stopRecordingAndCompose() {
         guard replay.recording else { return }
+        closeRecordingControls()
+        let composer = recordingComposer
+        recordingComposer = nil
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
         Task { @MainActor in
             do {
-                let video = try await replay.stopRecording(output: output)
+                let open = composer.flatMap { $0.completion == nil ? nil : $0 }
+                let video = try await replay.stopRecording(output: output, frameCount: ReplayWriter.framesPerClip((open?.videos.count ?? 0) + 1))
+                if let open {
+                    open.recordingFinished(video, events: events.snapshot())
+                    return
+                }
                 while busy { try await Task.sleep(nanoseconds: 200_000_000) }
                 busy = true
                 defer { busy = false }
@@ -204,6 +291,7 @@ struct Appshots {
                 try await composeCapture(shots: [], videos: [video], context: context, pending: pending, output: output, returnTo: target)
             } catch {
                 refreshRecordingState()
+                composer?.recordingFinished(nil)
                 let alert = NSAlert()
                 alert.messageText = "Capture Studio could not save the recording"
                 alert.informativeText = error.localizedDescription
@@ -249,7 +337,7 @@ struct Appshots {
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
-        let replayFrames = replay.replayEnabled ? replay.pipeline.replayFrames() : []
+        let replayFrames = replay.replayClip()
         Task { @MainActor in
             defer { busy = false }
             do {
@@ -495,6 +583,7 @@ struct Appshots {
     @objc func quit() {
         if let hotkey { UnregisterEventHotKey(hotkey) }
         if let recordHotkey { UnregisterEventHotKey(recordHotkey) }
+        closeRecordingControls()
         if let handler { RemoveEventHandler(handler) }
         if let commandObserver { DistributedNotificationCenter.default().removeObserver(commandObserver) }
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }

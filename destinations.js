@@ -115,7 +115,8 @@ export function clipboardDestination() {
       if (chosen.id !== target.id) throw new Error("Unknown clipboard format.");
       const text = markdownBundle(bundle, request.note, (capture) => capture.screenshot);
       const count = bundle.media.length;
-      const parts = [count ? `${count} screenshot path${count === 1 ? "" : "s"}` : "", bundle.videos.length ? "the recording path" : ""].filter(Boolean);
+      const clips = bundle.videos.length;
+      const parts = [count ? `${count} screenshot path${count === 1 ? "" : "s"}` : "", clips === 1 ? "the recording path" : clips ? `${clips} recording paths` : ""].filter(Boolean);
       return { action: "copy-text", text, message: `Copied Markdown${parts.length ? ` with ${parts.join(" and ")}` : ""}.` };
     },
   };
@@ -140,7 +141,12 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
       await mkdir(folder, { mode: 0o700 });
       const names = bundle.media.map((_, index) => `screenshot-${index + 1}.png`);
       for (const [index, capture] of bundle.media.entries()) await copyFile(capture.screenshot, path.join(folder, names[index]));
-      const videoName = (video, index) => (index < 0 ? "recording.mp4" : `recording-frame-${index + 1}.png`);
+      // recording.mp4 for the first clip, recording-2.mp4 and so on for the others.
+      const videoName = (video, index) => {
+        const clip = bundle.videos.indexOf(video);
+        const stem = clip > 0 ? `recording-${clip + 1}` : "recording";
+        return index < 0 ? `${stem}.mp4` : `${stem}-frame-${index + 1}.png`;
+      };
       for (const video of bundle.videos) {
         await copyFile(video.video, path.join(folder, videoName(video, -1)));
         for (const [index, frame] of video.frames.entries()) await copyFile(frame.screenshot, path.join(folder, videoName(video, index)));
@@ -157,8 +163,11 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
             kind: "video",
             video: videoName(video, -1),
             source: video.source,
+            area: video.area,
+            target: video.target,
             startedAt: video.startedAt,
             durationSeconds: video.durationSeconds,
+            pauses: video.pauses,
             frames: video.frames.map((frame, index) => ({ screenshot: videoName(video, index), offsetSeconds: frame.offsetSeconds })),
           })),
         ],

@@ -234,16 +234,16 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let frameFiles = (1...3).map { output + "/replay-fixture-frame-\($0).png" }
         for file in frameFiles { try FileManager.default.copyItem(atPath: screenshot, toPath: file) }
         let video: [String: Any] = ["video": movie, "source": "replay", "startedAt": "2026-10-29T10:00:00Z", "durationSeconds": 30, "frames": frameFiles.enumerated().map { ["screenshot": $1, "offsetSeconds": Double($0) * 10] } + [["screenshot": output + "/gone.png", "offsetSeconds": 29]]]
-        let videoPath = try writeCaptureBundle(shots: shots, videos: [video, video], note: "With replay", context: [:], include: BundleInclude(), output: output)
+        let videoPath = try writeCaptureBundle(shots: shots, videos: [video, video, video, video], note: "With replay", context: [:], include: BundleInclude(), output: output)
         let videoRaw = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: videoPath))) as! [String: Any]
         let videoMedia = (videoRaw["media"] as? [[String: Any]] ?? []).filter { $0["kind"] as? String == "video" }
-        precondition(videoMedia.count == 1 && videoMedia[0]["video"] as? String == movie, "bundles store one typed video entry after the screenshots")
+        precondition(videoMedia.count == 3 && videoMedia[0]["video"] as? String == movie, "bundles store up to three typed video entries after the screenshots")
         let reopened = try loadCaptureBundle(path: videoPath, output: output)
-        precondition(reopened.shots.count == 1 && reopened.videos.count == 1 && (reopened.videos[0]["frames"] as? [[String: Any]])?.count == 3 && reopened.missingScreenshots == 0, "reopened bundles restore the recording and drop missing frames")
+        precondition(reopened.shots.count == 1 && reopened.videos.count == 3 && (reopened.videos[0]["frames"] as? [[String: Any]])?.count == 3 && reopened.missingScreenshots == 0, "reopened bundles restore the recording and drop missing frames")
         precondition(recentBundles(output: output).first { $0.path.hasSuffix(URL(fileURLWithPath: videoPath).lastPathComponent) }?.screenshots == 1, "recent bundles count screenshots only")
         try FileManager.default.removeItem(atPath: movie)
         let withoutMovie = try loadCaptureBundle(path: videoPath, output: output)
-        precondition(withoutMovie.videos.isEmpty && withoutMovie.missingScreenshots == 1, "a deleted recording is reported")
+        precondition(withoutMovie.videos.isEmpty && withoutMovie.missingScreenshots == 3, "deleted recordings are reported")
         FileManager.default.createFile(atPath: movie, contents: Data([0, 0, 0, 24]))
 
         let withVideo = try AppshotComposer(shots: shots, videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
@@ -251,10 +251,92 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(handoff.count == 5 && handoff[0]["screenshot"] as? String == screenshot && handoff[1]["title"] as? String == "Frame 1 of 4", "recording frames follow the screenshots in the OpenCode handoff")
         precondition(handoff.dropFirst().allSatisfy { $0["capturedAt"] == nil && $0["app"] as? String == "Instant replay" }, "frames never become the insertion marker")
         precondition(withVideo.thumbnailStrip.arrangedSubviews.contains { $0 is VideoThumbnailView }, "the recording shows as an attachment")
-        withVideo.removeVideo()
+        precondition(withVideo.preparingFrames && !withVideo.sendButton.isEnabled, "a clip with the wrong number of frames is re-extracted before sending")
+        withVideo.preparingFrames = false
+        withVideo.removeVideo(at: 0)
         precondition(withVideo.videos.isEmpty && !withVideo.thumbnailStrip.arrangedSubviews.contains { $0 is VideoThumbnailView } && (withVideo.screenshotBundle["screenshots"] as? [[String: Any]])?.count == 1, "removing the recording drops it and its frames")
         let videoOnly = try AppshotComposer(shots: [], videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
-        precondition(!videoOnly.thumbnailStrip.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue.hasPrefix("No screenshots") == true }, "a recording alone is a valid capture")
+        precondition(!videoOnly.thumbnailStrip.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue.hasPrefix("No attachments") == true }, "a recording alone is a valid capture")
+
+        func clip(_ frames: Int, source: String = "recording") -> [String: Any] {
+            ["video": movie, "source": source, "startedAt": "2026-10-29T10:00:00Z", "durationSeconds": 20, "frames": Array(frameFiles.prefix(frames)).enumerated().map { ["screenshot": $1, "offsetSeconds": Double($0)] }]
+        }
+        let three = try AppshotComposer(shots: shots, videos: [clip(2), clip(2), clip(2), clip(2)], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let threeHandoff = three.screenshotBundle["screenshots"] as? [[String: Any]] ?? []
+        precondition(three.videos.count == 3 && !three.preparingFrames && three.thumbnailStrip.arrangedSubviews.filter { $0 is VideoThumbnailView }.count == 3, "up to three clips, two frames each")
+        precondition(threeHandoff.count == 7 && threeHandoff[3]["app"] as? String == "Screen recording 2" && threeHandoff[6]["title"] as? String == "Frame 2 of 2", "several clips are numbered in the handoff")
+        AppshotComposer.onRecord = nil
+        precondition(!three.canAddRecording, "recording needs the menu-bar helper")
+        var asked: AppshotComposer?
+        AppshotComposer.onRecord = { asked = $0 }
+        precondition(!three.canAddRecording, "no fourth clip")
+        three.removeVideo(at: 1)
+        precondition(three.videos.count == 2 && three.preparingFrames && !three.sendButton.isEnabled, "removing a clip re-splits the frames before sending")
+        three.preparingFrames = false
+        precondition(three.canAddRecording && three.addScreenshotButton.isEnabled, "the add menu offers another recording")
+        three.addRecording()
+        precondition(asked === three && three.recordingClip && !three.canEditAttachments && !three.sendButton.isEnabled && three.windowShouldClose(three.window!) == false, "recording hides the composer and locks it until the clip arrives")
+        three.recordingFinished(nil)
+        precondition(!three.recordingClip && three.videos.count == 2, "a cancelled recording changes nothing")
+        three.addRecording()
+        let freshEvents: [[String: Any]] = [["time": "2026-10-29T10:00:04Z", "kind": "click", "app": "Safari", "role": "AXButton", "title": "Buy"]]
+        three.recordingFinished(clip(3), events: freshEvents)
+        precondition(three.videos.count == 3 && ContextText.entries(three.context, "events").count == 1 && three.status.stringValue.hasPrefix("Recording added"), "a finished recording is added with the clicks made while recording")
+        AppshotComposer.onRecord = nil
+
+        let markerContext: [String: Any] = [
+            "events": ["entries": freshEvents + [["time": "2026-10-29T09:00:00Z", "kind": "click", "app": "Old"]]],
+            "console": ["entries": [["time": "2026-10-29T10:00:06.500Z", "level": "error", "message": "boom"], ["time": "2026-10-29T10:00:07Z", "level": "warning", "message": "slow"], ["time": "2026-10-29T10:00:08Z", "level": "log", "message": "noise"]]],
+            "network": ["entries": [["time": "2026-10-29T10:00:09Z", "method": "POST", "status": 500, "url": "https://x.test/pay"]]],
+        ]
+        let markers = clipMarkers(clip(2), context: markerContext)
+        precondition(markers.map(\.kind) == [.click, .error, .warning, .error] && markers.map(\.time) == [4, 6.5, 7, 9] && markers[3].label == "POST 500 https://x.test/pay", "clicks, errors, warnings and failed requests become timeline markers (\(markers))")
+        let review = ClipReviewController(video: clip(2), context: markerContext, frameCount: 2)
+        precondition(review.timeline.markers.count == 4 && !review.trimmed && review.useButton.title == "Use clip", "the review opens untrimmed")
+        review.timeline.trimIn = 5
+        review.timeline.trimOut = 12
+        review.refreshSelection()
+        precondition(review.trimmed && review.useButton.title == "Use trimmed clip" && review.selection.stringValue == "0:05.0 in · 0:07.0 selected of 0:20.0 · 0:12.0 out", "trim handles describe the selection (\(review.selection.stringValue))")
+        review.timeline.frame = NSRect(x: 0, y: 0, width: 220, height: 44)
+        precondition(abs(review.timeline.time(review.timeline.x(7)) - 7) < 0.01, "timeline positions map to clip time")
+
+        precondition(RecordingControls.format(65) == "01:05", "controls show minutes and seconds")
+        let controls = RecordingControls()
+        controls.update(seconds: 280, paused: true, limit: 300)
+        precondition(controls.time.stringValue == "04:40 · 20s left" && controls.pauseButton.symbolName == "play.fill" && controls.panel.sharingType == .none, "controls warn near the limit, show resume while paused and are never recorded")
+        let bar = RecordingCaptureBar(appName: nil)
+        precondition(!bar.modes.isEnabled(forSegment: 1) && bar.choice != .window && bar.panel.sharingType == .none, "window recording needs an app in front")
+        let windowBar = RecordingCaptureBar(appName: "A very long application name here")
+        windowBar.modes.selectedSegment = 2
+        precondition(windowBar.choice == .area && windowBar.modes.label(forSegment: 1)?.hasSuffix("…") == true, "the bar names the app and offers an area")
+        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+            func render(_ view: NSView, _ name: String, dark: Bool) throws {
+                view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                view.layoutSubtreeIfNeeded()
+                let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+                view.effectiveAppearance.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: representation) }
+                try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
+            }
+            try render(controls.panel.contentView!, "recording-controls", dark: true)
+            try render(windowBar.panel.contentView!, "recording-bar", dark: true)
+            let reviewContent = review.window!.contentView!
+            review.window!.contentView = nil
+            reviewContent.frame = NSRect(x: 0, y: 0, width: 780, height: 560)
+            try render(reviewContent, "clip-review", dark: false)
+            let picker = ComposerContextPicker()
+            picker.shots = shots
+            picker.context = markerContext
+            _ = picker.view
+            picker.view.frame = NSRect(x: 0, y: 0, width: 420, height: 360)
+            for dark in [true, false] {
+                picker.sources.selectedSegment = 0
+                picker.refresh()
+                try render(picker.view, "context-window-\(dark ? "dark" : "light")", dark: dark)
+                picker.sources.selectedSegment = 3
+                picker.refresh()
+                try render(picker.view, "context-network-\(dark ? "dark" : "light")", dark: dark)
+            }
+        }
         precondition(appshotStatusImage(.recording).isTemplate && appshotStatusImage(.replay).tiffRepresentation != appshotStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
         let settingsMode = try mode(output + "/settings.json")
         precondition(settingsMode == 0o600, "settings are owner-only")
