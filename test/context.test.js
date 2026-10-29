@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { BUNDLE_SCHEMA, contextSections, draftText, markdownBundle, readBundle, systemSummary } from "../bundle.js";
+import { BUNDLE_SCHEMA, contextSections, contextDocument, markdownBundle, readBundle, systemSummary } from "../bundle.js";
 import { folderDestination } from "../destinations.js";
 import { LIMITS, addEntry, createBuffers, networkEntry, redactUrl, sanitizeConsole, snapshot, windowSnapshots } from "../browser-extension/buffer.js";
 
@@ -44,7 +44,7 @@ test("every context source is normalized from the bundle and rendered in the dra
     "Storage: 50 GB free of 926 GB",
     "Thermal state: fair",
   ]);
-  const draft = draftText(bundle, "Checkout fails");
+  const draft = contextDocument(bundle);
   assert.match(draft, /<appshot_context source="console" title="Console \(2\)">\n\[2026-10-29T10:00:00Z\] ERROR page: TypeError: cart is undefined/);
   assert.match(draft, /FAULT com\.example\.sync: XPC connection lost/);
   assert.match(draft, /POST 500 https:\/\/api\.shop\.test\/cart\?token=\[redacted\] \(xmlhttprequest\)/);
@@ -57,7 +57,7 @@ test("every context source is normalized from the bundle and rendered in the dra
 
 test("each include flag removes exactly its source", async (t) => {
   const { bundle } = await bundleWith(t, { include: { console: false, network: false, events: false, customLogs: false, device: false } });
-  const draft = draftText(bundle, "note");
+  const draft = contextDocument(bundle);
   for (const missing of ["TypeError", "api.shop.test", "Clicked", "server.log", "Battery", "Google Chrome 131.0"]) assert.ok(!draft.includes(missing), missing);
   assert.match(draft, /Window text/);
   assert.deepEqual(contextSections(bundle), []);

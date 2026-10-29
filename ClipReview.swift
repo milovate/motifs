@@ -68,6 +68,7 @@ func clipTime(_ seconds: Double) -> String {
     private let inset: CGFloat = 14
 
     override var acceptsFirstResponder: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 70) }
 
     var strip: NSRect { NSRect(x: inset, y: 18, width: max(1, bounds.width - inset * 2), height: max(1, bounds.height - 22)) }
@@ -223,6 +224,11 @@ func clipTime(_ seconds: Double) -> String {
     }
 }
 
+// The only part of the review panel that moves it, so trimming and seeking never drag the window.
+@MainActor final class DragBar: NSStackView {
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+}
+
 enum ClipReviewResult {
     case keep
     case remove
@@ -261,7 +267,7 @@ enum ClipReviewResult {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.minSize = NSSize(width: 560, height: 420)
         super.init(window: panel)
         panel.delegate = self
@@ -304,8 +310,9 @@ enum ClipReviewResult {
         closeButton.compact = true
         closeButton.toolTip = "Close without changes (Escape)"
         closeButton.setAccessibilityLabel("Close without changes")
-        let header = NSStackView(views: [heading, NSView(), closeButton])
+        let header = DragBar(views: [heading, NSView(), closeButton])
         header.alignment = .centerY
+        header.toolTip = "Drag here to move"
         selection.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         selection.textColor = .secondaryLabelColor
         let legend = NSStackView(views: [("Click", ClipMarker.Kind.click), ("Error", .error), ("Warning", .warning)].map { name, kind in

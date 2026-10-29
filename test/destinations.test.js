@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile, readdir, realpath, stat, rm } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { BUNDLE_SCHEMA, readBundle, draftText, markdownBundle, deviceSummary } from "../bundle.js";
+import { BUNDLE_SCHEMA, readBundle, contextDocument, contextFilePath, draftText, markdownBundle, deviceSummary } from "../bundle.js";
 import { builtinDestinations, clipboardDestination, describeDestinations, folderDestination, opencodeDestination, validateDestination, validateHandoff } from "../destinations.js";
 import { startComposerBridge, submitComposer } from "../composer-bridge.js";
 
@@ -55,15 +55,15 @@ test("bundle manifest is read as the single source of truth, with legacy manifes
 test("include flags remove window text and device context from every rendering", async (t) => {
   const f = await fixture(t, { include: { windowText: false, device: false } });
   const bundle = await readBundle(f.directory, f.manifest);
-  for (const text of [draftText(bundle, "note"), markdownBundle(bundle, "note", (shot) => shot.screenshot)]) {
+  for (const text of [contextDocument(bundle), markdownBundle(bundle, "note", (shot) => shot.screenshot)]) {
     assert.ok(!text.includes("Untrusted window text"));
     assert.ok(!text.includes("Apple M3 Max"));
     assert.match(text, /Window text was excluded by the user/);
   }
   const other = await fixture(t);
   const included = await readBundle(other.directory, other.manifest);
-  assert.match(draftText(included, "note"), /Apple M3 Max/);
-  assert.match(draftText(included, "note"), /<appshot_accessibility_text>\nUntrusted window text/);
+  assert.match(contextDocument(included), /Apple M3 Max/);
+  assert.match(contextDocument(included), /<appshot_accessibility_text>\nUntrusted window text/);
 });
 
 test("device summary never includes location and tolerates missing fields", () => {
@@ -108,7 +108,15 @@ test("OpenCode destination creates an empty session and an unsent draft only", a
   const result = await destination.prepare(bundle, target, { note: f.input.text, requestID: f.input.requestID });
   assert.equal(result.action, "opencode-draft");
   assert.match(result.draftText, /^Checkout button overlaps/);
-  assert.match(result.draftText, /Device context/);
+  assert.ok(result.draftText.includes(bundle.media[0].screenshot) && result.draftText.includes(bundle.manifest), "the draft points at the screenshot and the bundle");
+  assert.ok(!result.draftText.includes("Untrusted window text") && !result.draftText.includes("Apple M3 Max"), "window text and device details stay in the context file");
+  const contextFile = contextFilePath(bundle);
+  assert.ok(result.draftText.includes(`Full context (window text, device): ${contextFile}`));
+  assert.equal((await stat(contextFile)).mode & 0o777, 0o600);
+  const written = await readFile(contextFile, "utf8");
+  assert.match(written, /Device context/);
+  assert.match(written, /Untrusted window text/);
+  assert.equal(draftText(bundle, "note", contextFile).split("\n").length < 10, true, "the draft stays short");
   assert.equal(f.created.length, 1);
   assert.equal(f.prompts.length, 0);
   await assert.rejects(destination.prepare(bundle, { id: "/other" }, { note: "x", requestID: f.input.requestID }), /no longer loaded/);

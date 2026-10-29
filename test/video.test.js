@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { BUNDLE_SCHEMA, draftText, markdownBundle, readBundle } from "../bundle.js";
+import { BUNDLE_SCHEMA, contextDocument, draftText, markdownBundle, readBundle } from "../bundle.js";
 import { clipboardDestination, folderDestination } from "../destinations.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII=", "base64");
@@ -67,15 +67,18 @@ test("videos outside the captures folder or with the wrong type are refused", as
 
 test("the draft describes the recording, numbers its frames after the screenshots and times events", async (t) => {
   const { bundle } = await videoBundle(t);
-  const draft = draftText(bundle, "Payment spinner never stops");
+  const draft = contextDocument(bundle);
   assert.match(draft, /Instant replay: 30\.0 s of the display, starting 2026-10-29T10:00:00Z/);
   assert.match(draft, /Key frames attached as images 2–7, at \+0\.0 s, \+5\.0 s, \+10\.0 s, \+15\.0 s, \+20\.0 s, \+25\.0 s\./);
   assert.match(draft, /The full MP4 stays on the user's Mac and is not attached/);
   assert.match(draft, /Clicked AXButton "Pay" in Chrome \(\+12\.4 s in instant replay\)/);
   assert.match(draft, /Switched to Finder\n|Switched to Finder$/m, "events outside the recording get no offset");
-  assert.ok(!draft.includes("replay.mp4"), "local paths stay out of the draft");
+  assert.ok(!draft.includes("replay.mp4"), "local paths stay out of the context document");
+  const lean = draftText(bundle, "Payment spinner never stops", "/captures/bundle-context.md");
+  assert.match(lean, /- Instant replay: \/.*replay\.mp4 · 30\.0 s of the display · key frames attached as images 2–7: /);
+  assert.match(lean, /- Full context \(.*clicks 2.*recording timelines\): \/captures\/bundle-context\.md/);
   const { bundle: recording } = await videoBundle(t, { source: "recording", frames: [] });
-  assert.match(draftText(recording, "x"), /Screen recording: 30\.0 s[\s\S]*No key frames were extracted/);
+  assert.match(contextDocument(recording), /Screen recording: 30\.0 s[\s\S]*No key frames were extracted/);
 });
 
 test("Markdown links the recording and the folder export copies it with its frames", async (t) => {
@@ -128,7 +131,7 @@ test("several clips share six key frames, describe what they recorded and skip p
   const bundle = await readBundle(directory, manifest);
   assert.deepEqual(bundle.videos.map((video) => video.frames.length), [4, 2, 0], "at most six frames across all clips");
   assert.deepEqual(bundle.videos.map((video) => video.area), ["window", "area", "display"]);
-  const draft = draftText(bundle, "Checkout breaks");
+  const draft = contextDocument(bundle);
   assert.match(draft, /Screen recording 1: 20\.0 s of the "Safari" window, starting 2026-10-29T10:00:00Z\. Capture Studio's own windows are not recorded\. Paused 1 time; paused time is not in the clip\.\nKey frames attached as images 1–4/);
   assert.match(draft, /Screen recording 2: 10\.0 s of a 400 × 300 area of the screen[\s\S]*Key frames attached as images 5–6/);
   assert.match(draft, /Screen recording 3: 5\.0 s of the display[\s\S]*No key frames were extracted/);
@@ -152,5 +155,5 @@ test("bundles without video still read as before", async (t) => {
   await writeFile(manifest, JSON.stringify({ schema: BUNDLE_SCHEMA, media: [{ screenshot: path.join(directory, "shot.png") }] }));
   const bundle = await readBundle(directory, manifest);
   assert.deepEqual(bundle.videos, []);
-  assert.ok(!draftText(bundle, "x").includes("replay"));
+  assert.ok(!contextDocument(bundle).includes("replay"));
 });

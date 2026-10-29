@@ -1,7 +1,24 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { copyFile, mkdir, open, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { draftText, markdownBundle, BUNDLE_SCHEMA } from "./bundle.js";
+import { contextDocument, contextFilePath, draftText, markdownBundle, BUNDLE_SCHEMA } from "./bundle.js";
+
+// Writes the bundle's full context beside it (owner-only, never through a symlink)
+// and returns the path, or undefined when there is nothing to write.
+export async function writeContextFile(bundle) {
+  const body = contextDocument(bundle);
+  if (!body) return undefined;
+  const file = contextFilePath(bundle);
+  const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
+  try {
+    await handle.chmod(0o600);
+    await handle.writeFile(`# Appshot context\n\n${body}\n`);
+  } finally {
+    await handle.close();
+  }
+  return file;
+}
 
 /**
  * A destination places a prepared bundle somewhere the user then acts on.
@@ -92,11 +109,12 @@ export function opencodeDestination(ctx) {
     hint: () => "Opens an unsent draft in a new session. You press Enter.",
     async prepare(bundle, chosen, request) {
       if (chosen.id !== target.id) throw new Error("This OpenCode project is no longer loaded. Reopen the composer.");
+      const contextFile = await writeContextFile(bundle);
       const session = await ctx.session.create({
         title: `Appshot: ${request.note.trim().split("\n")[0].slice(0, 80)} [${request.requestID.slice(-8)}]`,
         location: { directory, ...(ctx.location.workspaceID ? { workspaceID: ctx.location.workspaceID } : {}) },
       });
-      return { action: "opencode-draft", sessionID: session.id, title: session.title, directory, draftText: draftText(bundle, request.note) };
+      return { action: "opencode-draft", sessionID: session.id, title: session.title, directory, draftText: draftText(bundle, request.note, contextFile) };
     },
   };
 }

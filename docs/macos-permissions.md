@@ -134,8 +134,9 @@ is running. The instant replay buffer holds only the last 30 seconds of the disp
 in memory, and is written to disk only when you press Option+G. A screen recording
 captures only what you chose (the display, one window, or a dragged area), leaves
 paused time out, and stops after 5 minutes. MP4s, trimmed copies and key frames are
-saved owner-only in the captures folder; OpenCode receives only up to six key frames,
-and only when you send. Capture Studio's own windows are excluded, but everything
+saved owner-only in the captures folder; OpenCode receives up to six key frames as
+images plus the file paths, and only when you send. Once you submit, the agent can open
+the MP4 and the context file from those paths. Capture Studio's own windows are excluded, but everything
 else in the recorded display or area, including notifications and other apps'
 content, can appear in the video. Turn replay off before showing sensitive content.
 

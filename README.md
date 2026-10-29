@@ -117,8 +117,12 @@ installation without planning that permission step.
    then stop and edit the transcript. Only on-device recognition is used; there is
    no cloud fallback or saved audio. Language/device availability varies.
 6. Click the circular **↗** send button (Command+Return). With OpenCode, this creates
-   a new root session, opens it in OpenCode, and pastes the screenshots, description,
-   inline skill mentions, and included context into its **unsent input**.
+   a new root session, opens it in OpenCode, and pastes the screenshots and a short
+   draft into its **unsent input**: your description and skill mentions, then one line
+   per screenshot and recording with its file path, and the path of a
+   `bundle-<id>-context.md` file holding the included context (window text, device,
+   console, network, clicks, logs, recording timelines). The agent opens those files
+   when it needs detail, so large window text and logs no longer fill the prompt.
    Review it there and press Enter yourself to run. The composer never submits a
    prompt, calls a model, or presses Enter in OpenCode. **×** or Escape cancels.
    Escape first dismisses an open @autocomplete menu. Full project paths are available in
@@ -290,8 +294,9 @@ key frames from it; the original file is left in the captures folder. **Remove c
 detaches it. On send:
 
 - **OpenCode** attaches the key frames as images after the screenshots. The draft
-  says what each clip recorded, lists the frame offsets, and gives the time of each
-  click, console message and failed request within its clip. The MP4s stay on your Mac.
+  lists each clip's MP4 and frame paths; the context file says what each clip
+  recorded, lists the frame offsets, and gives the time of each click, console message
+  and failed request within its clip. The MP4s stay on your Mac.
 - **Clipboard** Markdown links the MP4s and the key frames.
 - **Folder** export copies `recording.mp4`, `recording-2.mp4`, … and their
   `recording-frame-N.png` / `recording-2-frame-N.png` key frames.
@@ -465,10 +470,11 @@ Composer drafts are held in memory while you type. Sending saves an owner-only
 bundle alongside the retained PNGs. It contains screenshot paths, accessibility text,
 **your description**, the collected context (device, system, console, network, clicks,
 custom log tails) and include flags, so recent bundles can be
-reopened. Delete `bundle-*.json` files from the captures folder to remove them.
-OpenCode receives the description, inline skill mentions, ordered screenshot
-attachments and included context in its unsent draft; no model runs until the user
-submits it. Clipboard and Save to folder put the same content where you chose. It
+reopened. Sending to OpenCode also writes the included context to an owner-only
+`bundle-<id>-context.md` beside it. Delete `bundle-*` files from the captures folder to
+remove them. OpenCode receives the description, inline skill mentions, ordered
+screenshot attachments and the paths of the capture files in its unsent draft; the
+agent can read those files once you submit. No model runs until the user submits it. Clipboard and Save to folder put the same content where you chose. It
 leaves your Mac only if you paste or share it yourself.
 
 Only one hotkey helper runs per captures directory. Annotation and replay commands
