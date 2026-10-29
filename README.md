@@ -361,6 +361,8 @@ to launch it; grant the responsible app shown by macOS. Restart OpenCode after
 granting access. The helper checks access; it never grants permissions itself.
 To restart this helper after a permission change, choose **Quit Capture Studio** and
 run `/capture-studio-start`. You can also open the bundled .app directly.
+The helper is ad-hoc signed with the hardened runtime, so other processes cannot
+inject libraries into it to borrow these grants.
 Rebuilding this locally signed helper changes its code signature. If its permission
 checks remain denied while the switches appear enabled, remove its old entries
 from both permission lists, add the current .app again, and enable the switches.

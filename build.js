@@ -28,5 +28,8 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <key>NSSpeechRecognitionUsageDescription</key><string>Convert your spoken description into an editable draft using on-device recognition.</string>
 </dict></plist>`);
 execFileSync("/usr/bin/xcrun", ["swiftc", "-parse-as-library", "-O", "-module-cache-path", "/tmp/opencode-capture-studio-swift-cache", "-target", "arm64-apple-macosx14.0", ...["Appshots.swift", "AccessibilityReader.swift", "AnnotationEditor.swift", "Composer.swift", "ComposerUI.swift", "CaptureBundle.swift", "ComposerMentions.swift", "ComposerSpeech.swift", "SessionHandoff.swift", "HandoffFocus.swift", "StatusBarIcon.swift", "RegionCapture.swift", "ScreenshotAttachments.swift", "SystemContext.swift", "UserEvents.swift", "BrowserBridge.swift"].map(file => path.join(root, file)), "-o", path.join(app, "Contents/MacOS/CaptureStudio")], { stdio: "inherit" });
-execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", "--identifier", "local.opencode.capturestudio", app], { stdio: "inherit" });
+// The hardened runtime stops other processes from injecting code that would inherit
+// this app's Screen Recording and Accessibility grants. Dictation needs audio input;
+// no entitlement may relax library validation or allow DYLD environment variables.
+execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", "--identifier", "local.opencode.capturestudio", "--options", "runtime", "--entitlements", path.join(root, "CaptureStudio.entitlements"), app], { stdio: "inherit" });
 console.log(`Built ${app}`);

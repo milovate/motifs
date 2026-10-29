@@ -126,7 +126,12 @@ Recent clicks live only in the helper's memory until a capture copies them into
 the composer. The browser extension's buffers live only in the browser's session
 memory. Browser context travels only over an owner-only socket in
 `~/Library/Application Support/Capture Studio/browser/` between two copies of the
-same signed Capture Studio binary; each side refuses any other process. Endpoint files in the
+same signed Capture Studio binary; each side refuses any other process.
+
+The helper is signed with the hardened runtime and only the microphone
+entitlement, so another process cannot inject code into it to use its Screen
+Recording or Accessibility grants. That does not protect files: anything running
+as your user can still read the captures folder, so delete captures you no longer need. Endpoint files in the
 local `composers/` subfolder contain authentication tokens: do not publish them.
 Draft insertion does not send a
 message, but sending the draft or invoking the agent tool exposes the returned

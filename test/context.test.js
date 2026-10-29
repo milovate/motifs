@@ -144,3 +144,11 @@ test("extension manifest pins the ID the helper trusts", async () => {
   assert.deepEqual(manifest.permissions.sort(), ["alarms", "nativeMessaging", "storage", "tabs", "webRequest"]);
   assert.equal(manifest.manifest_version, 3);
 });
+
+test("helper is signed with the hardened runtime and no entitlement that weakens it", async () => {
+  const build = await readFile(new URL("../build.js", import.meta.url), "utf8");
+  assert.match(build, /"--options", "runtime"/);
+  const entitlements = await readFile(new URL("../CaptureStudio.entitlements", import.meta.url), "utf8");
+  const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>/g)].map((match) => match[1]);
+  assert.deepEqual(keys, ["com.apple.security.device.audio-input"]);
+});
