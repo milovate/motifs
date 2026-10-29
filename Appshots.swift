@@ -690,13 +690,16 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
     guard pasteboard.setString(text, forType: .string) else { throw captureError("Could not put the captured text on the clipboard.") }
     ownedChangeCount = pasteboard.changeCount
     try postKey(kVK_ANSI_V, flags: .maskCommand, to: opencode.processIdentifier)
-    try await Task.sleep(nanoseconds: 300_000_000)
-    let value = attribute(prompt, kAXValueAttribute) as? String ?? ""
-    let marker = attachments.first.flatMap { $0.snapshot["capturedAt"] as? String }.map { "Captured at: " + $0 } ?? text
-    guard value.contains(marker) else {
-        throw captureError("Could not confirm insertion into the Prompt input. Check the draft before retrying.")
-    }
-    saveStatus(output: output, phase: "inserted")
+    let marker = insertionMarker(text: text, capturedAt: draftText == nil ? attachments.first?.snapshot["capturedAt"] as? String : nil)
+    let confirmDeadline = Date().addingTimeInterval(1.5)
+    repeat {
+        try await Task.sleep(nanoseconds: 150_000_000)
+        if promptContains(attribute(prompt, kAXValueAttribute) as? String ?? "", marker) {
+            saveStatus(output: output, phase: "inserted")
+            return
+        }
+    } while Date() < confirmDeadline
+    throw captureError("Could not confirm insertion into the Prompt input. Check the draft before retrying.")
 }
 
 @MainActor func bringToFront(_ app: NSRunningApplication) async throws {

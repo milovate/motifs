@@ -38,3 +38,18 @@ func handoffFocusBelongsToOwner<Node>(focused: Node?, owner: Node, parent: (Node
     }
     return false
 }
+
+// A line of the pasted text that identifies it in the prompt: the legacy capture
+// timestamp, else the bundle path, else the last line. Kept short because the prompt
+// may reflow long lines.
+func insertionMarker(text: String, capturedAt: String?) -> String {
+    if let capturedAt { return "Captured at: " + capturedAt }
+    let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    let line = lines.first { $0.hasPrefix("- Capture bundle: ") } ?? lines.last ?? text
+    return String(line.suffix(80))
+}
+
+func promptContains(_ value: String, _ marker: String) -> Bool {
+    let flatten = { (string: String) in string.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+    return flatten(value).contains(flatten(marker))
+}
