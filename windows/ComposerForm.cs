@@ -463,7 +463,8 @@ internal sealed class ComposerForm : Form
         targetBox.Items.Clear();
         foreach (var target in Current?.Targets ?? new List<ComposerTarget>()) targetBox.Items.Add(target);
         targetBox.DisplayMember = "Label";
-        if (targetBox.Items.Count > 0) targetBox.SelectedIndex = 0;
+        if (targetBox.Items.Count == 0) targetBox.Items.Add(Current == null ? "No projects" : Current.Status == "ready" ? "No targets" : "Unavailable");
+        targetBox.SelectedIndex = 0;
         filling = false;
         bool changed = RememberDestinations();
         if (Current is ComposerDestination selected && selected.Status == "ready")
