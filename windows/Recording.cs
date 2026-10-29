@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -26,7 +27,7 @@ internal static class ReplayMath
 
     internal static double[] Offsets(double duration, int count)
     {
-        if (duration <= 0.05 || count <= 1) return new[] { 0 };
+        if (duration <= 0.05 || count <= 1) return new double[] { 0 };
         double last = Math.Max(0, duration - 0.1);
         var offsets = new double[count];
         for (int index = 0; index < count; index++) offsets[index] = last * index / (count - 1);

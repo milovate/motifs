@@ -474,8 +474,8 @@ internal sealed class MentionSession
         var next = QueryAt(text, caret, selectionLength);
         if (next?.Prefix != Query?.Prefix || next?.Start != Query?.Start) Selected = 0;
         Query = next;
-        if (next == null) { Candidates.Clear(); return; }
-        Candidates = Matching(skills, next.Prefix);
+        if (next is not MentionQuery query) { Candidates.Clear(); return; }
+        Candidates = Matching(skills, query.Prefix);
         if (Candidates.Count == 0) { Query = null; return; }
         Selected = Math.Min(Selected, Candidates.Count - 1);
     }
@@ -616,8 +616,10 @@ internal static class ComposerTests
         var session = new MentionSession();
         session.Update("@re", 3, 0, skills);
         Check(session.Open && session.Candidates[0].Id == "report", "@ prefix opens matching completion with report first");
-        Check(MentionSession.Apply("@re", session.Query!.Start, session.Query.Length, "report") == "@report ", "completion replaces the query");
-        Check(MentionSession.Apply("🙂 @ot", MentionSession.QueryAt("🙂 @ot", 6, 0)!.Start, 3, "other") == "🙂 @other ", "completion uses UTF-16 caret offsets");
+        var chosen = session.Query!.Value;
+        Check(MentionSession.Apply("@re", chosen.Start, chosen.Length, "report") == "@report ", "completion replaces the query");
+        var caret = MentionSession.QueryAt("🙂 @ot", 6, 0)!.Value;
+        Check(MentionSession.Apply("🙂 @ot", caret.Start, 3, "other") == "🙂 @other ", "completion uses UTF-16 caret offsets");
 
         var reviewShot = new JsonObject { ["text"] = "AXStaticText: fixture", ["app"] = "Notes", ["title"] = "Scratch" };
         var reviewContext = new JsonObject
@@ -704,7 +706,7 @@ internal static class ComposerTests
         };
         string withVideo = ComposerFiles.WriteBundle(output, "33333333-3333-3333-3333-333333333333", DateTimeOffset.Parse("2026-10-29T00:00:00Z"), "Clip note", new[] { shot }, context, include, new[] { clip });
         var reopened = ComposerFiles.LoadBundle(withVideo, output);
-        Check(reopened.Shots.Count == 1 && reopened.Videos.Count == 1 && reopened.Videos[0]["source"]?.GetValue<string>() == "recording" && reopened.Videos[0]["frames"] is JsonArray kept && kept.Count == 1, "a recording reopens beside its screenshots");
+        Check(reopened.Shots.Count == 1 && reopened.Videos.Count == 1 && reopened.Videos[0]["source"]?.GetValue<string>() == "recording" && reopened.Videos[0]["frames"] is JsonArray keptFrames && keptFrames.Count == 1, "a recording reopens beside its screenshots");
         string onlyVideo = ComposerFiles.WriteBundle(output, "55555555-5555-5555-5555-555555555555", DateTimeOffset.Parse("2026-10-29T00:00:01Z"), "", Array.Empty<JsonObject>(), context, include, new[] { clip });
         Check(ComposerFiles.LoadBundle(onlyVideo, output).Videos.Count == 1 && ComposerFiles.Recents(output).Any(item => item.Title == "Screen recording"), "a clip without a screenshot still appears in Recents");
         var outsideClip = ComposerFiles.Clone(clip);
