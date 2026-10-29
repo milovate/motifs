@@ -159,7 +159,7 @@ without an app captures the foreground window, which may be OpenCode itself.
 Choose **Arrow**, **Box**, **Draw**, or **Text**, then drag over the image (click for
 Text). Text opens a multiline dialog; use its OK button to accept. Color and stroke
 width apply to new marks and the selected object. The editor switches to Select
-after creating a mark.
+after creating a mark. **Crop** is separate: drag a rectangle, then apply it.
 
 - **Select** an object by clicking its stroke, or the body of a text label. Drag to
   move it. Drag corner handles to resize a box, freehand path, or text label; arrow
@@ -168,19 +168,35 @@ after creating a mark.
 - Double-click text, press Return with text selected, or click **Edit text** to edit.
 - Delete removes the selection. Ctrl+D duplicates it. Arrow keys nudge by one image
   pixel; Shift+arrow moves ten. Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes. History
-  includes creation, movement, resizing, style changes, text edits, and deletion.
-- V selects; A, R, P, and T choose Arrow, Box, Draw, and Text. Escape first clears a
-  selection; with no selection, it closes the editor without saving current edits.
+  includes creation, movement, resizing, style changes, text edits, deletion, crop, and reset.
+- **Crop** (C) drags a rectangle in original image pixels. **Apply Crop** or Enter
+  keeps it. The editor then shows only that rectangle, and the saved PNG contains
+  only those pixels. Marks stay where you drew them; they are not flattened or
+  moved. **Reset Crop** restores the full image. **Cancel Crop**, or Escape, drops
+  the rectangle you are dragging and returns to Select. A pending crop is applied
+  when you save or insert. The long side of a saved image is at most 2560 pixels.
+- A crop omits the original window's accessibility text from delivery and records
+  `Cropped screenshot: original-window accessibility text is omitted so content outside the crop is not shared.`
+  The text remains in the capture file for Reset Crop. Resetting removes that warning
+  and restores the text.
+- **Copy image** (Ctrl+C), or right-clicking an empty part of the image, copies the
+  annotated and cropped PNG. It does not insert a draft. Right-clicking a mark
+  offers edit, duplicate, and delete.
+- V selects; A, R, P, T, and C choose Arrow, Box, Draw, Text, and Crop. Escape first
+  cancels a pending crop, then clears a selection; with neither, it closes the editor
+  without saving current edits.
 - **Save only** saves the annotated image and editable objects without inserting.
   **Insert into OpenCode** saves and then pastes, leaving the draft unsent. Neither
    action sends a message. Cancel discards unsaved changes. If an earlier Insert
    attempt failed, its saved annotations remain available even after Cancel.
 
 Saving creates a new PNG with marks flattened into the pixels and updates
-`latest.json`. It preserves the original PNG, timestamp, and accessibility text;
-the latter describes the original capture, not the drawn labels. Reopening a saved
-capture restores editable Windows objects over the original image with fresh undo
-history. Selection outlines and handles are never exported. Images without editable
+`latest.json`. It preserves the original PNG and timestamp. Accessibility text
+describes the original capture, not the drawn labels. A crop leaves that text
+out of the delivered capture, as described above. Reopening a saved capture
+restores editable Windows objects and the crop over the original image with fresh
+undo history. Selection outlines, handles, and crop shading are never exported.
+Images without editable
 Windows object data are treated as flattened originals. Captures imported from the
 clipboard have no accessibility text. Existing OpenCode attachments must be removed
 and replaced to show new annotations.
@@ -267,8 +283,11 @@ from the macOS development environment. Before calling Windows support verified:
   annotate, and insert** opens the editor first.
 - Cancel a preview and confirm no draft change; use `/capture-studio` for the saved image.
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
-  confirm exported marks agree with the editor on mixed-DPI monitors. Test Cancel
-  and clipboard-image annotation, and confirm handles are absent from the PNG.
+  confirm exported marks agree with the editor on mixed-DPI monitors. Crop with C,
+  apply, and confirm the PNG is only that rectangle and the window text is omitted
+  from the draft. Reset Crop and confirm the text returns. Copy image, then paste
+  somewhere other than OpenCode. Test Cancel and clipboard-image annotation, and
+  confirm handles are absent from the PNG.
 - Open the composer from the shortcut. Send the same capture to Clipboard and
   Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
   Open Context, compare the preview with the captured window, switch a source off,

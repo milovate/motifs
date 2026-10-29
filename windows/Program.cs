@@ -12,6 +12,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
@@ -20,7 +21,9 @@ using Forms = System.Windows.Forms;
 namespace OpenCode.Appshots;
 
 internal sealed record Snapshot(string app, string title, string capturedAt, string screenshot, string text, string[] warnings,
-    string? originalScreenshot = null, Mark[]? windowsAnnotations = null, string? annotatedAt = null);
+    string? originalScreenshot = null, Mark[]? windowsAnnotations = null, string? annotatedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ImageCrop? crop = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? originalAccessibilityText = null);
 
 internal static class Program
 {

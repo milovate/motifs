@@ -80,6 +80,73 @@ internal static class AnnotationTests
         Check(parsed!.windowsAnnotations![0].Text == box.Text, "serialization contract");
         try { _ = new AnnotationDocument(new[] { box with { Width = float.NaN } }); throw new Exception("Invalid width accepted"); }
         catch (Exception e) when (e.Message == "Invalid annotation object.") { }
+        Check(AnnotationDocument.ValidCrop(new RectangleF(10.2f, 10.2f, 20.2f, 20.2f), new Size(300, 160)) == new ImageCrop(10, 10, 21, 21), "crop snaps outward to whole pixels");
+        Check(AnnotationDocument.ValidCrop(new RectangleF(30, 40, -20, -10), new Size(300, 160)) == new ImageCrop(10, 30, 20, 10), "negative crop is standardized");
+        Check(AnnotationDocument.ValidCrop(new RectangleF(-5, -5, 20, 20), new Size(300, 160)) == new ImageCrop(0, 0, 15, 15), "crop intersects the image");
+        Check(AnnotationDocument.ValidCrop(new RectangleF(0, 0, 1, 10), new Size(300, 160)) == null, "crop must cover 2 pixels");
+        Check(AnnotationDocument.ValidCrop(new RectangleF(float.NaN, 0, 10, 10), new Size(300, 160)) == null, "crop rejects non-finite values");
+        var kept = Mark.Create("Box", new PointF(20, 20), Color.Red, 4) with { Points = new[] { new Vec(20, 20), new Vec(120, 50) } };
+        using (var canvas = new AnnotationCanvas(new Bitmap(300, 160), null))
+        {
+            canvas.Size = new Size(600, 320);
+            canvas.Document.Add(kept);
+            bool copied = false;
+            canvas.CopyRequested += () => copied = true;
+            Check(canvas.Key(Forms.Keys.C) && canvas.Tool == "Crop", "C chooses crop");
+            Check(canvas.Key(Forms.Keys.Control | Forms.Keys.C) && copied, "Ctrl+C copies the image");
+            void Mouse(string method, int x, int y) => typeof(AnnotationCanvas).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(canvas, new object[] { new Forms.MouseEventArgs(Forms.MouseButtons.Left, 1, x, y, 0) });
+            Mouse("OnMouseDown", 20, 20); Mouse("OnMouseMove", 320, 220); Mouse("OnMouseUp", 320, 220);
+            Check(canvas.CropSelection is RectangleF chosen && chosen.Equals(new RectangleF(10, 10, 150, 100)), "crop drag stays in source pixels");
+            Check(canvas.Document.Marks.Length == 1 && canvas.Document.Crop == null, "a crop drag does not change marks or apply itself");
+            canvas.Key(Forms.Keys.Enter);
+            Check(canvas.Document.Crop == new ImageCrop(10, 10, 150, 100) && canvas.Document.Marks[0].Points.SequenceEqual(kept.Points), "Enter applies the crop without flattening marks");
+            var mapped = canvas.ToImage(new PointF(canvas.ImageRect.X, canvas.ImageRect.Y));
+            Check(Math.Abs(mapped.X - 10) < 0.001f && Math.Abs(mapped.Y - 10) < 0.001f, "cropped viewport maps back to the original image");
+            canvas.Document.Undo();
+            Check(canvas.Document.Crop == null && canvas.Document.Marks.Length == 1, "undo restores the full image and the marks");
+            canvas.Document.Redo();
+            Check(canvas.Document.Crop == new ImageCrop(10, 10, 150, 100), "redo restores the crop");
+            canvas.CropSelection = new RectangleF(0, 0, 1, 1);
+            canvas.ApplyCrop();
+            Check(canvas.CropSelection != null && canvas.Document.Crop == new ImageCrop(10, 10, 150, 100), "a crop under 2 pixels is ignored");
+            canvas.Key(Forms.Keys.Escape);
+            Check(canvas.Tool == "Select" && canvas.CropSelection == null && canvas.Document.Crop != null, "Escape cancels the pending crop and leaves the applied one");
+        }
+        string wide = Path.Combine(output, "synthetic-wide.png");
+        using (var image = new Bitmap(300, 160))
+        {
+            using var g = Graphics.FromImage(image);
+            g.Clear(Color.White);
+            g.FillRectangle(Brushes.Blue, 0, 80, 300, 80);
+            image.Save(wide, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        var privateShot = new Snapshot("Test", "Synthetic", "test-time", wide, "Private text outside the crop", Array.Empty<string>());
+        var croppedDoc = new AnnotationDocument(new[] { kept }, new ImageCrop(10, 10, 100, 100));
+        var cropped = AnnotationDocument.Export(privateShot, croppedDoc, output);
+        Check(cropped.text == "" && cropped.originalAccessibilityText == "Private text outside the crop", "crop keeps the original text locally and omits it from delivery");
+        Check(cropped.warnings.SequenceEqual(new[] { AnnotationDocument.CropWarning }) && cropped.crop == new ImageCrop(10, 10, 100, 100), "crop warning and source rectangle are saved once");
+        Check(cropped.originalScreenshot == wide && cropped.windowsAnnotations![0].Points.SequenceEqual(kept.Points), "crop keeps the original file and editable marks");
+        using (var rendered = new Bitmap(cropped.screenshot))
+        {
+            Check(rendered.Size == new Size(100, 100), "cropped export uses only the selected pixels");
+            var edge = rendered.GetPixel(10, 25);
+            Check(edge.R > 200 && edge.G < 50, "crop keeps annotation alignment in source pixels");
+            var lower = rendered.GetPixel(90, 90);
+            Check(lower.B > 200 && lower.R < 50, "crop samples the original image upright");
+            Check(rendered.GetPixel(40, 5).ToArgb() == Color.White.ToArgb(), "selection chrome is not exported");
+        }
+        var croppedAgain = AnnotationDocument.Export(cropped, new AnnotationDocument(cropped.windowsAnnotations, cropped.crop), output);
+        Check(croppedAgain.warnings.Count(warning => warning == AnnotationDocument.CropWarning) == 1 && croppedAgain.originalAccessibilityText == "Private text outside the crop", "saving a crop again does not duplicate the warning or lose the hidden text");
+        var reset = AnnotationDocument.Export(croppedAgain, new AnnotationDocument(croppedAgain.windowsAnnotations), output);
+        Check(reset.crop == null && reset.text == "Private text outside the crop" && !reset.warnings.Contains(AnnotationDocument.CropWarning), "reset crop restores the original accessibility text");
+        using (var restoredImage = new Bitmap(reset.screenshot)) Check(restoredImage.Size == new Size(300, 160), "reset export is the full image");
+        string huge = Path.Combine(output, "synthetic-huge.png");
+        using (var image = new Bitmap(4000, 2000)) { using var g = Graphics.FromImage(image); g.Clear(Color.White); image.Save(huge, System.Drawing.Imaging.ImageFormat.Png); }
+        var scaled = AnnotationDocument.Export(new Snapshot("Test", "Synthetic", "test-time", huge, "", Array.Empty<string>()), new AnnotationDocument(), output);
+        using (var rendered = new Bitmap(scaled.screenshot)) Check(rendered.Size == new Size(2560, 1280), "long side scales to 2560");
+        using (var tiny = new Bitmap(100, 100))
+        try { _ = AnnotationDocument.Render(tiny, Array.Empty<Mark>(), new ImageCrop(0, 0, 1, 1)); throw new Exception("Invalid crop accepted"); }
+        catch (Exception e) when (e.Message == "Crop must contain at least 2 × 2 image pixels.") { }
         Console.WriteLine("Windows annotation regressions passed");
     }
 }
