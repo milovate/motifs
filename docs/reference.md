@@ -358,7 +358,7 @@ left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
 context review, prefixes, skill mentions, recent captures, a selected-screenshot
-outline when more than one image is attached, annotation editing with
+outline when more than one image is attached, a right-click menu to copy, share, or show a screenshot or recording without sending the draft, annotation editing with
 a floating toolbar, inline text, crop, and copy, screen recording, instant replay, clip trim, and best-effort draft
 handoff. Cancelling the chooser, composer, or a standalone annotation returns to the previous app. Copy does too. OpenCode and Save to folder keep those windows in front. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. The tray's **Context sources**
 menu can keep the last 10 minutes of clicks and app switches, and can tail up to

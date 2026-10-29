@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
@@ -428,9 +429,12 @@ internal sealed class ComposerForm : Form
             catch { picture.BackColor = Color.DimGray; }
             string app = shots[index]["app"]?.GetValue<string>() ?? "Image";
             picture.AccessibleName = "Annotate screenshot " + (index + 1) + " — " + app + (marked ? ", selected" : "");
+            picture.AccessibleDescription = "Right-click to copy, share, or show this screenshot without sending the draft.";
             picture.Click += (_, _) => Annotate(current);
             frame.Controls.Add(picture);
-            var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
+            string? shotPath = shots[index]["screenshot"]?.GetValue<string>();
+            var menu = AttachmentMenu(shotPath, true);
+            var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat, Visible = false };
             remove.AccessibleName = "Remove screenshot " + (index + 1);
             remove.Click += (_, _) =>
             {
@@ -443,6 +447,8 @@ internal sealed class ComposerForm : Form
             };
             panel.Controls.Add(frame);
             panel.Controls.Add(remove);
+            AssignMenu(panel, menu);
+            RevealRemove(panel, remove);
             thumbs.Controls.Add(panel);
         }
         for (int index = 0; index < videos.Count; index++)
@@ -468,16 +474,129 @@ internal sealed class ComposerForm : Form
             var caption = new Label { Text = ContextReview.ClipTime(duration), AutoSize = false, Size = new Size(72, 16), Location = new Point(0, 40), ForeColor = Color.White, BackColor = Color.FromArgb(160, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter };
             picture.Cursor = Cursors.Hand;
             caption.Cursor = Cursors.Hand;
+            picture.AccessibleDescription = "Right-click to copy, share, or show this recording without sending the draft.";
             picture.Click += (_, _) => Review(current);
             caption.Click += (_, _) => Review(current);
-            var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
+            string? videoPath = videos[index]["video"]?.GetValue<string>();
+            var menu = AttachmentMenu(videoPath, false);
+            var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat, Visible = false };
             remove.AccessibleName = "Remove recording " + (index + 1);
             remove.Click += (_, _) => RemoveVideo(current);
             panel.Controls.Add(picture);
             panel.Controls.Add(caption);
             panel.Controls.Add(remove);
+            AssignMenu(panel, menu);
+            RevealRemove(panel, remove);
             thumbs.Controls.Add(panel);
         }
+    }
+
+    ContextMenuStrip AttachmentMenu(string? path, bool image)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(AttachmentShare.CopyTitle(image), null, (_, _) => CopyAttachment(path, image));
+        menu.Items.Add("Share…", null, (_, _) => ShareAttachment(path, image));
+        menu.Items.Add("Show in File Explorer", null, (_, _) => RevealAttachment(path, image));
+        menu.Items.Add("Copy Path", null, (_, _) => CopyAttachmentPath(path, image));
+        foreach (ToolStripItem item in menu.Items) item.Enabled = AttachmentShare.Accepted(path, output, image);
+        return menu;
+    }
+
+    static void AssignMenu(Control root, ContextMenuStrip menu)
+    {
+        void Apply(Control control)
+        {
+            control.ContextMenuStrip = menu;
+            foreach (Control child in control.Controls) Apply(child);
+        }
+        Apply(root);
+        root.Disposed += (_, _) => { if (!menu.IsDisposed) menu.Dispose(); };
+    }
+
+    static void RevealRemove(Control tile, Button remove)
+    {
+        void Sync()
+        {
+            if (remove.IsDisposed || tile.IsDisposed) return;
+            bool inside = tile.RectangleToScreen(tile.ClientRectangle).Contains(Cursor.Position);
+            remove.Visible = inside || tile.ContainsFocus;
+        }
+        void Watch(Control control)
+        {
+            control.MouseEnter += (_, _) => Sync();
+            control.MouseLeave += (_, _) => Sync();
+            control.GotFocus += (_, _) => Sync();
+            control.LostFocus += (_, _) => Sync();
+            foreach (Control child in control.Controls) Watch(child);
+        }
+        Watch(tile);
+    }
+
+    bool AttachmentReady(string? path, bool image)
+    {
+        if (sending || submitted || dictating) return false;
+        if (AttachmentShare.Accepted(path, output, image)) return true;
+        status.Text = image ? "This screenshot cannot be copied." : "This recording cannot be copied.";
+        return false;
+    }
+
+    void CopyAttachment(string? path, bool image)
+    {
+        if (path == null || !AttachmentReady(path, image)) return;
+        try
+        {
+            if (image)
+            {
+                using var source = Image.FromFile(path);
+                using var copy = new Bitmap(source);
+                var data = new DataObject();
+                using var bytes = new MemoryStream(File.ReadAllBytes(path));
+                data.SetData("PNG", false, bytes);
+                data.SetImage(copy);
+                Clipboard.SetDataObject(data, true);
+                status.Text = "Image copied. It was not sent.";
+            }
+            else
+            {
+                var files = new System.Collections.Specialized.StringCollection { path };
+                var data = new DataObject();
+                data.SetFileDropList(files);
+                Clipboard.SetDataObject(data, true);
+                status.Text = "Video copied. It was not sent.";
+            }
+        }
+        catch (Exception error) { status.Text = error.Message; }
+    }
+
+    void ShareAttachment(string? path, bool image)
+    {
+        if (path == null || !AttachmentReady(path, image)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true, Verb = "Share" });
+            status.Text = "Share this file without sending the draft.";
+        }
+        catch { status.Text = "Sharing is not available from this PC. Copy the file or show it in File Explorer."; }
+    }
+
+    void RevealAttachment(string? path, bool image)
+    {
+        if (path == null || !AttachmentReady(path, image)) return;
+        string? argument = AttachmentShare.RevealArgument(path);
+        if (argument == null) { status.Text = "This attachment path cannot be shown."; return; }
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", argument) { UseShellExecute = true }); }
+        catch (Exception error) { status.Text = error.Message; }
+    }
+
+    void CopyAttachmentPath(string? path, bool image)
+    {
+        if (path == null || !AttachmentReady(path, image)) return;
+        try
+        {
+            Clipboard.SetText(path);
+            status.Text = "Path copied. It was not sent.";
+        }
+        catch (Exception error) { status.Text = error.Message; }
     }
 
     void Annotate(int index)

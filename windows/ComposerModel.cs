@@ -742,6 +742,31 @@ internal static class ShotSelection
     internal static bool Highlight(int count, int index, int selected) => count > 1 && index == selected;
 }
 
+// A thumbnail can be copied or shown without sending the draft. The file must
+// already be an accepted capture in this folder.
+internal static class AttachmentShare
+{
+    internal static string CopyTitle(bool image) => image ? "Copy Image" : "Copy Video";
+
+    internal static bool Accepted(string? path, string output, bool image)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            if (image) Program.ValidateImage(path, output);
+            else ComposerFiles.ValidateVideo(path, output);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    internal static string? RevealArgument(string path)
+    {
+        if (path.Length == 0 || path.IndexOfAny(new[] { '"', '\r', '\n' }) >= 0) return null;
+        return "/select,\"" + path + "\"";
+    }
+}
+
 // Cancelled capture UI returns to the app that was in front. A finished handoff
 // keeps the window it opened, except Copy, which does not open one.
 internal static class FocusReturn
@@ -784,6 +809,8 @@ internal static class ComposerTests
         Check(FocusReturn.AfterChooser(false) && !FocusReturn.AfterChooser(true), "cancelling the chooser returns to the previous app");
         Check(FocusReturn.AfterAnnotation(false) && !FocusReturn.AfterAnnotation(true), "cancelling annotation returns to the previous app");
         Check(!FocusReturn.Usable(0), "there is no window to restore");
+        Check(AttachmentShare.CopyTitle(true) == "Copy Image" && AttachmentShare.CopyTitle(false) == "Copy Video", "a thumbnail copies the image or the video");
+        Check(AttachmentShare.RevealArgument("a\"b") == null, "a quoted path is not passed to File Explorer");
 
         var merged = ComposerFiles.Merge(new (int, JsonArray)[]
         {
@@ -804,6 +831,11 @@ internal static class ComposerTests
 
         string image = Path.Combine(output, "shot.png");
         using (var bitmap = new Bitmap(2, 2)) { bitmap.SetPixel(0, 0, Color.Red); bitmap.Save(image, ImageFormat.Png); }
+        Check(AttachmentShare.Accepted(image, output, true) && !AttachmentShare.Accepted(Path.Combine(Path.GetTempPath(), "outside.png"), output, true) && !AttachmentShare.Accepted(image, output, false), "only a capture PNG in this folder can be copied from a thumbnail");
+        string sharedVideo = Path.Combine(output, "share-recording.mp4");
+        File.WriteAllBytes(sharedVideo, new byte[] { 0, 0, 0, 24, (byte)'f', (byte)'t', (byte)'y', (byte)'p', 0, 0, 0, 0 });
+        Check(AttachmentShare.Accepted(sharedVideo, output, false) && !AttachmentShare.Accepted(Path.Combine(Path.GetTempPath(), "outside.mp4"), output, false), "only a capture MP4 in this folder can be copied from a thumbnail");
+        Check(AttachmentShare.RevealArgument(image) == "/select,\"" + image + "\"", "File Explorer is asked to select the capture file");
         var shot = ComposerFiles.Media(new Snapshot("Notepad", "Notes", "2026-10-29T00:00:00Z", image, "Edit Notes", new[] { "Review the screenshot." }));
         var include = ComposerFiles.DefaultInclude();
         include["windowText"] = false;

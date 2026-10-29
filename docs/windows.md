@@ -52,7 +52,11 @@ needed, warn about interrupting active work before `opencode service restart`.
    to annotate it, and use **Add** for another capture (up to 8). Adding a
    screenshot selects it. When more than one screenshot is attached, that
    thumbnail is outlined. Removing one keeps the selection on the screenshot
-   that remains in its place. **Context**
+   that remains in its place. The **×** appears when the pointer is on that
+   thumbnail and removes it from the draft only. Right-click a screenshot or
+   recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
+   Explorer**, or **Copy Path**. That shares the file and does not send the
+   draft. **Context**
    reviews window text, device, console, network, steps, and logs. Each source
    has an include switch, a preview, Markdown, and a rough token estimate.
    **Recents** reopens a saved capture. Type **@** to pick a skill from the
@@ -314,7 +318,8 @@ from the macOS development environment. Before calling Windows support verified:
   confirm handles are absent from the PNG.
 - Open the composer from the shortcut. Add a second screenshot and confirm the
   new thumbnail is outlined; remove the first and confirm the outline stays on
-  the remaining one. Escape from the chooser, and close the composer without
+  the remaining one. Right-click a thumbnail and copy it, then show it in File
+  Explorer, and confirm the draft was not sent. Escape from the chooser, and close the composer without
   sending, and confirm the previous app is in front. Copy does the same.
   OpenCode and Save to folder leave those windows in front. Send the same capture to Clipboard and
   Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
