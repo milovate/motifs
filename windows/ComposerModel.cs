@@ -1036,6 +1036,7 @@ internal static class ComposerTests
         var rejected = ComposerFiles.LoadBundle(outsideBundle, output);
         Check(rejected.Videos.Count == 0 && rejected.Missing == 1, "recordings outside the captures folder are not reopened");
         Check(ComposerFiles.Recents(output).Any(item => item.Title == "Screen recording"), "a clip without a screenshot still appears in Recents");
+        StatusIcon.Check();
         Console.WriteLine("Windows composer regressions passed");
     }
 

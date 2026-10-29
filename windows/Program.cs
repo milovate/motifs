@@ -297,6 +297,7 @@ internal sealed class Tray : Forms.Form
 {
     readonly string output;
     readonly Forms.NotifyIcon icon;
+    Icon? glyph;
     readonly InstantReplay replay = new();
     readonly Forms.Timer focus = new() { Interval = 400 };
     readonly List<Forms.ToolStripItem> logItems = new();
@@ -351,14 +352,8 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Capture, annotate, and insert into current draft", null, async (_, _) => await CaptureAndInsert(true));
         menu.Items.Add("Capture and insert without annotation", null, async (_, _) => await CaptureAndInsert(false));
-        menu.Items.Add("Annotate latest capture", null, (_, _) => {
-            try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
-            catch (Exception e) { Error(e); }
-        });
-        menu.Items.Add("Annotate clipboard image", null, (_, _) => {
-            try { using var preview = new Preview(Program.ClipboardSnapshot(output), output); preview.ShowDialog(); }
-            catch (Exception e) { Error(e); }
-        });
+        menu.Items.Add("Annotate latest capture", null, (_, _) => EditLatest(false));
+        menu.Items.Add("Annotate clipboard image", null, (_, _) => EditLatest(true));
         menu.Items.Add("Insert latest capture into OpenCode", null, async (_, _) => await InsertLatest());
         menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
         menu.Items.Add("Open captures folder", null, (_, _) => Process.Start(new ProcessStartInfo(output) { UseShellExecute = true }));
@@ -391,7 +386,12 @@ internal sealed class Tray : Forms.Form
         bool registered = Native.RegisterHotKey(Handle, 1, modifiers, 0x41);
         bool recordRegistered = Native.RegisterHotKey(Handle, 2, modifiers, 0x52);
         Program.Save(output, "status.json", new { phase = registered ? "ready" : "hotkey_failed", hotkeyRegistered = registered, recordHotkeyRegistered = recordRegistered });
-        if (!registered) Forms.MessageBox.Show("Control+Alt+Shift+A is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
+        if (!registered)
+        {
+            SetStatusIcon(StatusGlyph.Warning);
+            icon.Text = "Capture Studio — shortcut unavailable. Use the capture menu.";
+            Forms.MessageBox.Show("Control+Alt+Shift+A is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
+        }
         else if (!recordRegistered) Forms.MessageBox.Show("Control+Alt+Shift+R is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
     }
     protected override void WndProc(ref Forms.Message m)
@@ -400,9 +400,35 @@ internal sealed class Tray : Forms.Form
         else if (m.Msg == 0x312 && m.WParam == 2) _ = ToggleRecording();
         base.WndProc(ref m);
     }
-    void UpdateIcon() => icon.Text = RecordingSession.Active
-        ? "Capture Studio — recording (Ctrl+Alt+Shift+R)"
-        : replay.Enabled ? "Capture Studio — replay on (Ctrl+Alt+Shift+A)" : "Capture Studio — Ctrl+Alt+Shift+A";
+    void UpdateIcon() => SetStatusIcon(StatusGlyph.Ready);
+
+    // Recording covers every other mark. The replay ring shows only while nothing else does.
+    void SetStatusIcon(StatusGlyph status)
+    {
+        StatusGlyph shown = RecordingSession.Active ? StatusGlyph.Recording : status == StatusGlyph.Ready && replay.Enabled ? StatusGlyph.Replay : status;
+        var next = StatusIcon.Create(shown, StatusIcon.LightTaskbar());
+        icon.Icon = next;
+        glyph?.Dispose();
+        glyph = next;
+        icon.Text = shown switch
+        {
+            StatusGlyph.Recording => "Capture Studio — recording the screen. Press Ctrl+Alt+Shift+R to stop.",
+            StatusGlyph.Replay => "Capture Studio — instant replay keeps the last 30 seconds. Ctrl+Alt+Shift+A attaches it.",
+            StatusGlyph.Ready or StatusGlyph.Success or StatusGlyph.Warning => "Capture Studio — Ctrl+Alt+Shift+A",
+            _ => throw new InvalidOperationException($"Unexpected tray state {shown}."),
+        };
+    }
+
+    void EditLatest(bool clipboard)
+    {
+        try
+        {
+            using var preview = new Preview(clipboard ? Program.ClipboardSnapshot(output) : Program.Latest(output), output);
+            preview.ShowDialog();
+            if (preview.Inserted) SetStatusIcon(StatusGlyph.Success);
+        }
+        catch (Exception e) { Error(e); }
+    }
 
     void FillRecents(Forms.ToolStripMenuItem menu)
     {
@@ -498,9 +524,10 @@ internal sealed class Tray : Forms.Form
         {
             await Inserter.Insert(Program.Latest(output), output);
             notice = "Inserted latest capture into OpenCode. Add a question and send when ready.";
+            SetStatusIcon(StatusGlyph.Success);
         }
         catch (Exception e) { Error(e); }
-        finally { busy = false; UpdateIcon(); }
+        finally { busy = false; }
         if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
     }
 
@@ -509,6 +536,7 @@ internal sealed class Tray : Forms.Form
         if (busy || RecordingSession.Busy) return;
         busy = true;
         string? notice = null;
+        bool captured = false;
         try
         {
             nint window = ExternalWindow();
@@ -516,6 +544,8 @@ internal sealed class Tray : Forms.Form
             Program.Save(output, "status.json", new { phase = "capturing" });
             var shot = await CaptureSelector.Take(new CaptureChoice(CaptureKind.Window, window, Rectangle.Empty), output);
             Program.Save(output, "status.json", new { phase = "captured" });
+            captured = true;
+            SetStatusIcon(StatusGlyph.Success);
             if (!annotate)
             {
                 await Inserter.Insert(shot, output);
@@ -530,8 +560,12 @@ internal sealed class Tray : Forms.Form
                 else if (preview.Inserted) notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
             }
         }
-        catch (Exception e) { Error(e); }
-        finally { busy = false; UpdateIcon(); }
+        catch (Exception e)
+        {
+            Error(e);
+            if (!captured) SetStatusIcon(StatusGlyph.Warning);
+        }
+        finally { busy = false; }
         if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
     }
 
@@ -731,7 +765,7 @@ internal sealed class Tray : Forms.Form
             Program.Save(output, "status.json", new { phase = "composing" });
             OpenComposer(new[] { shot }, clip == null ? null : new[] { clip }, browser: page);
         }
-        catch (Exception e) { Error(e); }
+        catch (Exception e) { Error(e); SetStatusIcon(StatusGlyph.Warning); }
         finally { replay.Paused = false; busy = false; }
     }
     async Task ToggleRecording()
@@ -780,7 +814,13 @@ internal sealed class Tray : Forms.Form
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { focus.Stop(); focus.Dispose(); Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); ClickHistory.Shared.Stop(); ClickHistory.Shared.DisableHooks(); replay.Dispose(); icon.Dispose(); }
+        if (disposing)
+        {
+            focus.Stop(); focus.Dispose(); Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2);
+            ClickHistory.Shared.Stop(); ClickHistory.Shared.DisableHooks(); replay.Dispose();
+            if (glyph != null) { icon.Icon = SystemIcons.Application; glyph.Dispose(); }
+            icon.Dispose();
+        }
         base.Dispose(disposing);
     }
 }
