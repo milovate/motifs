@@ -41,6 +41,8 @@ internal sealed class RecentCapture
     internal string Title = "";
     internal DateTimeOffset Updated;
     internal int Screenshots;
+    internal int Videos;
+    internal string? Thumbnail;
 }
 
 internal static class ComposerFiles
@@ -257,6 +259,28 @@ internal static class ComposerFiles
             list.Add(new KnownDestination("folder", "Save to folder"));
         }
         return list;
+    }
+
+    internal const int ComposerRecentLimit = 30;
+
+    internal static string RecentDetail(int screenshots, int videos, string when, bool current)
+    {
+        var parts = new List<string>();
+        if (screenshots > 0) parts.Add(screenshots.ToString(CultureInfo.InvariantCulture) + (screenshots == 1 ? " screenshot" : " screenshots"));
+        if (videos > 0) parts.Add(videos.ToString(CultureInfo.InvariantCulture) + (videos == 1 ? " clip" : " clips"));
+        parts.Add(current ? "open" : when);
+        return string.Join(" · ", parts);
+    }
+
+    internal static string? RecentThumbnail(string? path, string root)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try
+        {
+            Program.ValidateImage(path, root);
+            return Path.GetFullPath(path);
+        }
+        catch { return null; }
     }
 
     internal static string RelativeTime(DateTimeOffset updated, DateTimeOffset now)
@@ -561,11 +585,14 @@ internal static class ComposerFiles
                 if (!DateTimeOffset.TryParse(updatedText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var updated)) continue;
                 var entries = raw["media"] as JsonArray ?? new JsonArray();
                 var media = entries.Where(item => item?["kind"]?.GetValue<string>() != "video").ToList();
-                bool recorded = entries.Any(item => item?["kind"]?.GetValue<string>() == "video");
+                int videos = entries.Count(item => item?["kind"]?.GetValue<string>() == "video");
+                string? thumbnail = media.Count > 0 ? media[0]?["screenshot"]?.GetValue<string>() : null;
+                if (string.IsNullOrEmpty(thumbnail))
+                    thumbnail = (entries.FirstOrDefault(item => item?["kind"]?.GetValue<string>() == "video")?["frames"] as JsonArray)?.FirstOrDefault()?["screenshot"]?.GetValue<string>();
                 string note = (raw["note"]?.GetValue<string>() ?? "").Split('\n')[0].Trim();
-                string fallback = media.Count > 0 ? media[0]?["app"]?.GetValue<string>() ?? "Capture" : recorded ? "Screen recording" : "Capture";
+                string fallback = media.Count > 0 ? media[0]?["app"]?.GetValue<string>() ?? "Capture" : videos > 0 ? "Screen recording" : "Capture";
                 string title = note.Length == 0 ? fallback : note.Length > 48 ? note[..45] + "…" : note;
-                found.Add(new RecentCapture { Path = file, Title = title, Updated = updated, Screenshots = media.Count });
+                found.Add(new RecentCapture { Path = file, Title = title, Updated = updated, Screenshots = media.Count, Videos = videos, Thumbnail = thumbnail });
             }
             catch { /* A damaged bundle stays on disk and is omitted from Recents. */ }
         }
@@ -867,6 +894,7 @@ internal static class ComposerTests
         Check(!ComposerFiles.HasNote("@report ", new[] { "report" }) && !ComposerFiles.HasNote("@other @report", new[] { "report", "other" }) && ComposerFiles.HasNote("@report broken", new[] { "report" }) && ComposerFiles.HasNote("user@report.com", new[] { "report" }), "a skill mention alone is not a note");
         Check(ComposerFiles.SkillsTip(Array.Empty<string>()) == "Add a skill" && ComposerFiles.SkillsTip(new[] { "report", "other" }) == "Skills: @other, @report — click to add or remove", "the skill button names the mentions in the note");
         Check(ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"c:\captures\bundle-a.json") && !ComposerFiles.SameCapture(@"C:\Captures\bundle-a.json", @"C:\Captures\bundle-b.json") && !ComposerFiles.SameCapture(null, @"C:\Captures\bundle-a.json"), "Recents does not reopen the capture already open");
+        Check(ComposerFiles.RecentDetail(1, 0, "5 min ago", false) == "1 screenshot · 5 min ago" && ComposerFiles.RecentDetail(2, 1, "just now", true) == "2 screenshots · 1 clip · open" && ComposerFiles.RecentDetail(0, 0, "just now", false) == "just now", "a recent row names screenshots, clips, and whether it is open");
         Check(!ComposerFiles.AllowClose(true, false, false, false) && !ComposerFiles.AllowClose(false, true, false, false) && !ComposerFiles.AllowClose(false, false, true, false) && !ComposerFiles.AllowClose(false, false, false, true) && ComposerFiles.AllowClose(false, false, false, false), "the composer stays open while preparing, adding a screenshot, recording, or reviewing a clip");
         Check(ComposerFiles.MentionPill(new Point(10, 20), 40, 16) == new Rectangle(6, 20, 48, 16), "a mention tint starts a little before the text");
         Check(ComposerFiles.MentionTint(Color.FromArgb(24, 24, 26), Color.FromArgb(0, 120, 215)) == Color.FromArgb(20, 39, 56), "the mention tint keeps some of the accent color");
@@ -917,7 +945,9 @@ internal static class ComposerTests
         string foreign = Path.Combine(output, "bundle-22222222-2222-2222-2222-222222222222.json");
         File.WriteAllText(foreign, new JsonObject { ["schema"] = ComposerFiles.Schema, ["id"] = "22222222-2222-2222-2222-222222222222", ["createdAt"] = "2026-10-29T00:00:00Z", ["note"] = "", ["media"] = new JsonArray(outside), ["context"] = new JsonObject(), ["include"] = ComposerFiles.DefaultInclude() }.ToJsonString());
         Check(ComposerFiles.LoadBundle(foreign, output).Missing == 1 && ComposerFiles.LoadBundle(foreign, output).Shots.Count == 0, "screenshots outside the captures folder are not reopened");
-        Check(ComposerFiles.Recents(output)[0].Title == "Blank PDF", "recents use the first note line");
+        var listed = ComposerFiles.Recents(output)[0];
+        Check(listed.Title == "Blank PDF" && listed.Screenshots == 1 && listed.Videos == 0 && ComposerFiles.RecentThumbnail(listed.Thumbnail, output) == Path.GetFullPath(image), "recents use the first note line and its capture thumbnail");
+        Check(ComposerFiles.RecentThumbnail(Path.Combine(Path.GetTempPath(), "outside.png"), output) == null, "thumbnails come only from the captures folder");
 
         var settings = ComposerFiles.DefaultSettings();
         settings["defaultDestination"] = "clipboard";
@@ -1208,7 +1238,8 @@ internal static class ComposerTests
         var reopened = ComposerFiles.LoadBundle(withVideo, output);
         Check(reopened.Shots.Count == 1 && reopened.Videos.Count == 1 && reopened.Videos[0]["source"]?.GetValue<string>() == "recording" && reopened.Videos[0]["frames"] is JsonArray keptFrames && keptFrames.Count == 1, "a recording reopens beside its screenshots");
         string onlyVideo = ComposerFiles.WriteBundle(output, "55555555-5555-5555-5555-555555555555", DateTimeOffset.Parse("2026-10-29T00:00:01Z"), "", Array.Empty<JsonObject>(), context, include, new[] { clip });
-        Check(ComposerFiles.LoadBundle(onlyVideo, output).Videos.Count == 1 && ComposerFiles.Recents(output).Any(item => item.Title == "Screen recording"), "a clip without a screenshot still appears in Recents");
+        var clipRecent = ComposerFiles.Recents(output).First(item => item.Title == "Screen recording");
+        Check(ComposerFiles.LoadBundle(onlyVideo, output).Videos.Count == 1 && clipRecent.Videos == 1 && clipRecent.Screenshots == 0 && ComposerFiles.RecentThumbnail(clipRecent.Thumbnail, output) == Path.GetFullPath(frame), "a clip without a screenshot still appears in Recents, using its first key frame");
         var outsideClip = ComposerFiles.Clone(clip);
         outsideClip["video"] = Path.Combine(Path.GetTempPath(), "outside-recording.mp4");
         string outsideBundle = Path.Combine(output, "bundle-44444444-4444-4444-4444-444444444444.json");

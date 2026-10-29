@@ -476,7 +476,7 @@ internal sealed class Tray : Forms.Form
             string path = bundle.Path;
             var entry = new Forms.ToolStripMenuItem(bundle.Title + " · " + ComposerFiles.RelativeTime(bundle.Updated, DateTimeOffset.Now))
             {
-                ToolTipText = bundle.Screenshots + (bundle.Screenshots == 1 ? " screenshot" : " screenshots") + " · Reopen in the composer",
+                ToolTipText = ComposerFiles.RecentDetail(bundle.Screenshots, bundle.Videos, "Reopen in the composer", false),
             };
             entry.Click += (_, _) => ReopenBundle(path);
             menu.DropDownItems.Add(entry);

@@ -822,15 +822,97 @@ internal sealed class ComposerForm : Form
     void ShowRecents()
     {
         if (!CanEditAttachments) return;
-        var recent = ComposerFiles.Recents(output);
-        if (recent.Count == 0) { status.Text = "No saved captures yet."; return; }
-        using var dialog = new Form { Text = "Recent captures", ClientSize = new Size(420, 280), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
-        var list = new ListBox { Dock = DockStyle.Fill };
-        foreach (var item in recent) list.Items.Add(item.Title + " · " + item.Screenshots + (ComposerFiles.SameCapture(item.Path, manifest) ? " · open" : ""));
-        list.DoubleClick += (_, _) => dialog.DialogResult = DialogResult.OK;
-        dialog.Controls.Add(list);
-        if (dialog.ShowDialog(this) != DialogResult.OK || list.SelectedIndex < 0) return;
-        LoadSaved(recent[list.SelectedIndex].Path);
+        var recent = ComposerFiles.Recents(output, ComposerFiles.ComposerRecentLimit);
+        using var headingFont = new Font(Font, FontStyle.Bold);
+        using var dialog = new Form
+        {
+            Text = "Recents",
+            ClientSize = new Size(300, 460),
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            BackColor = BackColor,
+            ForeColor = ForeColor,
+            Font = Font,
+        };
+        dialog.Controls.Add(new Label { Text = "Recents", Font = headingFont, AutoSize = true, Location = new Point(12, 16), ForeColor = ForeColor });
+        dialog.Controls.Add(new Label { Text = "Captures and edits are saved as you go", AutoSize = true, Location = new Point(12, 40), ForeColor = Color.FromArgb(170, 170, 176) });
+        var scroll = new Panel { Location = new Point(12, 68), Size = new Size(276, 380), AutoScroll = true };
+        string? chosen = null;
+        if (recent.Count == 0)
+            scroll.Controls.Add(new Label { Text = "No captures yet. Press Ctrl+Alt+Shift+A to capture.", AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Color.FromArgb(170, 170, 176) });
+        int top = 0;
+        using var rowTips = new ToolTip { ShowAlways = true };
+        foreach (var item in recent)
+        {
+            bool open = ComposerFiles.SameCapture(item.Path, manifest);
+            string detail = ComposerFiles.RecentDetail(item.Screenshots, item.Videos, ComposerFiles.RelativeTime(item.Updated, DateTimeOffset.Now), open);
+            var row = RecentRow(item, detail, open, headingFont);
+            row.Location = new Point(0, top);
+            row.Width = 260;
+            string tip = open ? "This capture is open" : "Reopen this capture in the composer";
+            void Choose(object? sender, EventArgs args)
+            {
+                if (open) return;
+                chosen = item.Path;
+                dialog.DialogResult = DialogResult.OK;
+            }
+            void Watch(Control control)
+            {
+                rowTips.SetToolTip(control, tip);
+                control.MouseEnter += (_, _) => PaintRecent(row, open, true);
+                control.MouseLeave += (_, _) => PaintRecent(row, open, row.RectangleToScreen(row.ClientRectangle).Contains(Cursor.Position));
+                if (!open)
+                {
+                    control.Click += Choose;
+                    control.KeyDown += (_, key) =>
+                    {
+                        if (key.KeyCode == Keys.Enter) Choose(control, EventArgs.Empty);
+                    };
+                }
+                foreach (Control child in control.Controls) Watch(child);
+            }
+            Watch(row);
+            scroll.Controls.Add(row);
+            top += row.Height + 2;
+        }
+        dialog.Controls.Add(scroll);
+        if (dialog.ShowDialog(this) != DialogResult.OK || chosen == null) return;
+        LoadSaved(chosen);
+    }
+
+    Panel RecentRow(RecentCapture item, string detail, bool open, Font headingFont)
+    {
+        var idle = BackColor;
+        var row = new Panel { Size = new Size(260, 52), BackColor = open ? Color.FromArgb(27, 46, 63) : idle, Cursor = open ? Cursors.Default : Cursors.Hand, AccessibleRole = AccessibleRole.PushButton, AccessibleName = item.Title + ", " + detail, TabStop = !open };
+        var preview = new PictureBox { Location = new Point(6, 6), Size = new Size(64, 40), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(48, 48, 52) };
+        string? thumb = ComposerFiles.RecentThumbnail(item.Thumbnail, output);
+        if (thumb != null)
+        {
+            try
+            {
+                using var source = Image.FromFile(thumb);
+                int edge = Math.Max(source.Width, source.Height);
+                int width = edge <= 160 ? source.Width : Math.Max(1, source.Width * 160 / edge);
+                int height = edge <= 160 ? source.Height : Math.Max(1, source.Height * 160 / edge);
+                preview.Image = source.GetThumbnailImage(width, height, () => false, IntPtr.Zero);
+            }
+            catch { preview.Image = null; }
+        }
+        if (preview.Image == null)
+            preview.Controls.Add(new Label { Text = item.Videos > 0 ? "Clip" : "Image", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.FromArgb(48, 48, 52), ForeColor = Color.FromArgb(170, 170, 176) });
+        var name = new Label { Text = item.Title, AutoEllipsis = true, Font = headingFont, Location = new Point(80, 8), Size = new Size(172, 18), BackColor = Color.Transparent, ForeColor = ForeColor };
+        var meta = new Label { Text = detail, AutoEllipsis = true, Location = new Point(80, 28), Size = new Size(172, 16), BackColor = Color.Transparent, ForeColor = Color.FromArgb(170, 170, 176) };
+        row.Controls.Add(preview);
+        row.Controls.Add(name);
+        row.Controls.Add(meta);
+        return row;
+    }
+
+    static void PaintRecent(Panel row, bool open, bool hovering)
+    {
+        if (open) return;
+        row.BackColor = hovering ? Color.FromArgb(48, 48, 52) : Color.FromArgb(32, 32, 34);
     }
 
     internal void LoadSaved(string path)
