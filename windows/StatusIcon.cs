@@ -7,6 +7,38 @@ namespace OpenCode.Appshots;
 
 internal enum StatusGlyph { Ready, Success, Warning, Replay, Recording }
 
+// Tray hover text follows the macOS menu, with the Windows shortcut and command.
+internal static class TrayCopy
+{
+    internal const string Ready = "Capture Studio — capture and compose (Ctrl+Alt+Shift+A)";
+    internal const string Recording = "Capture Studio — recording the screen. Press Ctrl+Alt+Shift+R or use the menu to stop.";
+    internal const string Replay = "Capture Studio — instant replay keeps the last 30 seconds in memory. Ctrl+Alt+Shift+A attaches it.";
+    internal const string ShortcutUnavailable = "Capture Studio — shortcut unavailable. Use the capture menu.";
+    internal const string ReplayMenu = "Keeps the last 30 seconds of the display in memory only; Ctrl+Alt+Shift+A attaches it to the capture. Instant replay may still include Capture Studio windows.";
+    internal const string JudgeMenu = "Secrets in known formats are always redacted before anything leaves this PC. A decision model running on this PC (Laya, Clef-flash) can check values that only might be secrets; without it, those are redacted too. Hosted models are not allowed.";
+    internal const string CaptureFailedTitle = "Capture Studio could not capture this window";
+    internal const string InsertFailedTitle = "Capture Studio could not insert into OpenCode";
+    internal const string InsertedLatest = "Inserted latest capture into OpenCode. Add a question and send when ready.";
+
+    internal static string Tip(StatusGlyph shown) => shown switch
+    {
+        StatusGlyph.Recording => Recording,
+        StatusGlyph.Replay => Replay,
+        StatusGlyph.Ready or StatusGlyph.Success or StatusGlyph.Warning => Ready,
+        _ => throw new InvalidOperationException($"Unexpected tray state {shown}."),
+    };
+
+    internal static string RecordTitle(bool recording) => recording ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording… (Ctrl+Alt+Shift+R)";
+
+    internal static string Inserted(string? app) => "Inserted " + (string.IsNullOrWhiteSpace(app) ? "app" : app) + " into OpenCode. Add a question and send when ready.";
+
+    internal static string InsertFailed(string message) => "Capture saved. Could not insert into OpenCode: " + message;
+
+    internal static string InsertFailedBody(string message) => message + "\nYour saved capture is still available through /capture-studio.";
+
+    internal static string Fit(string text) => text.Length <= 127 ? text : text[..127];
+}
+
 // The menu-bar mark from the macOS helper: a capture frame and a speech bubble.
 // Strokes are black on a light taskbar and white on a dark one, which is how a
 // macOS template image adapts. Recording fills the top dot, replay strokes that

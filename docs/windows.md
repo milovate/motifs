@@ -164,7 +164,7 @@ asks that address to score one sample value. Known secret formats are still
 redacted without a model, and values that only might be secrets are redacted
 when the model does not answer.
 
-The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. The strokes are black on a light taskbar and white on a dark one.
+The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. Hovering it says **capture and compose**, or how to stop a recording, or that instant replay is keeping the last 30 seconds. A failed insert says the capture was saved and can be read with `/capture-studio`. The strokes are black on a light taskbar and white on a dark one.
 
 The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture and shows when that capture was created.
 **Default destination** chooses OpenCode, Clipboard, Save to folder, or another

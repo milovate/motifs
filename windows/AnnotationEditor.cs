@@ -429,6 +429,7 @@ internal sealed class Preview : Forms.Form
     bool arranged;
     internal Snapshot? Result { get; private set; }
     internal bool Inserted { get; private set; }
+    internal string? InsertError { get; private set; }
     internal bool Saved { get; private set; }
     internal bool Completed { get; private set; }
     internal Preview(Snapshot shot, string output, bool returnOnly = false)
@@ -685,7 +686,11 @@ internal sealed class Preview : Forms.Form
             Completed = true;
             Close();
         }
-        catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Appshot saved — insertion failed"); }
+        catch (Exception error)
+        {
+            InsertError = error.Message;
+            Forms.MessageBox.Show(this, TrayCopy.InsertFailedBody(error.Message), TrayCopy.InsertFailedTitle);
+        }
         finally
         {
             inserting = false;

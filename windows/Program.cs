@@ -329,7 +329,7 @@ internal sealed class Tray : Forms.Form
         ShowInTaskbar = false;
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Capture and compose (Ctrl+Alt+Shift+A)", null, async (_, _) => await TakeShot());
-        var recordItem = new Forms.ToolStripMenuItem("Start screen recording (Ctrl+Alt+Shift+R)");
+        var recordItem = new Forms.ToolStripMenuItem(TrayCopy.RecordTitle(false));
         recordItem.Click += async (_, _) => await ToggleRecording();
         menu.Items.Add(recordItem);
         var recentItem = new Forms.ToolStripMenuItem("Recent bundles");
@@ -340,13 +340,13 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add(destinationItem);
         var contextItem = new Forms.ToolStripMenuItem("Context sources");
         var replayItem = new Forms.ToolStripMenuItem("Keep instant replay (last 30 s)");
-        replayItem.ToolTipText = "Keeps the last 30 seconds of the display in memory. Ctrl+Alt+Shift+A attaches it to the capture.";
+        replayItem.ToolTipText = TrayCopy.ReplayMenu;
         replayItem.Click += (_, _) => ToggleReplay();
         var clicksItem = new Forms.ToolStripMenuItem("Record recent clicks");
         clicksItem.ToolTipText = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes.";
         clicksItem.Click += (_, _) => ToggleClicks();
         var judgeItem = new Forms.ToolStripMenuItem("Local secret-check model…");
-        judgeItem.ToolTipText = "Asks a model running on this PC about values that only might be secrets. Hosted models are not allowed.";
+        judgeItem.ToolTipText = TrayCopy.JudgeMenu;
         judgeItem.Click += async (_, _) => await ChooseJudge();
         var addLog = new Forms.ToolStripMenuItem("Add log file…");
         addLog.ToolTipText = "Capture Studio reads the last 64 KB of this file when you capture.";
@@ -380,10 +380,10 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add("Quit Capture Studio", null, (_, _) => Close());
         menu.Opening += (_, _) =>
         {
-            recordItem.Text = RecordingSession.Active ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording (Ctrl+Alt+Shift+R)";
+            recordItem.Text = TrayCopy.RecordTitle(RecordingSession.Active);
             bubbleItem.Checked = ComposerFiles.ShowBubble(ComposerFiles.Settings(output));
         };
-        icon = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Capture Studio — Ctrl+Alt+Shift+A", ContextMenuStrip = menu, Visible = true };
+        icon = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = TrayCopy.Ready, ContextMenuStrip = menu, Visible = true };
         RecordingSession.StateChanged += UpdateIcon;
         if (ComposerFiles.InstantReplay(ComposerFiles.Settings(output))) replay.SetEnabled(true);
         UpdateIcon();
@@ -409,7 +409,7 @@ internal sealed class Tray : Forms.Form
         if (!registered)
         {
             SetStatusIcon(StatusGlyph.Warning);
-            icon.Text = "Capture Studio — shortcut unavailable. Use the capture menu.";
+            icon.Text = TrayCopy.ShortcutUnavailable;
             Forms.MessageBox.Show("Control+Alt+Shift+A is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
         }
         else if (!recordRegistered) Forms.MessageBox.Show("Control+Alt+Shift+R is already in use. Quit the other shortcut app and restart Capture Studio.", "Capture Studio");
@@ -430,13 +430,7 @@ internal sealed class Tray : Forms.Form
         icon.Icon = next;
         glyph?.Dispose();
         glyph = next;
-        icon.Text = shown switch
-        {
-            StatusGlyph.Recording => "Capture Studio — recording the screen. Press Ctrl+Alt+Shift+R to stop.",
-            StatusGlyph.Replay => "Capture Studio — instant replay keeps the last 30 seconds. Ctrl+Alt+Shift+A attaches it.",
-            StatusGlyph.Ready or StatusGlyph.Success or StatusGlyph.Warning => "Capture Studio — Ctrl+Alt+Shift+A",
-            _ => throw new InvalidOperationException($"Unexpected tray state {shown}."),
-        };
+        icon.Text = TrayCopy.Tip(shown);
     }
 
     void EditLatest(bool clipboard)
@@ -449,6 +443,7 @@ internal sealed class Tray : Forms.Form
             using var preview = new Preview(clipboard ? Program.ClipboardSnapshot(output) : Program.Latest(output), output);
             preview.ShowDialog();
             if (preview.Inserted) SetStatusIcon(StatusGlyph.Success);
+            else if (!string.IsNullOrEmpty(preview.InsertError)) icon.Text = TrayCopy.Fit(TrayCopy.InsertFailed(preview.InsertError));
             if (FocusReturn.AfterAnnotation(preview.Completed)) FocusReturn.TryActivate(returnTo);
         }
         catch (Exception e) { Error(e); }
@@ -557,12 +552,12 @@ internal sealed class Tray : Forms.Form
         try
         {
             await Inserter.Insert(Program.Latest(output), output);
-            notice = "Inserted latest capture into OpenCode. Add a question and send when ready.";
+            notice = TrayCopy.InsertedLatest;
             SetStatusIcon(StatusGlyph.Success);
         }
-        catch (Exception e) { Error(e); }
+        catch (Exception e) { ReportInsertFailure(e); }
         finally { busy = false; }
-        if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
+        if (notice != null) icon.Text = TrayCopy.Fit(notice);
     }
 
     async Task CaptureAndInsert(bool annotate)
@@ -583,7 +578,7 @@ internal sealed class Tray : Forms.Form
             if (!annotate)
             {
                 await Inserter.Insert(shot, output);
-                notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
+                notice = TrayCopy.Inserted(shot.app);
             }
             else
             {
@@ -592,16 +587,31 @@ internal sealed class Tray : Forms.Form
                 preview.ShowDialog();
                 if (!preview.Inserted && !preview.Saved) Program.Save(output, "status.json", new { phase = "ready", lastAction = "annotation_cancelled" });
                 if (FocusReturn.AfterAnnotation(preview.Completed)) FocusReturn.TryActivate(window);
-                else if (preview.Inserted) notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
+                else if (preview.Inserted) notice = TrayCopy.Inserted(shot.app);
+                else if (!string.IsNullOrEmpty(preview.InsertError)) notice = TrayCopy.InsertFailed(preview.InsertError);
             }
         }
         catch (Exception e)
         {
-            Error(e);
-            if (!captured) SetStatusIcon(StatusGlyph.Warning);
+            if (captured) ReportInsertFailure(e);
+            else ReportCaptureFailure(e);
         }
         finally { busy = false; }
-        if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
+        if (notice != null) icon.Text = TrayCopy.Fit(notice);
+    }
+
+    void ReportCaptureFailure(Exception error)
+    {
+        Program.Save(output, "status.json", new { phase = "capture_failed", error = error.Message });
+        SetStatusIcon(StatusGlyph.Warning);
+        Forms.MessageBox.Show(error.Message, TrayCopy.CaptureFailedTitle);
+    }
+
+    void ReportInsertFailure(Exception error)
+    {
+        Program.Save(output, "status.json", new { phase = "insert_failed", error = error.Message });
+        icon.Text = TrayCopy.Fit(TrayCopy.InsertFailed(error.Message));
+        Forms.MessageBox.Show(TrayCopy.InsertFailedBody(error.Message), TrayCopy.InsertFailedTitle);
     }
 
     nint ExternalWindow()
