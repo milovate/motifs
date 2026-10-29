@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Threading.Tasks;
@@ -7,6 +8,48 @@ using System.Windows.Forms;
 namespace OpenCode.Appshots;
 
 internal enum CaptureKind { Window, Region, Display }
+
+// The chooser names the window under the pointer and shows the dragged size.
+internal static class CaptureChrome
+{
+    internal static string WindowLabel(string app) => " " + (string.IsNullOrWhiteSpace(app) ? "Window" : app.Trim()) + " ";
+
+    internal static string SizeLabel(int width, int height) => width.ToString(System.Globalization.CultureInfo.InvariantCulture) + " × " + height.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    internal static string AppName(nint window)
+    {
+        try
+        {
+            Native.GetWindowThreadProcessId(window, out uint pid);
+            using var process = Process.GetProcessById((int)pid);
+            string? path = null;
+            try { path = process.MainModule?.FileName; } catch { path = null; }
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                string description = FileVersionInfo.GetVersionInfo(path).FileDescription ?? "";
+                if (!string.IsNullOrWhiteSpace(description)) return description.Trim();
+            }
+            return process.ProcessName;
+        }
+        catch { return ""; }
+    }
+
+    internal static Point WindowLabelOrigin(Rectangle window, Size label, Rectangle bounds)
+    {
+        int x = Math.Max(bounds.Left + 8, Math.Min(window.Left + 8, bounds.Right - label.Width - 8));
+        int y = window.Bottom - label.Height - 8;
+        if (y < bounds.Top + 8) y = Math.Min(bounds.Bottom - label.Height - 8, window.Top + 8);
+        return new Point(x, Math.Max(bounds.Top + 8, y));
+    }
+
+    internal static Point SizeLabelOrigin(Rectangle selection, Size label, Rectangle bounds)
+    {
+        int x = Math.Min(bounds.Right - label.Width - 8, Math.Max(bounds.Left + 8, selection.Left + 6));
+        int below = selection.Bottom + 6;
+        int y = below + label.Height <= bounds.Bottom - 8 ? below : Math.Max(bounds.Top + 8, selection.Top - label.Height - 6);
+        return new Point(x, y);
+    }
+}
 
 internal sealed record CaptureChoice(CaptureKind Kind, nint Window, Rectangle Bounds);
 
@@ -21,6 +64,7 @@ internal sealed class RegionOverlay : Form
     Rectangle selection;
     nint hovered;
     Rectangle hoveredBounds;
+    string hoveredApp = "";
     ComposerBubble? bubble;
     internal CaptureChoice? Choice;
     internal bool OpenComposerInstead { get; private set; }
@@ -105,10 +149,15 @@ internal sealed class RegionOverlay : Form
             var next = ComposerFiles.Selection(start, e.Location, ClientRectangle);
             selection = next ?? Rectangle.Empty;
             using var hole = new Region(ClientRectangle);
-            if (next is Rectangle chosen) hole.Exclude(chosen);
+            if (next is Rectangle chosen)
+            {
+                var opening = Rectangle.Inflate(chosen, -2, -2);
+                if (opening.Width > 0 && opening.Height > 0) hole.Exclude(opening);
+            }
             var previous = Region;
             Region = hole.Clone();
             previous?.Dispose();
+            Invalidate();
             return;
         }
         UpdateHover(e.Location);
@@ -119,10 +168,13 @@ internal sealed class RegionOverlay : Form
         var screen = PointToScreen(client);
         nint window = TopWindow(Native.WindowFromPoint(new Native.NativePoint { X = screen.X, Y = screen.Y }));
         if (!UsableWindow(window)) window = 0;
-        hovered = window;
-        hoveredBounds = window == 0 || !Native.GetWindowRect(window, out var rect)
+        var bounds = window == 0 || !Native.GetWindowRect(window, out var rect)
             ? Rectangle.Empty
             : RectangleToClient(Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom));
+        if (window == hovered && bounds == hoveredBounds) return;
+        hovered = window;
+        hoveredBounds = bounds;
+        hoveredApp = window == 0 ? "" : CaptureChrome.AppName(window);
         Invalidate();
     }
 
@@ -158,12 +210,20 @@ internal sealed class RegionOverlay : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (selection.IsEmpty && hoveredBounds.Width > 40 && hoveredBounds.Height > 40)
+        if (!selection.IsEmpty)
+        {
+            using var border = new Pen(Color.White, 1.5f);
+            e.Graphics.DrawRectangle(border, selection.X, selection.Y, Math.Max(1, selection.Width - 1), Math.Max(1, selection.Height - 1));
+            var captured = ScreenRect(selection);
+            DrawTag(e.Graphics, CaptureChrome.SizeLabel(captured.Width, captured.Height), CaptureChrome.SizeLabelOrigin(selection, new Size(120, 18), ClientRectangle));
+        }
+        else if (hoveredBounds.Width > 40 && hoveredBounds.Height > 40)
         {
             using var fill = new SolidBrush(Color.FromArgb(40, 110, 200, 255));
             using var pen = new Pen(Color.DeepSkyBlue, 3);
             e.Graphics.FillRectangle(fill, hoveredBounds);
             e.Graphics.DrawRectangle(pen, hoveredBounds);
+            DrawTag(e.Graphics, CaptureChrome.WindowLabel(hoveredApp), CaptureChrome.WindowLabelOrigin(hoveredBounds, new Size(160, 18), ClientRectangle));
         }
         var font = new Font("Segoe UI", 11, FontStyle.Regular, GraphicsUnit.Point);
         var size = e.Graphics.MeasureString(hint, font);
@@ -172,6 +232,15 @@ internal sealed class RegionOverlay : Form
         e.Graphics.FillRectangle(background, pill);
         e.Graphics.DrawString(hint, font, Brushes.White, pill.X + 16, pill.Y + 7);
         font.Dispose();
+    }
+
+    static void DrawTag(Graphics graphics, string text, Point origin)
+    {
+        using var font = new Font("Segoe UI", 12, FontStyle.Regular, GraphicsUnit.Point);
+        var size = graphics.MeasureString(text, font);
+        using var background = new SolidBrush(Color.FromArgb(160, 0, 0, 0));
+        graphics.FillRectangle(background, origin.X, origin.Y, size.Width + 6, size.Height + 2);
+        graphics.DrawString(text, font, Brushes.White, origin.X + 3, origin.Y);
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

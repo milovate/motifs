@@ -825,6 +825,10 @@ internal static class ComposerTests
         var selected = ComposerFiles.Selection(new Point(40, 50), new Point(10, 10), new Rectangle(0, 0, 100, 100));
         Check(selected == new Rectangle(10, 10, 30, 40), "region uses the drag bounds");
         Check(ComposerFiles.Selection(new Point(-10, -10), new Point(20, 25), new Rectangle(0, 0, 100, 100)) == new Rectangle(0, 0, 20, 25), "region stays on the display");
+        Check(CaptureChrome.WindowLabel("Google Chrome") == " Google Chrome " && CaptureChrome.WindowLabel("  ") == " Window ", "the hovered window shows its app name");
+        Check(CaptureChrome.SizeLabel(200, 100) == "200 × 100", "a drag shows the region size");
+        Check(CaptureChrome.WindowLabelOrigin(new Rectangle(100, 80, 400, 300), new Size(70, 16), new Rectangle(0, 0, 1000, 800)) == new Point(108, 356), "the app name sits inside the window");
+        Check(CaptureChrome.SizeLabelOrigin(new Rectangle(30, 40, 200, 100), new Size(80, 16), new Rectangle(0, 0, 1000, 800)) == new Point(36, 146), "the size sits just under the selection");
         Check(ComposerFiles.Mentions("see @report next", "report") && !ComposerFiles.Mentions("mail@report.com", "report"), "skill mentions ignore email addresses");
         var highlighted = ComposerFiles.MentionSpans("see @report next @other", new[] { "other", "report", "report-long" });
         Check(highlighted.Count == 2 && highlighted[0] == new ComposerFiles.MentionSpan(4, 7, "report") && highlighted[1].Id == "other", "known mentions are highlighted and email-like text is not");

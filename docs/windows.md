@@ -41,8 +41,9 @@ needed, warn about interrupting active work before `opencode service restart`.
    The plugin also starts a private loopback bridge, the same one macOS uses, so
    the helper can list destinations and prepare a draft.
 2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
-   window, or press **Enter** for the whole display. Escape cancels and returns
-   to the app that was in front. A window
+   window, or press **Enter** for the whole display. The window under the pointer
+   is named. While you drag, the readout shows the region's width and height.
+   Escape cancels and returns to the app that was in front. A window
    capture uses `PrintWindow` and UI Automation for that window. A region or full
    screen capture is the visible pixels in that rectangle. Pressing the shortcut
    again while the chooser, composer, or annotation editor is open brings that
