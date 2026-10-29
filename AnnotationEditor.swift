@@ -1,6 +1,8 @@
 import AppKit
 
-@MainActor func annotateScreenshot(_ shot: [String: Any], output: String, returnTo: NSRunningApplication? = nil) async throws -> [String: Any]? {
+let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestudio"
+
+@MainActor func annotateScreenshot(_ shot: [String: Any], output: String, returnTo: NSRunningApplication? = nil, confirmationTitle: String = "Insert") async throws -> [String: Any]? {
     let savedMarks = try (shot["annotations"] as? [[String: Any]]).map {
         try JSONDecoder().decode([AnnotationMark].self, from: JSONSerialization.data(withJSONObject: $0))
     } ?? []
@@ -11,11 +13,15 @@ import AppKit
         throw captureError("The saved screenshot could not be opened for annotation.")
     }
     let foreground = NSWorkspace.shared.frontmostApplication
-    let sourceApp = returnTo ?? (foreground?.bundleIdentifier != "local.opencode.appshots" ? foreground : nil) ?? (shot["bundleID"] as? String).flatMap {
+    let sourceApp = returnTo ?? (foreground?.bundleIdentifier != helperBundleID ? foreground : nil) ?? (shot["bundleID"] as? String).flatMap {
         NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
     }
-    let editor = try AnnotationEditor(image: image, shot: shot, output: output)
-    editor.canvas.document = AnnotationDocument(marks: savedMarks)
+    let editor = try AnnotationEditor(image: image, shot: shot, output: output, confirmationTitle: confirmationTitle)
+    let savedCrop = (shot["crop"] as? [String: Double]).flatMap { value -> CGRect? in
+        guard let x = value["x"], let y = value["y"], let width = value["width"], let height = value["height"] else { return nil }
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+    editor.canvas.document = AnnotationDocument(marks: savedMarks, crop: savedCrop.flatMap { annotationValidCrop($0, pixels: editor.canvas.pixels) })
     let result = await withCheckedContinuation { continuation in
         editor.completion = { continuation.resume(returning: $0) }
         editor.showWindow(nil)
@@ -25,7 +31,7 @@ import AppKit
     }
     withExtendedLifetime(editor) {}
     if result == nil, let sourceApp, !sourceApp.isTerminated,
-       sourceApp.bundleIdentifier != "local.opencode.appshots" {
+       sourceApp.bundleIdentifier != helperBundleID {
         sourceApp.activate(options: [.activateAllWindows])
     }
     return result
@@ -46,6 +52,7 @@ import AppKit
     let canvas: AnnotationCanvas
     let shot: [String: Any]
     let output: String
+    let confirmationTitle: String
     var completion: (([String: Any]?) -> Void)?
     var undoButton: NSButton!
     var redoButton: NSButton!
@@ -55,14 +62,17 @@ import AppKit
     var tray: NSVisualEffectView!
     var trayCenter: NSLayoutConstraint!
     var trayBottom: NSLayoutConstraint!
+    var cropActions: NSStackView!
+    var applyCropButton: NSButton!
 
-    init(image: NSImage, shot: [String: Any], output: String) throws {
+    init(image: NSImage, shot: [String: Any], output: String, confirmationTitle: String = "Insert") throws {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               cgImage.width > 0, cgImage.height > 0, cgImage.width <= 16_384, cgImage.height <= 16_384 else {
             throw captureError("This image cannot be annotated. Its dimensions must be between 1 and 16384 pixels.")
         }
         self.shot = shot
         self.output = output
+        self.confirmationTitle = confirmationTitle
         canvas = AnnotationCanvas(image: image, pixels: CGSize(width: cgImage.width, height: cgImage.height))
         let available = (NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)).insetBy(dx: 12, dy: 12)
         let frame = annotationImageRect(image: canvas.pixels, bounds: available)
@@ -82,7 +92,7 @@ import AppKit
 
     func buildContent() {
         guard let content = window?.contentView else { return }
-        let symbols = ["cursorarrow", "arrow.up.right", "rectangle", "pencil.tip", "textformat"]
+        let symbols = ["cursorarrow", "arrow.up.right", "rectangle", "pencil.tip", "textformat", "crop"]
         let images = zip(symbols, AnnotationTool.allCases).map {
             NSImage(systemSymbolName: $0.0, accessibilityDescription: $0.1.rawValue)!
         }
@@ -115,17 +125,28 @@ import AppKit
         undoButton = iconButton("Undo", symbol: "arrow.uturn.backward", action: #selector(undoMark), key: "z")
         redoButton = iconButton("Redo", symbol: "arrow.uturn.forward", action: #selector(redoMark), key: "z", modifiers: [.command, .shift])
         let cancel = iconButton("Cancel", symbol: "xmark", action: #selector(cancel), key: "", modifiers: [])
-        let insert = button("Insert", action: #selector(insert), key: "\r")
+        let insert = button(confirmationTitle, action: #selector(insert), key: "\r")
         insert.bezelColor = .controlAccentColor
         insert.contentTintColor = .white
-        insert.toolTip = "Insert into OpenCode’s draft (⌘Return)"
-        insert.setAccessibilityLabel("Insert into OpenCode")
+        insert.toolTip = confirmationTitle == "Insert" ? "Insert into OpenCode’s draft (⌘Return)" : "Return to composer (⌘Return)"
+        insert.setAccessibilityLabel(confirmationTitle == "Insert" ? "Insert into OpenCode" : "Return to composer")
         let handle = AnnotationToolbarHandle()
         handle.didDrag = { [weak self] delta in self?.moveToolbar(by: delta) }
         let controls = NSStackView(views: [handle, tools, separator(), colorWell, width, separator(), undoButton, redoButton, separator(), cancel, insert])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 8
+        applyCropButton = button("Apply Crop", action: #selector(applyCrop), key: "")
+        applyCropButton.isEnabled = false
+        let resetCrop = button("Reset Crop", action: #selector(resetCrop), key: "")
+        let cancelCrop = button("Cancel Crop", action: #selector(cancelCrop), key: "")
+        cropActions = NSStackView(views: [applyCropButton, resetCrop, cancelCrop])
+        cropActions.spacing = 8
+        cropActions.isHidden = true
+        let toolbar = NSStackView(views: [controls, cropActions])
+        toolbar.orientation = .vertical
+        toolbar.spacing = 8
+        toolbar.alignment = .centerX
         let tray = NSVisualEffectView()
         self.tray = tray
         tray.material = .popover
@@ -133,12 +154,12 @@ import AppKit
         tray.state = .active
         tray.wantsLayer = true
         tray.layer?.cornerRadius = 16
-        tray.addSubview(controls)
+        tray.addSubview(toolbar)
         for view in [canvas, tray] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
-        controls.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
         trayCenter = tray.centerXAnchor.constraint(equalTo: content.centerXAnchor)
         trayBottom = tray.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16)
         NSLayoutConstraint.activate([
@@ -148,20 +169,29 @@ import AppKit
             canvas.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             trayCenter,
             trayBottom,
-            controls.leadingAnchor.constraint(equalTo: tray.leadingAnchor, constant: 12),
-            controls.trailingAnchor.constraint(equalTo: tray.trailingAnchor, constant: -12),
-            controls.topAnchor.constraint(equalTo: tray.topAnchor, constant: 10),
-            controls.bottomAnchor.constraint(equalTo: tray.bottomAnchor, constant: -10),
+            toolbar.leadingAnchor.constraint(equalTo: tray.leadingAnchor, constant: 12),
+            toolbar.trailingAnchor.constraint(equalTo: tray.trailingAnchor, constant: -12),
+            toolbar.topAnchor.constraint(equalTo: tray.topAnchor, constant: 10),
+            toolbar.bottomAnchor.constraint(equalTo: tray.bottomAnchor, constant: -10),
         ])
         canvas.didChange = { [weak self] in self?.updateHistory(); self?.syncSelection() }
-        canvas.didChangeTool = { [weak self] tool in self?.tools.selectedSegment = AnnotationTool.allCases.firstIndex(of: tool) ?? 0 }
+        canvas.didChangeTool = { [weak self] tool in
+            self?.tools.selectedSegment = AnnotationTool.allCases.firstIndex(of: tool) ?? 0
+            self?.cropActions.isHidden = tool != .crop
+            self?.moveToolbar(by: .zero)
+        }
+        canvas.didChangeCrop = { [weak self] in self?.applyCropButton.isEnabled = self?.canvas.cropSelection != nil }
         updateHistory()
     }
 
     @objc func insert() {
         do {
+            canvas.commitInlineText()
+            if canvas.tool == .crop, canvas.cropSelection != nil {
+                canvas.applyCropSelection()
+            }
             // Export before closing; a failed write leaves annotations available to retry.
-            let png = try annotationPNG(image: canvas.image, marks: canvas.document.marks)
+            let png = try annotationPNG(image: canvas.image, marks: canvas.document.marks, crop: canvas.document.crop)
             let file = try saveAnnotationFile(png, output: output)
             var result = shot
             result["originalScreenshot"] = (shot["annotations"] == nil ? shot["screenshot"] : shot["originalScreenshot"]) ?? shot["screenshot"]
@@ -169,6 +199,18 @@ import AppKit
             result["annotatedAt"] = ISO8601DateFormatter().string(from: Date())
             result["annotationCount"] = canvas.document.marks.count
             result["annotations"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(canvas.document.marks))
+            if let crop = canvas.document.crop {
+                result["crop"] = ["x": Double(crop.minX), "y": Double(crop.minY), "width": Double(crop.width), "height": Double(crop.height)]
+                result["originalAccessibilityText"] = shot["originalAccessibilityText"] ?? shot["text"] ?? ""
+                result["text"] = ""
+                var warnings = shot["warnings"] as? [String] ?? []
+                if !warnings.contains(annotationCropWarning) { warnings.append(annotationCropWarning) }
+                result["warnings"] = warnings
+            } else {
+                result.removeValue(forKey: "crop")
+                result["text"] = shot["originalAccessibilityText"] ?? shot["text"] ?? ""
+                result["warnings"] = (shot["warnings"] as? [String] ?? []).filter { $0 != annotationCropWarning }
+            }
             try saveCaptureManifest(result, output: output)
             finish(result)
         } catch {
@@ -211,13 +253,23 @@ import AppKit
         window?.makeFirstResponder(canvas)
     }
 
+    @objc func applyCrop() { canvas.applyCropSelection(); updateHistory(); moveToolbar(by: .zero) }
+    @objc func resetCrop() { canvas.document.setCrop(nil); canvas.cropSelection = nil; canvas.clearGesture(); canvas.didChange?() }
+    @objc func cancelCrop() { canvas.cropSelection = nil; canvas.tool = .select; canvas.needsDisplay = true }
+
     @objc func changeColor(_ sender: NSColorWell) { canvas.color = sender.color; canvas.restyleSelection(color: sender.color) }
 
     @objc func changeWidth(_ sender: NSPopUpButton) { canvas.strokeWidth = [CGFloat(2), 4, 8][sender.indexOfSelectedItem]; canvas.restyleSelection(width: canvas.strokeWidth) }
 
-    @objc func undoMark() { canvas.document.undo(); canvas.clearGesture(); updateHistory(); syncSelection() }
+    @objc func undoMark() {
+        if let editor = canvas.inlineEditor { editor.undoManager?.undo(); return }
+        canvas.document.undo(); canvas.cropSelection = nil; canvas.clearGesture(); updateHistory(); syncSelection()
+    }
 
-    @objc func redoMark() { canvas.document.redo(); canvas.clearGesture(); updateHistory() }
+    @objc func redoMark() {
+        if let editor = canvas.inlineEditor { editor.undoManager?.redo(); return }
+        canvas.document.redo(); canvas.cropSelection = nil; canvas.clearGesture(); updateHistory()
+    }
 
     func updateHistory() {
         undoButton.isEnabled = !canvas.document.undoHistory.isEmpty
@@ -299,12 +351,15 @@ import AppKit
     }
 }
 
-@MainActor final class AnnotationCanvas: NSView {
+@MainActor final class AnnotationCanvas: NSView, NSTextViewDelegate {
     let image: NSImage
     let pixels: CGSize
     var document = AnnotationDocument()
     var tool = AnnotationTool.arrow {
-        didSet { window?.invalidateCursorRects(for: self); didChangeTool?(tool) }
+        didSet {
+            if oldValue != tool { commitInlineText(); cropSelection = nil; cropStart = nil }
+            window?.invalidateCursorRects(for: self); didChangeTool?(tool); needsDisplay = true
+        }
     }
     var color = NSColor.systemRed
     var strokeWidth: CGFloat = 4
@@ -313,8 +368,27 @@ import AppKit
     var drag: AnnotationDrag?
     var didChange: (() -> Void)?
     var didChangeTool: ((AnnotationTool) -> Void)?
+    var didChangeCrop: (() -> Void)?
+    var cropSelection: CGRect? { didSet { didChangeCrop?(); needsDisplay = true } }
+    var cropStart: CGPoint?
+    var inlineEditor: AnnotationInlineTextView?
+    var editingMark: AnnotationMark?
+
+    var visiblePixels: CGRect { document.crop ?? CGRect(origin: .zero, size: pixels) }
+    var imageRect: CGRect { annotationImageRect(image: visiblePixels.size, bounds: bounds) }
+    var sourceRect: CGRect {
+        let crop = visiblePixels, rect = imageRect
+        let scale = rect.width / crop.width
+        return CGRect(x: rect.minX - crop.minX * scale, y: rect.minY - crop.minY * scale, width: pixels.width * scale, height: pixels.height * scale)
+    }
+
+    func imagePoint(_ point: CGPoint, clamp: Bool) -> CGPoint? {
+        guard let mapped = annotationImagePoint(point, pixels: visiblePixels.size, rect: imageRect, clamp: clamp) else { return nil }
+        return CGPoint(x: mapped.x + visiblePixels.minX, y: mapped.y + visiblePixels.minY)
+    }
 
     var selectedMark: AnnotationMark? {
+        if let editingMark, editingMark.id == selectedID { return editingMark }
         if let pending, pending.id == selectedID { return pending }
         return document.marks.first { $0.id == selectedID }
     }
@@ -326,7 +400,7 @@ import AppKit
         setAccessibilityElement(true)
         setAccessibilityLabel("Screenshot annotation canvas")
         setAccessibilityRole(.image)
-        toolTip = "V Select · A Arrow · R Box · P Draw · T Text. Drag to move, handles to resize. Double-click text to edit."
+        toolTip = "V Select · A Arrow · R Box · P Draw · T Text · C Crop. Text edits directly on the image. Drawing tools stay active."
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -337,23 +411,26 @@ import AppKit
         super.layout()
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
+        layoutInlineText()
     }
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        let rect = annotationImageRect(image: pixels, bounds: bounds)
+        let rect = imageRect
         addCursorRect(rect, cursor: tool == .select ? .arrow : tool == .text ? .iBeam : annotationCrosshairCursor())
         if tool == .select, let mark = selectedMark {
-            let scale = rect.width / pixels.width
+            let scale = sourceRect.width / pixels.width
             let box = annotationBounds(mark)
-            addCursorRect(CGRect(x: rect.minX + box.minX * scale, y: rect.minY + box.minY * scale, width: max(12, box.width * scale), height: max(12, box.height * scale)), cursor: .openHand)
+            addCursorRect(CGRect(x: sourceRect.minX + box.minX * scale, y: sourceRect.minY + box.minY * scale, width: max(12, box.width * scale), height: max(12, box.height * scale)), cursor: .openHand)
             for point in annotationHandles(mark) {
-                addCursorRect(CGRect(x: rect.minX + point.x * scale - 7, y: rect.minY + point.y * scale - 7, width: 14, height: 14), cursor: .crosshair)
+                addCursorRect(CGRect(x: sourceRect.minX + point.x * scale - 7, y: sourceRect.minY + point.y * scale - 7, width: 14, height: 14), cursor: .crosshair)
             }
         }
     }
 
     override func cancelOperation(_ sender: Any?) {
+        if inlineEditor != nil { cancelInlineText(); return }
+        if tool == .crop { cropSelection = nil; cropStart = nil; tool = .select; return }
         if selectedID != nil || pending != nil { selectedID = nil; clearGesture() }
         else { window?.performClose(sender) }
     }
@@ -361,21 +438,35 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
-        let rect = annotationImageRect(image: pixels, bounds: bounds)
-        var marks = document.marks
+        let rect = sourceRect
+        var marks = document.marks.filter { $0.id != editingMark?.id }
         if let pending {
             if let index = marks.firstIndex(where: { $0.id == pending.id }) { marks[index] = pending }
             else { marks.append(pending) }
         }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: imageRect).addClip()
         drawAnnotationImage(image, marks: marks, pixels: pixels, rect: rect)
-        if let mark = selectedMark { drawAnnotationSelection(mark, pixels: pixels, rect: rect) }
+        if tool == .select, let mark = selectedMark, inlineEditor == nil { drawAnnotationSelection(mark, pixels: pixels, rect: rect) }
+        if tool == .crop, let cropSelection {
+            let scale = rect.width / pixels.width
+            let selection = CGRect(x: rect.minX + cropSelection.minX * scale, y: rect.minY + cropSelection.minY * scale, width: cropSelection.width * scale, height: cropSelection.height * scale)
+            let shade = NSBezierPath(rect: imageRect)
+            shade.appendRect(selection)
+            shade.windingRule = .evenOdd
+            NSColor.black.withAlphaComponent(0.5).setFill(); shade.fill()
+            NSColor.white.setStroke()
+            let border = NSBezierPath(rect: selection); border.lineWidth = 1.5; border.stroke()
+        }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     override func mouseDown(with event: NSEvent) {
+        commitInlineText()
         window?.makeFirstResponder(self)
-        let rect = annotationImageRect(image: pixels, bounds: bounds)
-        guard let point = annotationImagePoint(convert(event.locationInWindow, from: nil), pixels: pixels, rect: rect, clamp: false) else { selectedID = nil; clearGesture(); return }
-        let tolerance = 8 * pixels.width / rect.width
+        guard let point = imagePoint(convert(event.locationInWindow, from: nil), clamp: false) else { selectedID = nil; clearGesture(); return }
+        if tool == .crop { cropStart = point; cropSelection = nil; return }
+        let tolerance = 8 * pixels.width / sourceRect.width
         if tool == .select {
             if let mark = selectedMark, let handle = annotationHandles(mark).firstIndex(where: { hypot($0.x - point.x, $0.y - point.y) <= tolerance }) {
                 drag = AnnotationDrag(original: mark, start: point, handle: handle)
@@ -398,8 +489,11 @@ import AppKit
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let rect = annotationImageRect(image: pixels, bounds: bounds)
-        guard let point = annotationImagePoint(convert(event.locationInWindow, from: nil), pixels: pixels, rect: rect, clamp: true) else { return }
+        guard let point = imagePoint(convert(event.locationInWindow, from: nil), clamp: true) else { return }
+        if tool == .crop, let start = cropStart {
+            cropSelection = CGRect(x: min(start.x, point.x), y: min(start.y, point.y), width: abs(point.x - start.x), height: abs(point.y - start.y))
+            return
+        }
         if let drag {
             pending = annotationDragged(drag, to: point, pixels: pixels)
             needsDisplay = true
@@ -414,19 +508,20 @@ import AppKit
 
     override func mouseUp(with event: NSEvent) {
         mouseDragged(with: event)
+        if tool == .crop { cropStart = nil; return }
         defer { clearGesture(); didChange?() }
         guard let mark = pending else { return }
         if drag != nil { document.replace(mark); return }
         if let first = mark.points.first, let last = mark.points.last,
            hypot(last.x - first.x, last.y - first.y) > 2 || (mark.tool == .draw && mark.points.count > 2) {
             document.append(mark)
-            selectedID = mark.id
-            tool = .select
+            selectedID = nil
         }
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { cancelOperation(nil); return }
+        if event.keyCode == 36, tool == .crop { applyCropSelection(); return }
         if [51, 117].contains(event.keyCode) { deleteSelection(); return }
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "d" { duplicateSelection(); return }
         if [123, 124, 125, 126].contains(event.keyCode), let mark = selectedMark {
@@ -437,16 +532,15 @@ import AppKit
         }
         if event.keyCode == 36, let mark = selectedMark, mark.tool == .text { editText(at: mark.points[0], existing: mark); return }
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-           let mode = ["v": AnnotationTool.select, "a": .arrow, "r": .box, "p": .draw, "t": .text][event.charactersIgnoringModifiers?.lowercased() ?? ""] {
+           let mode = ["v": AnnotationTool.select, "a": .arrow, "r": .box, "p": .draw, "t": .text, "c": .crop][event.charactersIgnoringModifiers?.lowercased() ?? ""] {
             clearGesture(); tool = mode; return
         }
         super.keyDown(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let rect = annotationImageRect(image: pixels, bounds: bounds)
-        guard let point = annotationImagePoint(convert(event.locationInWindow, from: nil), pixels: pixels, rect: rect, clamp: false),
-              let mark = document.marks.reversed().first(where: { annotationHit($0, point: point, tolerance: 8 * pixels.width / rect.width) }) else { return nil }
+        guard let point = imagePoint(convert(event.locationInWindow, from: nil), clamp: false),
+              let mark = document.marks.reversed().first(where: { annotationHit($0, point: point, tolerance: 8 * pixels.width / sourceRect.width) }) else { return nil }
         selectedID = mark.id; tool = .select; needsDisplay = true
         let menu = NSMenu()
         if mark.tool == .text { menu.addItem(withTitle: "Edit text…", action: #selector(editSelectionText), keyEquivalent: "").target = self }
@@ -477,6 +571,13 @@ import AppKit
     }
 
     func restyleSelection(color: NSColor? = nil, width: CGFloat? = nil) {
+        if var mark = editingMark {
+            if let color { mark.color = color }
+            if let width { mark.width = width }
+            editingMark = mark
+            layoutInlineText()
+            return
+        }
         guard var mark = selectedMark else { return }
         if let color { mark.color = color }
         if let width { mark.width = width }
@@ -493,33 +594,92 @@ import AppKit
 
     func editText(at point: CGPoint, existing: AnnotationMark? = nil) {
         guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = existing == nil ? "Add a text annotation" : "Edit text annotation"
-        alert.addButton(withTitle: existing == nil ? "Add" : "Save")
-        alert.addButton(withTitle: "Cancel")
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 28))
-        input.placeholderString = "Label or instruction"
-        input.stringValue = existing?.text ?? ""
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-        let color = color
-        let width = strokeWidth
-        alert.beginSheetModal(for: window) { [weak self] response in
-            let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard response == .alertFirstButtonReturn, !text.isEmpty, let self else { return }
-            var mark = existing ?? AnnotationMark(tool: .text, points: [point], color: color, width: width)
-            mark.text = text
-            if existing == nil { self.document.append(mark) }
-            else { self.document.replace(mark) }
-            self.selectedID = mark.id
-            self.tool = .select
-            self.clearGesture(); self.didChange?()
-        }
+        commitInlineText()
+        var mark = existing ?? AnnotationMark(tool: .text, points: [point], color: color, width: strokeWidth)
+        if existing == nil { mark.fontSize = max(22, 18 * pixels.width / sourceRect.width) }
+        editingMark = mark
+        let editor = AnnotationInlineTextView()
+        editor.isRichText = false
+        editor.allowsUndo = true
+        editor.string = mark.text
+        editor.textContainerInset = .zero
+        editor.textContainer?.lineFragmentPadding = 0
+        editor.textContainer?.widthTracksTextView = false
+        editor.textContainer?.containerSize = NSSize(width: 100_000, height: 100_000)
+        editor.isHorizontallyResizable = false
+        editor.isVerticallyResizable = false
+        editor.backgroundColor = .white.withAlphaComponent(0.9)
+        editor.insertionPointColor = .controlAccentColor
+        editor.delegate = self
+        editor.onCommit = { [weak self] in self?.commitInlineText() }
+        editor.onCancel = { [weak self] in self?.cancelInlineText() }
+        editor.setAccessibilityLabel("Edit annotation text directly on the image")
+        inlineEditor = editor
+        addSubview(editor)
+        layoutInlineText()
+        window.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: (mark.text as NSString).length, length: 0))
+        needsDisplay = true
+    }
+
+    func textDidChange(_ notification: Notification) { layoutInlineText() }
+    func textDidEndEditing(_ notification: Notification) { commitInlineText() }
+
+    func layoutInlineText() {
+        guard let editor = inlineEditor, let mark = editingMark else { return }
+        let scale = sourceRect.width / pixels.width
+        editor.font = .systemFont(ofSize: (mark.fontSize ?? max(22, mark.width * 7)) * scale, weight: .semibold)
+        editor.textColor = mark.color
+        let point = mark.points[0]
+        let origin = CGPoint(x: sourceRect.minX + point.x * scale, y: sourceRect.minY + point.y * scale)
+        let size = NSAttributedString(string: editor.string.isEmpty ? " " : editor.string, attributes: [.font: editor.font!]).size()
+        editor.frame = CGRect(origin: origin, size: CGSize(width: max(30, min(max(140, size.width + 12), imageRect.maxX - origin.x)), height: max(26, size.height + 6)))
+    }
+
+    func commitInlineText() {
+        guard let editor = inlineEditor, var mark = editingMark else { return }
+        inlineEditor = nil; editingMark = nil
+        let wasFocused = window?.firstResponder === editor
+        mark.text = editor.string
+        editor.delegate = nil
+        editor.removeFromSuperview()
+        if wasFocused { window?.makeFirstResponder(self) }
+        if mark.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { document.remove(mark.id) }
+        else if document.marks.contains(where: { $0.id == mark.id }) { document.replace(mark) }
+        else { document.append(mark) }
+        selectedID = tool == .select ? mark.id : nil
+        needsDisplay = true
+        didChange?()
+    }
+
+    func cancelInlineText() {
+        inlineEditor?.delegate = nil
+        inlineEditor?.removeFromSuperview()
+        inlineEditor = nil; editingMark = nil
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    func applyCropSelection() {
+        guard let selection = cropSelection, let crop = annotationValidCrop(selection, pixels: pixels) else { return }
+        document.setCrop(crop)
+        cropSelection = nil; cropStart = nil; selectedID = nil
+        clearGesture(); didChange?()
+    }
+}
+
+@MainActor final class AnnotationInlineTextView: NSTextView {
+    var onCommit: (() -> Void)?
+    var onCancel: (() -> Void)?
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onCancel?(); return }
+        if [36, 76].contains(event.keyCode), !event.modifierFlags.contains(.shift), !hasMarkedText() { onCommit?(); return }
+        super.keyDown(with: event)
     }
 }
 
 enum AnnotationTool: String, CaseIterable, Codable {
-    case select = "Select", arrow = "Arrow", box = "Box", draw = "Draw", text = "Text"
+    case select = "Select", arrow = "Arrow", box = "Box", draw = "Draw", text = "Text", crop = "Crop"
 }
 
 struct AnnotationDrag {
@@ -552,7 +712,7 @@ struct AnnotationMark: Equatable, Codable {
         text = try values.decode(String.self, forKey: .text)
         fontSize = try values.decodeIfPresent(CGFloat.self, forKey: .fontSize)
         let rgba = try values.decode([CGFloat].self, forKey: .color)
-        guard rgba.count == 4, !points.isEmpty, tool != .select else { throw captureError("Invalid saved annotation.") }
+        guard rgba.count == 4, !points.isEmpty, tool != .select, tool != .crop else { throw captureError("Invalid saved annotation.") }
         color = NSColor(srgbRed: rgba[0], green: rgba[1], blue: rgba[2], alpha: rgba[3])
     }
 
@@ -566,28 +726,40 @@ struct AnnotationMark: Equatable, Codable {
     }
 }
 
+struct AnnotationState: Equatable {
+    var marks: [AnnotationMark]
+    var crop: CGRect?
+}
+
 struct AnnotationDocument {
     var marks: [AnnotationMark] = []
-    var undoHistory: [[AnnotationMark]] = []
-    var redoHistory: [[AnnotationMark]] = []
+    var crop: CGRect?
+    var undoHistory: [AnnotationState] = []
+    var redoHistory: [AnnotationState] = []
 
     mutating func append(_ mark: AnnotationMark) { commit(marks + [mark]) }
     mutating func replace(_ mark: AnnotationMark) { commit(marks.map { $0.id == mark.id ? mark : $0 }) }
     mutating func remove(_ id: UUID) { commit(marks.filter { $0.id != id }) }
+    mutating func setCrop(_ next: CGRect?) { commitState(AnnotationState(marks: marks, crop: next)) }
 
     mutating func undo() {
         guard let previous = undoHistory.popLast() else { return }
-        redoHistory.append(marks); marks = previous
+        redoHistory.append(AnnotationState(marks: marks, crop: crop)); marks = previous.marks; crop = previous.crop
     }
 
     mutating func redo() {
         guard let next = redoHistory.popLast() else { return }
-        undoHistory.append(marks); marks = next
+        undoHistory.append(AnnotationState(marks: marks, crop: crop)); marks = next.marks; crop = next.crop
     }
 
     mutating func commit(_ next: [AnnotationMark]) {
-        guard next != marks else { return }
-        undoHistory.append(marks); marks = next; redoHistory.removeAll()
+        commitState(AnnotationState(marks: next, crop: crop))
+    }
+
+    mutating func commitState(_ next: AnnotationState) {
+        let current = AnnotationState(marks: marks, crop: crop)
+        guard next != current else { return }
+        undoHistory.append(current); marks = next.marks; crop = next.crop; redoHistory.removeAll()
     }
 }
 
@@ -603,15 +775,28 @@ func annotationCrosshairCursor() -> NSCursor {
     return NSCursor(image: image, hotSpot: NSPoint(x: 12, y: 12))
 }
 
-func annotationPNG(image: NSImage, marks: [AnnotationMark]) throws -> Data {
+let annotationCropWarning = "Cropped screenshot: original-window accessibility text is omitted so content outside the crop is not shared."
+
+func annotationValidCrop(_ rect: CGRect, pixels: CGSize) -> CGRect? {
+    guard rect.minX.isFinite, rect.minY.isFinite, rect.width.isFinite, rect.height.isFinite else { return nil }
+    let result = rect.standardized.integral.intersection(CGRect(origin: .zero, size: pixels))
+    return result.isNull || result.width < 2 || result.height < 2 ? nil : result
+}
+
+func annotationPNG(image: NSImage, marks: [AnnotationMark], crop: CGRect? = nil) throws -> Data {
     guard let original = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
           original.width > 0, original.height > 0, original.width <= 16_384, original.height <= 16_384 else {
         throw captureError("Image dimensions must be between 1 and 16384 pixels.")
     }
     let pixels = CGSize(width: original.width, height: original.height)
-    let scale = min(1, 2560 / max(pixels.width, pixels.height))
-    let width = max(1, Int(pixels.width * scale))
-    let height = max(1, Int(pixels.height * scale))
+    let viewport: CGRect
+    if let crop {
+        guard let valid = annotationValidCrop(crop, pixels: pixels) else { throw captureError("Crop must contain at least 2 × 2 image pixels.") }
+        viewport = valid
+    } else { viewport = CGRect(origin: .zero, size: pixels) }
+    let scale = min(1, 2560 / max(viewport.width, viewport.height))
+    let width = max(1, Int(viewport.width * scale))
+    let height = max(1, Int(viewport.height * scale))
     guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
           let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
         throw captureError("Could not create the annotated image.")
@@ -621,7 +806,7 @@ func annotationPNG(image: NSImage, marks: [AnnotationMark]) throws -> Data {
     context.cgContext.translateBy(x: 0, y: CGFloat(height))
     context.cgContext.scaleBy(x: 1, y: -1)
     NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
-    drawAnnotationImage(image, marks: marks, pixels: pixels, rect: NSRect(x: 0, y: 0, width: width, height: height))
+    drawAnnotationImage(image, marks: marks, pixels: pixels, rect: NSRect(x: -viewport.minX * scale, y: -viewport.minY * scale, width: pixels.width * scale, height: pixels.height * scale))
     guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 15_000_000 else {
         throw captureError("The annotated PNG exceeds 15 MB. Use a smaller image.")
     }

@@ -12,7 +12,7 @@
 - On Windows, `npm run build` requires the .NET 8 SDK and creates `windows/dist`.
   Windows annotation editing uses WinForms and image-space objects. Do not claim native Windows
   validation from JavaScript tests or a successful build alone.
-- `npm run build` creates and ad-hoc signs `OpenCode Appshots.app` for Apple Silicon.
+- `npm run build` creates and ad-hoc signs `Capture Studio.app` for Apple Silicon.
   Rebuilding can invalidate macOS grants. Do not rebuild the user's installed helper
   without explaining that risk.
 - Keep the tool API, slash commands, and permission/privacy docs consistent with

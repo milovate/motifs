@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Capture Studio",
+  "version": "0.1.0",
+  "description": "Keeps a short, local buffer of console messages and failed requests for Capture Studio captures. Nothing leaves your Mac unless you send a capture.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2egQlFF39nMPaViGhBLVRfVLzPUmbfEORKTKKD7sjwXSKnZsXr/1fdpEirh9cJn4LNfruh9Iu0ekjv/KwojB0nwxulv1Bnyhm843tCRaYOEICNzPj9ich358Yckl6ZFlKORuAkZCv6t4lVWhccFqtwbt60Jgh4X+yWWqJEjjg9ZEQa0bh6+4GyfXoNBJWt/b5WhAIe9TsPfUeM7LC+FROjG7CbMpqv7FGBxt75PbrsD1Pxyfm6xyh16m61lAByWwCLF9u0Ckf/e3ug2u3FqTdwVWF5PAyZaEBFcHouEoTF4XtM8B7YQjJQXQOIgGtjrXES6sVs5mj8Pdbfl7cCisGwIDAQAB",
+  "minimum_chrome_version": "111",
+  "permissions": [
+    "nativeMessaging",
+    "webRequest",
+    "storage",
+    "tabs",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "page.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "relay.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

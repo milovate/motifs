@@ -37,7 +37,7 @@ needed, warn about interrupting active work before `opencode service restart`.
 
 ## Capture and use
 
-1. Run `/appshots-start` if the Appshots system tray icon is missing.
+1. Run `/capture-studio-start` if the Appshots system tray icon is missing.
 2. Focus a non-sensitive test window and press **Control+Alt+Shift+A**.
 3. Review and annotate the screenshot in the editor (see below). **Cancel** closes
    it without inserting or sending anything. Escape clears a selection first,
@@ -48,12 +48,12 @@ needed, warn about interrupting active work before `opencode service restart`.
    OpenCode conversation window open. Review both the attachment and draft text.
    Insertion never presses Return or clicks Send, and does not replace the draft.
    Clipboard restoration is best effort and will not overwrite a newer user copy.
-5. Add your question and send when ready. If insertion fails, use `/appshot` in
+5. Add your question and send when ready. If insertion fails, use `/capture-studio` in
    the intended conversation to retrieve the saved screenshot and text instead.
 
 The tray menu can review/reinsert or annotate the latest capture, annotate a
 clipboard image, open the captures folder, or quit the watcher.
-`/appshots-insert` and `/appshots-annotate` both open the latest capture in the editor.
+`/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
 `{ "hotkey": false }` in plugin options disables automatic watcher startup.
 Quitting the watcher does not stop explicitly requested live tool captures.
@@ -148,7 +148,7 @@ from the macOS development environment. Before calling Windows support verified:
   restart it. Inspect `status.json` if the shortcut does not fire.
 - Test Insert with an existing draft, clipboard changes, Settings/dialogs, missing
   Prompt accessibility, and multiple OpenCode windows. Verify **nothing is sent**.
-- Cancel a preview and confirm no draft change; use `/appshot` for the saved image.
+- Cancel a preview and confirm no draft change; use `/capture-studio` for the saved image.
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
   confirm exported marks agree with the editor on mixed-DPI monitors. Test Cancel
   and clipboard-image annotation, and confirm handles are absent from the PNG.

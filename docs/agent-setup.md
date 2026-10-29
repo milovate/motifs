@@ -17,11 +17,11 @@ Do not claim Windows desktop behavior is verified from a build or JavaScript tes
 ## Install and enable
 
 1. Clone `https://github.com/milovate/opencode-appshots.git` into
-   `~/.config/opencode/plugins/appshots` only if that path is unused.
+   `~/.config/opencode/plugins/capture-studio` only if that path is unused.
 2. In that directory, run `npm ci --ignore-scripts`, `npm test`, and `npm run build`.
-   The published source has a known native annotation mouse-drag test failure
-   (see README); report it rather than claiming all tests passed. Do not silently
-   ignore additional failures or modify the user's installed plugin to hide them.
+    Report every test failure rather than claiming a clean suite. The former native
+    annotation drag fixture now uses source-pixel coordinates on Retina displays;
+    do not silently skip native tests or modify the installed plugin to hide failures.
    If Command Line Tools are missing, `xcode-select --install` starts a user-facing
    installer; wait for the user to finish it rather than claiming the build worked.
 3. The global directory is automatically discovered by V2. Do not add a duplicate
@@ -32,10 +32,19 @@ Do not claim Windows desktop behavior is verified from a build or JavaScript tes
 5. Reveal the built `.app` with `open -R` and direct the user to both macOS permission
    panels. **Pause until the user confirms approval.** Agents cannot enable these
    switches, bypass TCC, or treat tool approval as a macOS grant.
-6. Have the user run `/appshots-start` and capture a non-sensitive test window with
-   Control+Option+Command+A. They should click Insert and inspect the unsent draft.
+6. Have the user run `/capture-studio-start` and capture a non-sensitive test window with
+   Option+G. On macOS, verify the floating composer, destination and
+   target pickers, Context chip, Report skill picker, and cancellation without sending. Legacy draft insertion is
+   available through **Capture, annotate, and insert into current draft**.
+   Test voice only if requested; the user approves Microphone and Speech Recognition.
+   Continue creates a real session and fills its unsent draft. Do not submit that
+   draft during setup: only the user should press Enter/Send to invoke the model.
 7. Verify commands, helper status, screenshot, and Accessibility text separately.
-   Report exactly what was checked and what still needs user confirmation.
+    Report exactly what was checked and what still needs user confirmation.
+8. For the new macOS interactions, have the user check inline text/caret, sticky
+   drawing tools, Crop/Reset/Undo, thumbnail annotate/remove, and Add screenshot's
+   shaded region picker. Region cancellation must add nothing. Do not take live
+   screenshots or submit the resulting draft yourself during setup.
 
 ## Using the tool safely
 

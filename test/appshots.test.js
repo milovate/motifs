@@ -17,13 +17,13 @@ test("registers a direct, permission-scoped tool and slash command", async () =>
     session: { prompt: async (request) => { prompt = request; } },
   });
   assert.equal(registered.length, 1);
-  assert.equal(registered[0].name, "appshot");
-  assert.equal(registered[0].options.permission, "appshot");
+  assert.equal(registered[0].name, "capture_studio");
+  assert.equal(registered[0].options.permission, "capture_studio");
   assert.equal(registered[0].options.codemode, false);
-  assert.equal(typeof commands["appshots-start"].execute, "function");
-  assert.equal(typeof commands["appshots-insert"].execute, "function");
-  assert.equal(typeof commands["appshots-annotate"].execute, "function");
-  await commands.appshot.execute({ sessionID: "fixture-session", delivery: "queue", prompt: { text: "explain this", attachments: [] } });
+  assert.equal(typeof commands["capture-studio-start"].execute, "function");
+  assert.equal(typeof commands["capture-studio-insert"].execute, "function");
+  assert.equal(typeof commands["capture-studio-annotate"].execute, "function");
+  await commands["capture-studio"].execute({ sessionID: "fixture-session", delivery: "queue", prompt: { text: "explain this", attachments: [] } });
   assert.match(prompt.text, /source=latest/);
   assert.match(prompt.text, /explain this$/);
   assert.equal(prompt.sessionID, "fixture-session");
@@ -39,7 +39,7 @@ test("starts the shortcut as a macOS app with its own permission identity", asyn
   }, platformConfig("darwin"));
   assert.equal(launch[0], "/usr/bin/open");
   assert.deepEqual(launch[1].slice(0, 2), ["-g", "-a"]);
-  assert.match(launch[1][2], /OpenCode Appshots\.app$/);
+  assert.match(launch[1][2], /Capture Studio\.app$/);
   assert.deepEqual(launch[1].slice(3, 6), ["--args", "--watch", "--output"]);
 });
 
@@ -93,7 +93,7 @@ test("missing permission surfaces the native error without fake image content", 
 test("a missing latest capture explains the shortcut workflow", async () => {
   const io = fixture();
   io.readFile = async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
-  await assert.rejects(capture({}, io), /Control\+(Option\+Command|Alt\+Shift)\+A/);
+  await assert.rejects(capture({}, io), /Option\+G|Control\+Alt\+Shift\+A/);
 });
 
 test("refuses a manifest pointing outside the capture directory", async () => {

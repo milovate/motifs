@@ -1,34 +1,46 @@
 # macOS permissions
 
-Appshots needs two separate macOS permissions. Only the user can approve them.
+Appshots needs Screen Recording and optionally Accessibility. Dictation adds two
+optional permissions. Only the user can approve them.
 OpenCode's tool approval is separate and does not grant macOS access.
 
 | Permission | Used for | Without it |
 | --- | --- | --- |
 | Screen Recording / Screen & System Audio Recording | Screenshot of the requested app window | Screenshot capture fails with setup instructions |
-| Accessibility | Read the selected window's UI text and insert an attachment into OpenCode's draft | Screenshot-only results; automatic insertion is unavailable |
+| Accessibility | Read the selected window's UI text, insert an attachment into OpenCode's draft, and (only if you turn on **Record recent clicks**) observe clicks and the clicked element's role/label | Screenshot-only results; automatic insertion and click history are unavailable |
+| Microphone | Listen only after clicking Dictate | Type the description instead |
+| Speech Recognition | On-device voice-to-text in the composer | Type or use macOS keyboard dictation instead |
 
-The settings name varies by macOS version. Despite the setting's name, Appshots
-does not record audio. It does not need Full Disk Access or Input Monitoring.
+The settings name varies by macOS version. Screen capture does not record system
+audio. Dictate processes microphone audio only while enabled, saves no audio file,
+and requires on-device recognition support; no cloud fallback is used. It does not
+need Full Disk Access or Input Monitoring. Denying voice permissions does not block
+typing. Microphone and Speech Recognition prompts appear only after clicking Dictate.
+
+Context collection needs no further permissions. Reading the captured app's
+errors from the unified log uses `/usr/bin/log` as your user; macOS keeps private
+values redacted. Custom log files are read only if you choose them, and only files
+your user can already read. The browser extension needs no macOS permission; the
+browser itself asks you to allow the unpacked extension.
 
 ## 1. Build and find the helper
 
 Complete the [installation](../README.md#installation) first. For the default path:
 
 ```sh
-open -R "$HOME/.config/opencode/plugins/appshots/OpenCode Appshots.app"
+open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
 ```
 
-Finder reveals **OpenCode Appshots.app**. Keep it at the path where it was built:
+Finder reveals **Capture Studio.app**. Keep it at the path where it was built:
 the plugin expects the helper inside its own directory.
 
 ## 2. Enable screen capture
 
 1. Open Apple menu → **System Settings** → **Privacy & Security**.
 2. Select **Screen Recording** or **Screen & System Audio Recording**.
-3. Enable **OpenCode Appshots** if listed. Otherwise use **+** to add it.
+3. Enable **Capture Studio** if listed. Otherwise use **+** to add it.
 4. In the file picker press **Command+Shift+G**, enter
-   `~/.config/opencode/plugins/appshots/`, and select **OpenCode Appshots.app**.
+   `~/.config/opencode/plugins/capture-studio/`, and select **Capture Studio.app**.
 5. Approve the change, authenticating if macOS requests it. Follow any quit/reopen prompt.
 
 If macOS attributes a direct command-line capture to **OpenCode** or the terminal
@@ -38,7 +50,7 @@ permissions indiscriminately to every terminal or executable.
 ## 3. Enable Accessibility
 
 1. Return to **Privacy & Security** → **Accessibility**.
-2. Add the same **OpenCode Appshots.app** with **+**, then enable its switch.
+2. Add the same **Capture Studio.app** with **+**, then enable its switch.
 3. Authenticate if prompted.
 
 Accessibility is powerful: it allows the helper to inspect UI and send paste
@@ -46,23 +58,30 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
 
 ## 4. Restart and verify
 
-1. Choose **Appshot → Quit Appshots** if the helper is already running.
-2. In an OpenCode conversation, run `/appshots-start`. Alternatively:
+1. Choose **Appshot → Quit Capture Studio** if the helper is already running.
+2. In an OpenCode conversation, run `/capture-studio-start`. Alternatively:
 
    ```sh
-   open "$HOME/.config/opencode/plugins/appshots/OpenCode Appshots.app"
+   open "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
    ```
 
 3. Confirm **Appshot** appears in the menu bar.
-4. Focus a non-sensitive test window and press **Control+Option+Command+A**.
-5. In the annotation editor, click **Insert**. Confirm the screenshot and window
-   text appear in the OpenCode draft. The helper does **not** send the message.
-6. Review the attachment and text before sending anything to a model.
+4. Focus a non-sensitive test window and press **Option+G**.
+5. Confirm the floating composer opens with a screenshot, a **Context** chip, the
+   destination and target selectors, and **@report** selected when available. Close it
+   without sending to verify cancellation. Optionally choose **Clipboard** and send to
+   confirm Markdown is copied and nothing is pasted.
+6. To test legacy insertion without a model call, choose **Appshot → Capture,
+   annotate, and insert into current draft**, then click **Insert**. Confirm the
+   screenshot and window text appear in the unsent OpenCode draft.
+7. Test Dictate only if desired. Stop and review the transcript before continuing.
+   **↗ Continue** opens a new session with an unsent draft; it never runs the model.
+   Only the user's own Enter/Send in OpenCode submits that draft.
 
 For helper-side diagnostics, inspect the local file:
 
 ```sh
-cat "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/appshots/status.json"
+cat "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/capture-studio/status.json"
 ```
 
 `screenRecording` and `accessibility` reflect permission checks. Both
@@ -74,12 +93,12 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
 ## Troubleshooting
 
 - **Switches enabled but still denied after rebuilding:** the local code signature
-  changed. Quit Appshots, remove its old entry from both permission lists, add the
+  changed. Quit Capture Studio, remove its old entry from both permission lists, add the
   newly built `.app`, enable it again, and restart the helper. Restarting only
   OpenCode does not restart an existing helper.
 - **No slash commands:** check the plugin path and build, then reload OpenCode or
   restart its shared service with `opencode service restart`. Do not use V1.
-- **No menu-bar helper:** run `/appshots-start`; verify the built helper exists.
+- **No menu-bar helper:** run `/capture-studio-start`; verify the built helper exists.
 - **Shortcut does nothing:** check for shortcut conflicts. Try the capture action
   in the Appshot menu. Inspect `shortcutCount` rather than assuming registration
   proves delivery.
@@ -88,21 +107,44 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
   omitted from the text dump, but anything visible can still appear in the image.
 - **Draft insertion fails:** open a conversation in the OpenCode desktop app, not
   Settings or a modal dialog. Use **Appshot → Insert latest capture into OpenCode**
-  or `/appshots-insert`. The terminal UI is not the automatic insertion target.
+  or `/capture-studio-insert`. The terminal UI is not the automatic insertion target.
 - **Managed Mac prevents approval:** ask your organization's administrator; do not
   edit the TCC database, disable SIP, or try to bypass system policy.
 
 ## Privacy and revocation
 
-Captures are stored locally under `$XDG_DATA_HOME/opencode/appshots`, or
-`~/.local/share/opencode/appshots`. Earlier PNGs remain after a new capture;
+Captures are stored locally under `$XDG_DATA_HOME/opencode/capture-studio`, or
+`~/.local/share/opencode/capture-studio`. Earlier PNGs remain after a new capture;
 review/remove them through **Appshot → Open captures folder**. Captures pasted
-into OpenCode also enter its attachment store. Draft insertion does not send a
+into OpenCode also enter its attachment store. The composer only prepares a handoff:
+an unsent OpenCode draft, Markdown on the clipboard, or an owner-only export folder.
+Dictation never sends. Each send saves an owner-only `bundle-*.json` holding your
+description, window text, collected context (device and system state, console and
+failed-request entries, recent clicks if enabled, custom log tails; never location
+or keystrokes) and include flags; delete these files to remove recent bundles.
+Recent clicks live only in the helper's memory until a capture copies them into
+the composer. The browser extension's buffers live only in the browser's session
+memory. Browser context travels only over an owner-only socket in
+`~/Library/Application Support/Capture Studio/browser/` between two copies of the
+same signed Capture Studio binary; each side refuses any other process. Endpoint files in the
+local `composers/` subfolder contain authentication tokens: do not publish them.
+Draft insertion does not send a
 message, but sending the draft or invoking the agent tool exposes the returned
 image/text to the selected model/provider.
 
-To revoke access, quit Appshots and turn off/remove its entries in both permission
-lists. Remove or disable the plugin separately to stop future helper launches.
+The Add screenshot picker dims displays without saving whole-screen snapshots;
+only the region confirmed by a drag is captured. Escape or switching away cancels
+the picker. Region captures contain no accessibility dump. Cropped exports omit
+the original window's accessibility text, but the clean original image and original
+context remain in the private local capture history for non-destructive re-editing.
+Removing a thumbnail detaches it from the draft; it does not erase saved capture files.
+
+To revoke access, quit Appshots and turn off/remove its entries in Screen Recording,
+Accessibility, Microphone, and Speech Recognition as applicable. Turn off
+**Record recent clicks**, remove custom log files from the menu, and remove the
+browser extension plus the `local.opencode.capturestudio.json` native messaging
+manifests to stop the other context sources. Remove or disable
+the plugin separately to stop future helper launches and its local composer bridge.
 
 ## Official references
 

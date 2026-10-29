@@ -8,15 +8,17 @@ import ScreenCaptureKit
 struct Appshots {
     @MainActor static func main() {
         let args = Array(CommandLine.arguments.dropFirst())
+        if BrowserBridge.isNativeHostLaunch(args) { BrowserBridge.runNativeHost() }
         if args.contains("--permissions") {
-            emit(["screenRecording": CGPreflightScreenCaptureAccess(), "accessibility": AXIsProcessTrusted()])
+            emit(["screenRecording": CGPreflightScreenCaptureAccess(), "accessibility": AXIsProcessTrusted(), "dictation": ComposerSpeech.diagnostics()])
             return
         }
         let dataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
             ?? NSHomeDirectory() + "/.local/share"
-        let output = option("--output", args) ?? dataHome + "/opencode/appshots"
+        let output = option("--output", args) ?? dataHome + "/opencode/capture-studio"
         NSApplication.shared.setActivationPolicy(.accessory)
-        if !args.contains("--capture") && !args.contains("--insert-latest") && !args.contains("--annotate-latest") && !args.contains("--annotate-clipboard") {
+        installAppshotsEditMenu()
+        if !args.contains("--capture") && !args.contains("--insert-latest") && !args.contains("--annotate-latest") && !args.contains("--annotate-clipboard") && !args.contains("--open-session-draft") {
             let watcher = Watcher(output: output)
             NSApplication.shared.delegate = watcher
             withExtendedLifetime(watcher) { NSApplication.shared.run() }
@@ -25,6 +27,23 @@ struct Appshots {
         if routeToWatcher(args, output: output) { return }
         Task { @MainActor in
             do {
+                if args.contains("--open-session-draft") {
+                    guard let path = option("--open-session-draft", args) else { throw captureError("Provide an owner-only handoff JSON file in the captures folder.") }
+                    let file = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+                    let folder = URL(fileURLWithPath: output).resolvingSymlinksInPath()
+                    guard file.deletingLastPathComponent() == folder, file.pathExtension == "json" else { throw captureError("Handoff files must be JSON files in the captures folder.") }
+                    let data = try Data(contentsOf: file)
+                    guard data.count <= 300_000,
+                          let handoff = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let id = handoff["sessionID"] as? String, id.range(of: "^ses_[A-Za-z0-9]+$", options: .regularExpression) != nil,
+                          let title = handoff["title"] as? String, !title.isEmpty,
+                          let text = handoff["draftText"] as? String, !text.isEmpty,
+                          let shot = handoff["shot"] as? [String: Any] else { throw captureError("Invalid handoff JSON.") }
+                    try await openSessionDraft(sessionID: id, title: title, draftText: text, shot: shot, output: output)
+                    saveStatus(output: output, phase: "composer_draft_inserted", details: ["sessionID": id])
+                    emit(["sessionID": id, "draftInserted": true, "submitted": false])
+                    exit(0)
+                }
                 if args.contains("--insert-latest") || args.contains("--annotate-latest") || args.contains("--annotate-clipboard") {
                     var result = try args.contains("--annotate-clipboard") ? clipboardSnapshot(output: output) : latestSnapshot(output: output)
                     if !args.contains("--insert-latest") {
@@ -49,8 +68,12 @@ struct Appshots {
     }
 }
 
-@MainActor final class Watcher: NSObject, NSApplicationDelegate {
+@MainActor final class Watcher: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let output: String
+    let recentMenu = NSMenu(title: "Recent bundles")
+    let destinationMenu = NSMenu(title: "Default destination")
+    let contextMenu = NSMenu(title: "Context sources")
+    let events = UserEventRecorder()
     var item: NSStatusItem?
     var hotkey: EventHotKeyRef?
     var handler: EventHandlerRef?
@@ -69,22 +92,33 @@ struct Appshots {
         } catch { fail(error.localizedDescription) }
         lock = Darwin.open(output + "/watch.lock", O_CREAT | O_RDWR, 0o600)
         guard lock >= 0, flock(lock, LOCK_EX | LOCK_NB) == 0 else { exit(0) }
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item?.button?.title = "Appshot"
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        updateStatusIcon()
         let menu = NSMenu()
-        for (title, action) in [("Capture, annotate, and insert (⌃⌥⌘A)", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Appshots", #selector(quit))] {
+        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
             entry.target = self
             menu.addItem(entry)
         }
+        for (index, (title, submenu)) in [("Recent bundles", recentMenu), ("Default destination", destinationMenu), ("Context sources", contextMenu)].enumerated() {
+            submenu.delegate = self
+            let entry = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            entry.submenu = submenu
+            menu.insertItem(entry, at: 1 + index)
+        }
+        menu.insertItem(.separator(), at: 4)
         item?.menu = menu
-        lastExternalApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == "local.opencode.appshots" ? nil : $0 }
+        if CaptureSettings.load(output: output).recordClicks { events.start() }
+        lastExternalApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == helperBundleID ? nil : $0 }
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier != "local.opencode.appshots" else { return }
-            Task { @MainActor in self?.lastExternalApp = app }
+                  app.bundleIdentifier != helperBundleID else { return }
+            Task { @MainActor in
+                self?.lastExternalApp = app
+                self?.events.recordAppSwitch(app)
+            }
         }
-        commandObserver = DistributedNotificationCenter.default().addObserver(forName: Notification.Name("local.opencode.appshots.command"), object: URL(fileURLWithPath: output).standardizedFileURL.path, queue: .main) { [weak self] notification in
+        commandObserver = DistributedNotificationCenter.default().addObserver(forName: Notification.Name(helperBundleID + ".command"), object: URL(fileURLWithPath: output).standardizedFileURL.path, queue: .main) { [weak self] notification in
             guard let action = notification.userInfo?["action"] as? String else { return }
             Task { @MainActor in self?.handleCommand(action) }
         }
@@ -96,12 +130,20 @@ struct Appshots {
             Task { @MainActor in watcher.receivedShortcut() }
             return noErr
         }, 1, &event, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        let status = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_A), UInt32(controlKey | optionKey | cmdKey), EventHotKeyID(signature: 0x41505348, id: 1), eventTarget, 0, &hotkey) : handlerStatus
-        if status != noErr { item?.button?.title = "Appshot (shortcut unavailable)" }
-        saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Control + Option + Command + A"])
+        let status = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey), EventHotKeyID(signature: 0x43535444, id: 1), eventTarget, 0, &hotkey) : handlerStatus
+        if status != noErr { updateStatusIcon(.warning); item?.button?.toolTip = "Capture Studio — shortcut unavailable. Use the capture menu." }
+        saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Option + G"])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func updateStatusIcon(_ status: AppshotStatusIcon = .ready) {
+        item?.button?.title = ""
+        item?.button?.image = appshotStatusImage(status)
+        item?.button?.imagePosition = .imageOnly
+        item?.button?.toolTip = "Capture Studio — capture and compose (⌥G)"
+        item?.button?.setAccessibilityLabel("Capture Studio")
+    }
 
     func handleCommand(_ action: String) {
         switch action {
@@ -115,7 +157,139 @@ struct Appshots {
     func receivedShortcut() {
         shortcutCount += 1
         saveStatus(output: output, phase: busy ? "annotating" : "shortcut_received", details: ["shortcutCount": shortcutCount, "lastShortcutAt": ISO8601DateFormatter().string(from: Date())])
-        takeShot()
+        composeShot()
+    }
+
+    @objc func composeShot() {
+        guard !busy else { raiseEditor(); return }
+        busy = true
+        let foreground = NSWorkspace.shared.frontmostApplication
+        let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                saveStatus(output: output, phase: "capturing")
+                let shot = try await capture(pid: target?.processIdentifier, output: output)
+                let context = CaptureContext.immediate(app: target, settings: CaptureSettings.load(output: output), events: events.snapshot())
+                let pid = target?.processIdentifier, bundleID = target?.bundleIdentifier, title = shot["title"] as? String ?? ""
+                let pending = Task { @MainActor in await CaptureContext.slow(pid: pid, bundleID: bundleID, windowTitle: title) }
+                saveStatus(output: output, phase: "composing")
+                try await composeScreenshot(shot, context: context, pending: pending, output: output, returnTo: target)
+            } catch { showInsertError(error) }
+        }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        if menu === recentMenu {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            let bundles = recentBundles(output: output)
+            for bundle in bundles {
+                let entry = NSMenuItem(title: "\(bundle.title) · \(formatter.localizedString(for: bundle.createdAt, relativeTo: Date()))", action: #selector(reopenBundle(_:)), keyEquivalent: "")
+                entry.representedObject = bundle.path
+                entry.toolTip = "\(bundle.screenshots) screenshot\(bundle.screenshots == 1 ? "" : "s") · Reopen in the composer"
+                entry.target = self
+                menu.addItem(entry)
+            }
+            if bundles.isEmpty { menu.addItem(NSMenuItem(title: "No bundles yet", action: nil, keyEquivalent: "")) }
+        } else if menu === destinationMenu {
+            let settings = CaptureSettings.load(output: output)
+            for destination in settings.knownDestinations {
+                let entry = NSMenuItem(title: destination.label, action: #selector(chooseDefaultDestination(_:)), keyEquivalent: "")
+                entry.representedObject = destination.id
+                entry.state = destination.id == settings.defaultDestination ? .on : .off
+                entry.target = self
+                menu.addItem(entry)
+            }
+        } else if menu === contextMenu {
+            let settings = CaptureSettings.load(output: output)
+            let clicks = NSMenuItem(title: "Record recent clicks", action: #selector(toggleClickRecording), keyEquivalent: "")
+            clicks.state = settings.recordClicks ? .on : .off
+            clicks.toolTip = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes. Requires Accessibility."
+            menu.addItem(clicks)
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Custom log files", action: nil, keyEquivalent: ""))
+            for path in settings.customLogFiles {
+                let entry = NSMenuItem(title: "Remove " + URL(fileURLWithPath: path).lastPathComponent, action: #selector(removeCustomLog(_:)), keyEquivalent: "")
+                entry.representedObject = path
+                entry.toolTip = path
+                entry.indentationLevel = 1
+                menu.addItem(entry)
+            }
+            let add = NSMenuItem(title: "Add log file…", action: settings.customLogFiles.count < 4 ? #selector(addCustomLog) : nil, keyEquivalent: "")
+            add.indentationLevel = 1
+            menu.addItem(add)
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Connect browser extension…", action: #selector(connectBrowserExtension), keyEquivalent: ""))
+            for entry in menu.items where entry.action != nil { entry.target = self }
+        }
+    }
+
+    func updateSettings(_ change: (inout CaptureSettings) -> Void) {
+        var settings = CaptureSettings.load(output: output)
+        change(&settings)
+        do { try settings.save(output: output) } catch { NSAlert(error: error).runModal() }
+    }
+
+    @objc func toggleClickRecording() {
+        let enabled = !CaptureSettings.load(output: output).recordClicks
+        updateSettings { $0.recordClicks = enabled }
+        if enabled { events.start() } else { events.stop() }
+        if enabled && !AXIsProcessTrusted() { permissions() }
+    }
+
+    @objc func addCustomLog() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a log file. Capture Studio reads its last 64 KB only when you capture."
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        updateSettings { settings in
+            if !settings.customLogFiles.contains(url.path) { settings.customLogFiles = Array((settings.customLogFiles + [url.path]).prefix(4)) }
+        }
+    }
+
+    @objc func removeCustomLog(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        updateSettings { $0.customLogFiles.removeAll { $0 == path } }
+    }
+
+    @objc func connectBrowserExtension() {
+        let alert = NSAlert()
+        let folder = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("browser-extension")
+        do {
+            guard let executable = Bundle.main.executablePath else { throw captureError("Could not locate the Capture Studio executable.") }
+            let support = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            let installed = try BrowserBridge.installHostManifests(executable: executable, supportDirectory: support)
+            alert.messageText = installed.isEmpty ? "No supported browser found" : "Browser connection installed"
+            alert.informativeText = (installed.isEmpty ? "Install Chrome, Brave, Edge, Arc or Chromium, then try again." : "Registered for \(installed.joined(separator: ", ")).")
+                + "\n\nTo finish: open chrome://extensions, turn on Developer mode, choose Load unpacked, and select the browser-extension folder (revealed in Finder). The extension keeps console messages and failed requests in memory per tab and only hands them over when you capture that browser window."
+            if FileManager.default.fileExists(atPath: folder.path) { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+        } catch {
+            alert.messageText = "Could not connect the browser extension"
+            alert.informativeText = error.localizedDescription
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    @objc func reopenBundle(_ sender: NSMenuItem) {
+        guard !busy, let path = sender.representedObject as? String else { raiseEditor(); return }
+        busy = true
+        let returnTo = lastExternalApp
+        Task { @MainActor in
+            defer { busy = false }
+            do { try await composeBundle(path: path, output: output, returnTo: returnTo) } catch { NSAlert(error: error).runModal() }
+        }
+    }
+
+    @objc func chooseDefaultDestination(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        var settings = CaptureSettings.load(output: output)
+        settings.defaultDestination = id
+        do { try settings.save(output: output) } catch { NSAlert(error: error).runModal() }
     }
 
     @objc func takeShot() { captureAndInsert(annotate: true) }
@@ -126,7 +300,7 @@ struct Appshots {
         guard !busy else { raiseEditor(); return }
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
-        let target = foreground?.bundleIdentifier == "local.opencode.appshots" ? lastExternalApp : foreground
+        let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
         let pid = target?.processIdentifier
         saveStatus(output: output, phase: "capturing")
         Task { @MainActor in
@@ -134,7 +308,7 @@ struct Appshots {
             do {
                 var shot = try await capture(pid: pid, output: output)
                 saveStatus(output: output, phase: "captured", details: ["screenshot": shot["screenshot"] ?? ""])
-                item?.button?.title = "Appshot ✓"
+                updateStatusIcon(.success)
                 if annotate {
                     saveStatus(output: output, phase: "annotating")
                     guard let edited = try await annotateScreenshot(shot, output: output, returnTo: target) else {
@@ -151,7 +325,7 @@ struct Appshots {
                 }
             } catch {
                 saveStatus(output: output, phase: "capture_failed", details: ["error": error.localizedDescription])
-                item?.button?.title = "Appshot !"
+                updateStatusIcon(.warning)
                 let alert = NSAlert()
                 alert.messageText = "Appshot could not capture this window"
                 alert.informativeText = error.localizedDescription
@@ -177,7 +351,7 @@ struct Appshots {
                     return
                 }
                 try await insertIntoOpenCode(edited, output: output)
-                item?.button?.title = "Appshot ✓"
+                updateStatusIcon(.success)
             } catch { showInsertError(error) }
         }
     }
@@ -193,7 +367,7 @@ struct Appshots {
                     throw captureError("The latest capture manifest is invalid.")
                 }
                 try await insertIntoOpenCode(shot, output: output)
-                item?.button?.title = "Appshot ✓"
+                updateStatusIcon(.success)
                 item?.button?.toolTip = "Inserted latest capture into OpenCode. Add a question and send when ready."
             } catch {
                 showInsertError(error)
@@ -202,7 +376,7 @@ struct Appshots {
     }
 
     func raiseEditor() {
-        guard let window = NSApplication.shared.windows.first(where: { $0.identifier?.rawValue == "appshot-annotation" && $0.isVisible }) else { return }
+        guard let window = NSApplication.shared.windows.first(where: { ["appshot-annotation", "appshot-composer", "appshot-region"].contains($0.identifier?.rawValue ?? "") && $0.isVisible }) else { return }
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
@@ -220,8 +394,8 @@ struct Appshots {
 
     @objc func permissions() {
         let alert = NSAlert()
-        alert.messageText = "OpenCode Appshots permissions"
-        alert.informativeText = "In System Settings → Privacy & Security, add OpenCode Appshots to Screen & System Audio Recording and Accessibility. The app is in your OpenCode plugins/appshots folder. After granting permissions, choose Quit Appshots, then run /appshots-start in OpenCode."
+        alert.messageText = "Capture Studio permissions"
+        alert.informativeText = "In System Settings → Privacy & Security, add Capture Studio to Screen & System Audio Recording and Accessibility. The app is in the Capture Studio plugin folder. After granting permissions, choose Quit Capture Studio, then run /capture-studio-start in OpenCode."
         alert.runModal()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
@@ -245,24 +419,15 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
         return false
     }
     guard errno == EWOULDBLOCK else { return false }
-    DistributedNotificationCenter.default().postNotificationName(Notification.Name("local.opencode.appshots.command"), object: URL(fileURLWithPath: output).standardizedFileURL.path, userInfo: ["action": action], deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(Notification.Name(helperBundleID + ".command"), object: URL(fileURLWithPath: output).standardizedFileURL.path, userInfo: ["action": action], deliverImmediately: true)
     return true
 }
 
-@MainActor func insertIntoOpenCode(_ shot: [String: Any], output: String) async throws {
+@MainActor func insertIntoOpenCode(_ shot: [String: Any], output: String, draftText: String? = nil, expectedSessionTitle: String? = nil) async throws {
     guard AXIsProcessTrusted() else {
-        throw captureError("Accessibility permission is required to focus OpenCode and paste into its input. Enable OpenCode Appshots in System Settings → Privacy & Security → Accessibility.")
+        throw captureError("Accessibility permission is required to focus OpenCode and paste into its input. Enable Capture Studio in System Settings → Privacy & Security → Accessibility.")
     }
-    guard let screenshot = shot["screenshot"] as? String else { throw captureError("The capture has no screenshot.") }
-    let imageURL = URL(fileURLWithPath: screenshot).resolvingSymlinksInPath()
-    let folder = URL(fileURLWithPath: output).resolvingSymlinksInPath()
-    guard imageURL.deletingLastPathComponent().path == folder.path, imageURL.pathExtension == "png" else {
-        throw captureError("The screenshot must be a PNG in the Appshots capture folder.")
-    }
-    let png = try Data(contentsOf: imageURL)
-    guard png.count <= 15_000_000, png.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]) else {
-        throw captureError("The capture is not a valid PNG under 15 MB.")
-    }
+    let attachments = try loadScreenshotAttachments(shot, output: output)
     guard let opencode = NSRunningApplication.runningApplications(withBundleIdentifier: "ai.opencode.desktop").first else {
         throw captureError("OpenCode desktop is not running. Open it and choose Appshot → Insert latest capture into OpenCode.")
     }
@@ -288,6 +453,9 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
         }
         throw captureError("Open a conversation in OpenCode, close any dialog or Settings, then choose Appshot → Insert latest capture into OpenCode.")
     }
+    if let expectedSessionTitle {
+        try verifyHandoffTarget(axApp, prompt: prompt, title: expectedSessionTitle, requireEmpty: true)
+    }
     guard AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
         throw captureError("Could not focus OpenCode's Prompt input.")
     }
@@ -312,18 +480,21 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
     }
-    try ensurePromptFocused(axApp, prompt: prompt, pid: opencode.processIdentifier)
-    saveStatus(output: output, phase: "pasting_image")
-    pasteboard.clearContents()
-    guard pasteboard.setData(png, forType: .png) else { throw captureError("Could not put the screenshot on the clipboard.") }
-    ownedChangeCount = pasteboard.changeCount
-    try postKey(kVK_ANSI_V, flags: .maskCommand, to: opencode.processIdentifier)
-    try await Task.sleep(nanoseconds: 500_000_000)
-    guard pasteboard.changeCount == ownedChangeCount else {
-        throw captureError("The clipboard changed during insertion. The screenshot was pasted, but its text was not inserted.")
+    for (index, attachment) in attachments.enumerated() {
+        try ensurePromptFocused(axApp, prompt: prompt, pid: opencode.processIdentifier)
+        if let expectedSessionTitle { try verifyHandoffTarget(axApp, prompt: prompt, title: expectedSessionTitle) }
+        saveStatus(output: output, phase: "pasting_image", details: ["attachmentIndex": index + 1, "attachmentCount": attachments.count])
+        pasteboard.clearContents()
+        guard pasteboard.setData(attachment.png, forType: .png) else { throw captureError("Could not put a screenshot on the clipboard.") }
+        ownedChangeCount = pasteboard.changeCount
+        try postKey(kVK_ANSI_V, flags: .maskCommand, to: opencode.processIdentifier)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        guard pasteboard.changeCount == ownedChangeCount else { throw captureError("The clipboard changed during insertion. Check the unsent draft before retrying.") }
     }
     try ensurePromptFocused(axApp, prompt: prompt, pid: opencode.processIdentifier)
-    let text = draftContext(shot)
+    if let expectedSessionTitle { try verifyHandoffTarget(axApp, prompt: prompt, title: expectedSessionTitle) }
+    let text = draftText ?? attachments.map { draftContext($0.snapshot) }.joined(separator: "\n")
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw captureError("The draft has no description or screenshot context.") }
     saveStatus(output: output, phase: "pasting_text")
     pasteboard.clearContents()
     guard pasteboard.setString(text, forType: .string) else { throw captureError("Could not put the captured text on the clipboard.") }
@@ -331,7 +502,8 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
     try postKey(kVK_ANSI_V, flags: .maskCommand, to: opencode.processIdentifier)
     try await Task.sleep(nanoseconds: 300_000_000)
     let value = attribute(prompt, kAXValueAttribute) as? String ?? ""
-    guard value.contains("Captured at: " + (shot["capturedAt"] as? String ?? "unknown")) else {
+    let marker = attachments.first.flatMap { $0.snapshot["capturedAt"] as? String }.map { "Captured at: " + $0 } ?? text
+    guard value.contains(marker) else {
         throw captureError("Could not confirm insertion into the Prompt input. Check the draft before retrying.")
     }
     saveStatus(output: output, phase: "inserted")
@@ -424,7 +596,7 @@ func draftContext(_ shot: [String: Any]) -> String {
 
 @MainActor func capture(appName: String? = nil, pid: pid_t? = nil, output: String) async throws -> [String: Any] {
     guard CGPreflightScreenCaptureAccess() else {
-        throw captureError("Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add OpenCode Appshots.app. Restart OpenCode after granting access.")
+        throw captureError("Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access.")
     }
     let app = try targetApp(appName: appName, pid: pid)
     let axEnabled = AXIsProcessTrusted()
@@ -480,7 +652,7 @@ func draftContext(_ shot: [String: Any]) -> String {
             warnings.append("Accessibility window could not be matched; screenshot only.")
         }
     } else {
-        warnings.append("Accessibility permission is missing; screenshot only. Add OpenCode Appshots.app to System Settings → Privacy & Security → Accessibility.")
+        warnings.append("Accessibility permission is missing; screenshot only. Add Capture Studio.app to System Settings → Privacy & Security → Accessibility.")
     }
     let result: [String: Any] = ["app": app.localizedName ?? "Unknown", "bundleID": app.bundleIdentifier ?? "", "title": title, "capturedAt": ISO8601DateFormatter().string(from: Date()), "screenshot": file.path, "text": text, "warnings": warnings, "readerVersion": 4, "readerNodes": readerNodes]
     try saveCaptureManifest(result, output: output)

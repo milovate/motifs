@@ -1,0 +1,303 @@
+import AppKit
+
+func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+@MainActor func saveStatus(output: String, phase: String, details: [String: Any]) {}
+@MainActor func annotateScreenshot(_ shot: [String: Any], output: String, returnTo: NSRunningApplication? = nil, confirmationTitle: String = "Insert") async throws -> [String: Any]? { shot }
+@MainActor func openSessionDraft(sessionID: String, title: String, draftText: String, shot: [String: Any], output: String) async throws { fatalError("Tests must never hand a draft to the real desktop") }
+@MainActor func captureScreenRegion(output: String) async throws -> [String: Any]? { fatalError("Tests must never capture the real desktop") }
+
+@main struct ComposerTests {
+    @MainActor static func main() throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        let output = CommandLine.arguments[1]
+        let icon = appshotStatusImage()
+        precondition(icon.isTemplate && icon.size == NSSize(width: 18, height: 18), "compact template icon adapts to menu-bar appearance")
+        precondition(NSBitmapImageRep(data: icon.tiffRepresentation!) != nil, "status icon renders without external assets")
+        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+            let bitmap = NSBitmapImageRep(data: icon.tiffRepresentation!)!
+            try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("appshots-menu-icon.png"))
+        }
+        let screenshot = URL(fileURLWithPath: output).appendingPathComponent("fixture.png")
+        let image = NSImage(size: NSSize(width: 640, height: 400), flipped: false) { bounds in
+            NSColor(calibratedWhite: 0.95, alpha: 1).setFill()
+            bounds.fill()
+            NSColor(calibratedWhite: 0.85, alpha: 1).setFill()
+            NSRect(x: 0, y: 365, width: 640, height: 35).fill()
+            for index in 0..<6 {
+                NSColor(calibratedWhite: 0.7 + CGFloat(index % 2) * 0.12, alpha: 1).setFill()
+                NSBezierPath(roundedRect: NSRect(x: 40, y: 280 - index * 30, width: 270 + index * 18, height: 10), xRadius: 4, yRadius: 4).fill()
+            }
+            return true
+        }
+        let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
+        try bitmap.representation(using: .png, properties: [:])!.write(to: screenshot)
+        let composer = try AppshotComposer(shots: [["app": "Google Chrome", "title": "Sample page", "screenshot": screenshot.path]], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        composer.endpoints = [ComposerEndpoint(directory: "/fixture/GooeyAI", port: 1, token: String(repeating: "a", count: 64))]
+        composer.populateProjects()
+        composer.projects.isEnabled = true
+        composer.skillsButton.isEnabled = true
+        composer.applyAvailableSkills([("report", "Report"), ("other", "Other")])
+        composer.status.stringValue = "Only sent when you’re ready."
+        composer.window!.contentView!.layoutSubtreeIfNeeded()
+        composer.updateInputSize()
+        composer.window!.contentView!.layoutSubtreeIfNeeded()
+        precondition(composer.window!.frame.width == 640, "compact width")
+        precondition(composer.window!.frame.height < 270, "compact height")
+        precondition(!composer.window!.styleMask.contains(.titled), "no legacy title bar")
+        precondition(composer.window!.contentView!.superview!.layer!.masksToBounds, "native frame is clipped, not only the inner material")
+        precondition(composer.window!.contentView!.superview!.layer!.cornerRadius == 22, "native frame uses the same rounded contour")
+        precondition(composer.window!.contentView!.superview!.layer!.borderWidth == 0, "no rectangular native-frame outline")
+        precondition(composer.projects.titleOfSelectedItem == "GooeyAI", "project basename, not full path")
+        precondition(composer.skillChips.arrangedSubviews.count == 1, "Report is a removable chip")
+        precondition(composer.textView.string == "@report ", "Report is prefilled into the editable draft")
+        precondition(!composer.sendButton.isEnabled, "skill-only drafts cannot continue")
+        let compactHeight = composer.window!.frame.height
+        composer.textView.string = "@report The button does not respond when I click it."
+        composer.updateInputSize()
+        precondition(composer.sendButton.isEnabled, "typed drafts can send")
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
+            composer.window!.appearance = NSAppearance(named: appearance)
+            composer.window!.contentView!.layoutSubtreeIfNeeded()
+            if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+                let content = composer.window!.contentView!
+                let representation = content.bitmapImageRepForCachingDisplay(in: content.bounds)!
+                content.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: representation) }
+                try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("composer-\(name).png"))
+                if let frame = content.superview, let full = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+                    frame.effectiveAppearance.performAsCurrentDrawingAppearance { frame.cacheDisplay(in: frame.bounds, to: full) }
+                    try full.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("composer-frame-\(name).png"))
+                }
+            }
+        }
+        composer.textView.string = "@report " + Array(repeating: "This is a longer report with enough detail to grow the composer.", count: 12).joined(separator: "\n")
+        composer.updateInputSize()
+        composer.window!.contentView!.layoutSubtreeIfNeeded()
+        precondition(composer.window!.frame.height > compactHeight, "composer grows with input")
+        precondition(composer.inputHeight.constant <= 180, "long reports scroll instead of filling the screen")
+        let chip = composer.skillChips.arrangedSubviews[0] as! NSButton
+        composer.removeSkill(chip)
+        precondition(composer.selectedSkills.isEmpty, "skill chip removal")
+        let picker = ComposerSkillPicker()
+        picker.skills = composer.skills
+        _ = picker.view
+        picker.search.stringValue = "report"
+        picker.rebuild()
+        precondition(picker.rows.arrangedSubviews.count == 1, "search filters skills")
+        precondition(!composer.speech.isRunning, "UI setup never starts microphone")
+        composer.textView.string = "@re"
+        composer.textView.setSelectedRange(NSRange(location: 3, length: 0))
+        composer.updateInputSize()
+        precondition(composer.mentionCompletion.candidates.first?.id == "report", "@ prefix opens matching completion")
+        precondition(composer.handleMentionKey(36), "Enter selects the skill instead of submitting")
+        precondition(composer.textView.string == "@report ", "completion replaces the query")
+        precondition(composer.selectedSkills == ["report"], "recognized mention drives attachments")
+        precondition(!composer.sendButton.isEnabled, "selecting a skill alone cannot continue")
+        let attributes = composer.textView.layoutManager!.temporaryAttributes(atCharacterIndex: 1, effectiveRange: nil)
+        precondition(composer.textView.mentionRanges == [NSRange(location: 0, length: 7)], "recognized mentions have a custom rounded highlight")
+        precondition(attributes[.font] == nil, "skill mentions inherit the exact body font instead of switching weight")
+        precondition(attributes[.backgroundColor] == nil, "no square system highlight behind skill mentions")
+        composer.textView.string = "@report broken button"
+        composer.updateInputSize()
+        let commandA = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: composer.window!.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0)!
+        precondition(composer.textView.performKeyEquivalent(with: commandA), "Command-A is handled in the accessory app without a menu")
+        precondition(composer.textView.selectedRange() == NSRange(location: 0, length: (composer.textView.string as NSString).length), "Command-A selects the whole draft")
+        composer.textView.insertText("replacement", replacementRange: composer.textView.selectedRange())
+        composer.updateInputSize()
+        precondition(composer.textView.string == "replacement" && composer.selectedSkills.isEmpty, "replacing text removes stale skill state")
+        composer.applyAvailableSkills(composer.skills)
+        precondition(composer.textView.string == "replacement", "skill reload never resurrects a removed default")
+        let matches = ComposerMentions.matches(in: "email user@report.com /@report @reporter @report", skills: ["report"])
+        precondition(matches.count == 1 && matches[0].id == "report", "only full skill mentions are recognized")
+        precondition(ComposerMentions.query(in: "@report", selection: NSRange(location: 3, length: 0)) == nil, "completion never replaces half a token")
+        composer.textView.string = "🙂 @ot"
+        composer.textView.setSelectedRange(NSRange(location: 6, length: 0))
+        composer.updateInputSize()
+        precondition(composer.handleMentionKey(36) && composer.textView.string == "🙂 @other ", "completion uses UTF-16 caret offsets")
+        composer.mentionCompletion.dismiss()
+        let originalShot = composer.shots[0]
+        composer.shots.append(originalShot.merging(["app": "Region 2"]) { _, new in new })
+        composer.selectedShotIndex = 1
+        composer.refreshAttachments()
+        precondition(composer.thumbnailStrip.arrangedSubviews.compactMap { $0 as? ScreenshotThumbnailView }.count == 2, "each screenshot has direct annotate/remove controls")
+        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+            composer.window!.appearance = NSAppearance(named: .aqua)
+            composer.textView.string = "@report The second screenshot shows the issue."
+            composer.updateInputSize()
+            composer.window!.contentView!.layoutSubtreeIfNeeded()
+            precondition(composer.textView.textContainer?.widthTracksTextView == true, "composer text wraps to the visible editor width")
+            precondition((composer.textView.textContainer?.containerSize.width ?? 0) < 2000, "text container must not use an effectively infinite width")
+            precondition(composer.textView.alignment == .left, "composer input is explicitly left-aligned")
+            let paragraph = composer.textView.textStorage!.attribute(.paragraphStyle, at: composer.textView.string.distance(from: composer.textView.string.startIndex, to: composer.textView.string.firstIndex(of: "T")!), effectiveRange: nil) as? NSParagraphStyle
+            precondition(paragraph?.alignment == .left && paragraph?.lineBreakMode == .byWordWrapping, "composer text uses normal word wrapping, not justified spacing")
+            if let layout = composer.textView.layoutManager, let container = composer.textView.textContainer {
+                layout.ensureLayout(for: container)
+                let text = composer.textView.string as NSString
+                for index in 0..<text.length where text.substring(with: NSRange(location: index, length: 1)) == " " {
+                    let rect = layout.boundingRect(forGlyphRange: NSRange(location: index, length: 1), in: container)
+                    precondition(rect.width < 8, "space glyphs keep normal body-font width instead of stale expanded layout attributes")
+                }
+            }
+            let content = composer.window!.contentView!
+            let representation = content.bitmapImageRepForCachingDisplay(in: content.bounds)!
+            content.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: representation) }
+            try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("composer-multiple-screenshots.png"))
+        }
+        composer.removeScreenshot(at: 0)
+        precondition(composer.shots.count == 1 && composer.selectedShotIndex == 0 && composer.shot["app"] as? String == "Region 2", "removing an earlier thumbnail preserves selection")
+        composer.removeScreenshot(at: 0)
+        precondition(composer.shots.isEmpty && (composer.screenshotBundle["screenshots"] as! [[String: Any]]).isEmpty, "removing the last screenshot leaves an intentional text-only draft")
+        print("Composer compact layout, adaptive sizing, skill chips, search and consent checks passed")
+        try captureStudioChecks(output: output, screenshot: screenshot.path)
+    }
+
+    @MainActor static func captureStudioChecks(output: String, screenshot: String) throws {
+        let device = DeviceContext.collect(screens: [], locale: Locale(identifier: "en_IN"))
+        precondition((device["os"] as? String)?.hasPrefix("macOS ") == true, "device context names the macOS version")
+        precondition(["arm64", "x86_64"].contains(device["arch"] as? String ?? ""), "device context names the architecture")
+        precondition(((device["memoryBytes"] as? NSNumber)?.uint64Value ?? 0) > 0, "device context includes physical memory")
+        precondition(device["model"] is String && device["cpu"] is String, "model and CPU come from sysctl")
+        precondition(device["locale"] as? String == "en_IN", "locale is recorded")
+        precondition(Set(device.keys).isSubset(of: ["os", "arch", "memoryBytes", "displays", "locale", "model", "cpu"]), "no location, host or user identifiers")
+        let summary = DeviceContext.summary(["os": "macOS 15.2", "arch": "arm64", "memoryBytes": 34_359_738_368 as UInt64, "displays": [["width": 3024, "height": 1964, "scale": 2.0]], "locale": "en_IN"])
+        precondition(summary == ["macOS 15.2 (arm64)", "32 GB memory", "1 display (3024×1964@2x)", "Locale en_IN"], "device summary matches the JS rendering")
+        precondition(formatTokenEstimate(characters: 4000) == "≈1.0k tokens" && formatTokenEstimate(characters: 40) == "≈10 tokens", "token estimate")
+        let shots: [[String: Any]] = [["app": "Chrome", "screenshot": screenshot, "text": String(repeating: "a", count: 400)]]
+        let deviceOnly: [String: Any] = ["device": device]
+        precondition(contextCharacterCount(shots: shots, context: deviceOnly, include: BundleInclude(windowText: false, device: false)) == 0, "excluded sources add no context")
+        precondition(contextCharacterCount(shots: shots, context: [:], include: BundleInclude()) == 400, "window text counts toward the estimate")
+        var include = BundleInclude(windowText: false, device: true)
+        include["console"] = false
+        precondition(!include["console"] && include["network"] && BundleInclude(include.dictionary) == include, "every source has a flag that round-trips")
+        let rich: [String: Any] = [
+            "console": ["entries": [["time": "t1", "level": "error", "message": "boom", "source": "browser"]]],
+            "network": ["entries": [["time": "t2", "method": "POST", "url": "https://x.test/api", "status": 500]]],
+            "events": ["entries": [["time": "t3", "kind": "click", "app": "Chrome", "role": "AXButton", "title": "Pay"], ["time": "t4", "kind": "app-switch", "app": "Finder"]]],
+            "customLogs": [["name": "app.log", "path": "/tmp/app.log", "text": "line"]],
+        ]
+        precondition(ContextText.render("console", shots: [], context: rich) == "[t1] ERROR page: boom", "console renders like the plugin")
+        precondition(ContextText.render("network", shots: [], context: rich) == "[t2] POST 500 https://x.test/api", "network renders like the plugin")
+        precondition(ContextText.render("events", shots: [], context: rich) == "[t3] Clicked AXButton \"Pay\" in Chrome\n[t4] Switched to Finder", "events render like the plugin")
+        precondition(["console", "network", "events", "customLogs"].map { ContextText.count($0, shots: [], context: rich) } == [1, 1, 2, 1], "per-source counts")
+        precondition(contextCharacterCount(shots: [], context: rich, include: include) < contextCharacterCount(shots: [], context: rich, include: BundleInclude()), "excluding a source shrinks the estimate")
+
+        let id = UUID()
+        let path = try writeCaptureBundle(shots: shots, note: "Checkout overlaps\nsecond line", context: deviceOnly.merging(rich) { a, _ in a }, include: BundleInclude(windowText: false, device: true), output: output, id: id, now: Date(timeIntervalSince1970: 1_800_000_000))
+        precondition(URL(fileURLWithPath: path).lastPathComponent == "bundle-\(id.uuidString.lowercased()).json", "bundles are named by id in the captures root")
+        func mode(_ file: String) throws -> Int { (try FileManager.default.attributesOfItem(atPath: file)[.posixPermissions] as? NSNumber)?.intValue ?? 0 }
+        let bundleMode = try mode(path)
+        precondition(bundleMode == 0o600, "bundle manifests are owner-only")
+        let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as! [String: Any]
+        precondition(raw["schema"] as? String == captureBundleSchema && raw["note"] as? String == "Checkout overlaps\nsecond line", "bundle schema and note")
+        precondition((raw["media"] as? [[String: Any]])?.first?["kind"] as? String == "image", "media entries are typed")
+        precondition((raw["include"] as? [String: Bool]) == ["windowText": false, "device": true, "console": true, "network": true, "events": true, "customLogs": true], "include flags are stored")
+        precondition(((raw["context"] as? [String: Any])?["device"] as? [String: Any])?["arch"] != nil, "device context is stored")
+        let loaded = try loadCaptureBundle(path: path, output: output)
+        precondition(loaded.shots.count == 1 && loaded.note.hasPrefix("Checkout") && loaded.include == BundleInclude(windowText: false, device: true) && loaded.missingScreenshots == 0, "bundles reopen with media, note and include flags")
+        precondition(ContextText.count("network", shots: [], context: loaded.context) == 1, "bundles reopen with their stored context")
+        precondition(loaded.shots[0]["kind"] == nil, "reopened shots match the composer shape")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("bundle-outside-\(UUID().uuidString).json")
+        try Data(contentsOf: URL(fileURLWithPath: path)).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        var rejected = false
+        do { _ = try loadCaptureBundle(path: outside.path, output: output) } catch { rejected = true }
+        precondition(rejected, "bundles outside the captures folder are refused")
+        let missingPath = try writeCaptureBundle(shots: [["app": "Gone", "screenshot": output + "/deleted.png"]], note: "", context: [:], include: BundleInclude(), output: output, now: Date(timeIntervalSince1970: 1_700_000_000))
+        let missing = try loadCaptureBundle(path: missingPath, output: output)
+        precondition(missing.missingScreenshots == 1, "deleted screenshots are reported, not silently attached")
+        let recents = recentBundles(output: output)
+        precondition(recents.map { URL(fileURLWithPath: $0.path).lastPathComponent } == [path, missingPath].map { URL(fileURLWithPath: $0).lastPathComponent }, "recent bundles are newest first")
+        precondition(recents[0].title == "Checkout overlaps" && recents[1].title == "Gone" && recents[0].screenshots == 1, "recent titles use the note, then the app")
+
+        var settings = CaptureSettings.load(output: output)
+        precondition(settings.defaultDestination == "opencode" && settings.knownDestinations.map(\.id) == ["opencode", "clipboard", "folder"], "settings default to OpenCode")
+        settings.defaultDestination = "clipboard"
+        try settings.save(output: output)
+        precondition(CaptureSettings.load(output: output) == settings, "default destination persists")
+        precondition(!settings.recordClicks && settings.customLogFiles.isEmpty, "click recording and custom logs are off by default")
+        settings.recordClicks = true
+        settings.customLogFiles = ["/tmp/a.log", "relative.log", "/tmp/b.log", "/tmp/c.log", "/tmp/d.log", "/tmp/e.log"]
+        try settings.save(output: output)
+        let reloaded = CaptureSettings.load(output: output)
+        precondition(reloaded.recordClicks && reloaded.customLogFiles == ["/tmp/a.log", "/tmp/b.log", "/tmp/c.log"], "at most 4 absolute log paths persist")
+        settings.recordClicks = false
+        settings.customLogFiles = []
+        try settings.save(output: output)
+        let settingsMode = try mode(output + "/settings.json")
+        precondition(settingsMode == 0o600, "settings are owner-only")
+
+        func listed(_ directory: String) -> [[String: Any]] {
+            [
+                ["id": "opencode", "label": "OpenCode", "status": "ready", "targets": [["id": directory, "label": URL(fileURLWithPath: directory).lastPathComponent, "detail": directory, "actionLabel": "Review in OpenCode", "hint": "You press Enter."]]],
+                ["id": "clipboard", "label": "Clipboard", "status": "ready", "targets": [["id": "markdown", "label": "Markdown", "actionLabel": "Copy Markdown", "hint": "Nothing is pasted for you."]]],
+                ["id": "linear", "label": "Linear", "status": "needs-auth", "targets": []],
+            ]
+        }
+        let merged = mergeDestinations([(endpoint: 0, destinations: listed("/fixture/alpha")), (endpoint: 1, destinations: listed("/fixture/beta"))])
+        precondition(merged.map(\.id) == ["opencode", "clipboard", "linear"], "destinations merge by id in plugin order")
+        precondition(merged[0].targets.map(\.endpoint) == [0, 1] && merged[0].targets.map(\.label) == ["alpha", "beta"], "each project is an OpenCode target on its own endpoint")
+        precondition(merged[1].targets.count == 1, "shared targets are not duplicated")
+        let legacy = mergeDestinations([(endpoint: 0, destinations: [legacyOpenCodeDestination(ComposerEndpoint(directory: "/fixture/old", port: 1, token: ""))])])
+        precondition(legacy.first?.targets.first?.actionLabel == "Review in OpenCode", "older plugins still offer OpenCode drafts")
+
+        let composer = try AppshotComposer(shots: shots, note: "@report Reopened note", context: loaded.context, include: BundleInclude(windowText: false, device: true), output: output, returnTo: nil)
+        precondition(composer.textView.string == "@report Reopened note", "reopened bundles restore the note")
+        composer.applyAvailableSkills([("report", "Report")])
+        precondition(composer.textView.string == "@report Reopened note", "reopened notes never get a second default skill")
+        precondition(composer.contextButton.toolTip?.contains("Window off") == true && composer.contextButton.toolTip?.contains("Network 1") == true, "reopened bundles keep include flags and stored context")
+
+        let live = try AppshotComposer(shots: shots, note: "", context: deviceOnly, include: BundleInclude(), output: output, returnTo: nil)
+        let slow = Task { @MainActor () -> [String: Any] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            return ["console": ["entries": [["time": "t", "level": "fault", "message": "late", "source": "app"]]]]
+        }
+        live.collect(slow)
+        precondition(live.contextButton.title == "Context · collecting…", "the chip says slow sources are still collecting")
+        live.showWindow(nil)
+        live.showContext()
+        let picker = live.contextPopover.contentViewController as! ComposerContextPicker
+        _ = picker.view
+        precondition(picker.sources.segmentCount == 6, "the picker lists every context source")
+        let deadline = Date().addingTimeInterval(3)
+        while live.collecting && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        precondition(!live.collecting && ContextText.count("console", shots: shots, context: live.context) == 1, "slow sources merge when they finish")
+        precondition(picker.sources.label(forSegment: 2) == "Console 1", "the open picker updates its counts")
+        picker.sources.selectedSegment = 2
+        picker.sourceChanged()
+        precondition(picker.preview.string.contains("late") && picker.includeSource.title == "Include console", "the picker previews the selected source")
+        picker.includeSource.state = .off
+        picker.toggleSource()
+        precondition(!live.include["console"], "unchecking a source excludes it from the bundle")
+        live.contextPopover.close()
+        composer.endpoints = ["/fixture/alpha", "/fixture/beta"].map { ComposerEndpoint(directory: $0, port: 1, token: String(repeating: "a", count: 64)) }
+        composer.applyDestinations(merged)
+        precondition(!composer.destinationButton.isHidden && composer.destinationButton.itemTitles == ["OpenCode", "Clipboard", "Linear"], "destination picker lists every destination")
+        precondition(composer.destinationButton.item(at: 2)?.isEnabled == false, "destinations that are not ready cannot be chosen")
+        precondition(composer.selectedDestination?.id == "clipboard", "saved default destination is preselected")
+        precondition(composer.projects.itemTitles == ["Markdown"] && composer.shortcut.stringValue.hasPrefix("Copy Markdown"), "target picker and action label follow the destination")
+        precondition(composer.prepareBody(text: "x", skills: [])["destination"] as? String == "clipboard" && composer.prepareBody(text: "x", skills: [])["target"] as? String == "markdown", "prepare names the chosen destination and target")
+        composer.destinationButton.selectItem(at: 0)
+        composer.destinationChanged()
+        precondition(composer.projects.itemTitles == ["alpha", "beta"] && composer.shortcut.stringValue.hasPrefix("Review in OpenCode"), "OpenCode targets are projects")
+        precondition(CaptureSettings.load(output: output).defaultDestination == "opencode", "choosing a destination remembers it")
+        composer.projects.selectItem(at: 1)
+        composer.projectChanged()
+        precondition(composer.selectedEndpoint?.directory == "/fixture/beta", "targets route to the endpoint that offered them")
+        precondition(composer.sendButton.toolTip?.contains("You press Enter.") == true, "send button explains the handoff")
+        precondition(CaptureSettings.load(output: output).knownDestinations.map(\.id) == ["opencode", "clipboard", "linear"], "menu bar learns available destinations")
+        composer.include = BundleInclude()
+        composer.refreshContextSummary()
+        precondition(composer.contextButton.title.hasPrefix("Context · ≈"), "context chip shows a size estimate")
+        for unsupported in [["action": "send-message"], ["title": "no session"]] as [[String: Any]] {
+            var thrown = false
+            var finished = false
+            Task { @MainActor in
+                do { try await composer.completeHandoff(unsupported) } catch { thrown = true }
+                finished = true
+            }
+            while !finished { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            precondition(thrown && !composer.submitted, "unknown handoff actions are refused and nothing is marked sent")
+        }
+        print("Capture Studio device context, bundle manifest, recents, settings and destination wiring checks passed")
+    }
+}

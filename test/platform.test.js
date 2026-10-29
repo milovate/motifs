@@ -5,9 +5,9 @@ import { helperCommand, platformConfig } from "../platform.js";
 import { startHotkey, capture } from "../index.js";
 
 test("Windows uses local app data, with an explicit XDG override", () => {
-  assert.equal(platformConfig("win32", { LOCALAPPDATA: "local-data" }, "home").captures, path.join("local-data", "opencode", "appshots"));
-  assert.equal(platformConfig("win32", { XDG_DATA_HOME: "xdg", LOCALAPPDATA: "other" }).captures, path.join("xdg", "opencode", "appshots"));
-  assert.equal(platformConfig("win32", {}, "home").captures, path.join("home", "AppData", "Local", "opencode", "appshots"));
+  assert.equal(platformConfig("win32", { LOCALAPPDATA: "local-data" }, "home").captures, path.join("local-data", "opencode", "capture-studio"));
+  assert.equal(platformConfig("win32", { XDG_DATA_HOME: "xdg", LOCALAPPDATA: "other" }).captures, path.join("xdg", "opencode", "capture-studio"));
+  assert.equal(platformConfig("win32", {}, "home").captures, path.join("home", "AppData", "Local", "opencode", "capture-studio"));
   assert.throws(() => platformConfig("linux"), /not WSL/);
 });
 

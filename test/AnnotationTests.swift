@@ -6,6 +6,7 @@ struct AnnotationTests {
         _ = NSApplication.shared
         try closeAndReopen()
         try floatingToolbar()
+        try inlineTextStickyToolsAndCrop()
         try objectEditing()
         geometryAndHistory()
         try pixelsAndExport()
@@ -93,9 +94,12 @@ struct AnnotationTests {
         editor.canvas.tool = .select
         editor.canvas.selectedID = text.id
         editor.window?.contentView?.layoutSubtreeIfNeeded()
-        let rect = annotationImageRect(image: size, bounds: editor.canvas.bounds)
+        // Procedural NSImage fixtures rasterize at Retina scale. Event locations
+        // must use the canvas's actual source pixels, not the image's point size.
+        let actualPixels = editor.canvas.pixels
+        let rect = annotationImageRect(image: actualPixels, bounds: editor.canvas.bounds)
         func event(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
-            let viewPoint = CGPoint(x: rect.minX + point.x * rect.width / size.width, y: rect.minY + point.y * rect.height / size.height)
+            let viewPoint = CGPoint(x: rect.minX + point.x * rect.width / actualPixels.width, y: rect.minY + point.y * rect.height / actualPixels.height)
             return NSEvent.mouseEvent(with: type, location: editor.canvas.convert(viewPoint, to: nil), modifierFlags: [], timestamp: 0, windowNumber: editor.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
         }
         let inside = CGPoint(x: textBounds.midX, y: textBounds.midY)
@@ -103,7 +107,8 @@ struct AnnotationTests {
         editor.canvas.mouseDown(with: event(.leftMouseDown, inside))
         editor.canvas.mouseDragged(with: event(.leftMouseDragged, destination))
         editor.canvas.mouseUp(with: event(.leftMouseUp, destination))
-        expect(editor.canvas.document.marks[0].points[0] == CGPoint(x: 40, y: 100), "native mouse gesture moves selected text in image coordinates")
+        let movedPoint = editor.canvas.document.marks[0].points[0]
+        expect(abs(movedPoint.x - 40) < 0.000001 && abs(movedPoint.y - 100) < 0.000001, "native mouse gesture moves selected text in source-pixel coordinates")
         expect(editor.canvas.document.undoHistory.count == 1, "one drag creates one undo step")
         editor.canvas.document.undo()
         expect(editor.canvas.document.marks[0].points == text.points, "undo native move restores original position")
@@ -117,6 +122,69 @@ struct AnnotationTests {
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: folder + "/latest.json"))) as! [String: Any]
         let objects = try JSONDecoder().decode([AnnotationMark].self, from: JSONSerialization.data(withJSONObject: manifest["annotations"]!))
         expect(saved != nil && objects.count == 1 && objects[0].id == text.id && manifest["originalScreenshot"] as? String == original.path, "editor export saves editable objects and a clean base screenshot")
+    }
+
+    @MainActor static func inlineTextStickyToolsAndCrop() throws {
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 300, pixelsHigh: 160, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let white = NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1)
+        for y in 0..<160 { for x in 0..<300 { bitmap.setColor(white, atX: x, y: y) } }
+        let image = NSImage(data: bitmap.representation(using: .png, properties: [:])!)!
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        let original = try saveAnnotationFile(annotationPNG(image: image, marks: []), output: folder)
+        let editor = try AnnotationEditor(image: image, shot: ["app": "Fixture", "screenshot": original.path, "text": "Private text outside the crop"], output: folder)
+        editor.showWindow(nil)
+        editor.window!.contentView!.layoutSubtreeIfNeeded()
+        let canvas = editor.canvas
+        func mouse(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
+            let rect = canvas.sourceRect
+            let display = CGPoint(x: rect.minX + point.x * rect.width / canvas.pixels.width, y: rect.minY + point.y * rect.height / canvas.pixels.height)
+            return NSEvent.mouseEvent(with: type, location: canvas.convert(display, to: nil), modifierFlags: [], timestamp: 0, windowNumber: editor.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        canvas.tool = .text
+        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 20, y: 20)))
+        expect(canvas.inlineEditor != nil && editor.window!.sheets.isEmpty, "text starts in an inline editor, never a modal sheet")
+        expect(editor.window!.firstResponder === canvas.inlineEditor, "inline text has a live insertion caret")
+        canvas.inlineEditor!.insertText("Hello", replacementRange: NSRange(location: 0, length: 0))
+        canvas.commitInlineText()
+        expect(canvas.document.marks.count == 1 && canvas.document.marks[0].text == "Hello", "inline text commits into editable image-space markup")
+        expect(canvas.tool == .text, "Text remains active for another label")
+        let beforeCancel = canvas.document.marks
+        canvas.editText(at: CGPoint(x: 20, y: 20), existing: canvas.document.marks[0])
+        canvas.inlineEditor!.string = "Cancelled edit"
+        canvas.cancelInlineText()
+        expect(canvas.document.marks == beforeCancel, "Escape/cancel does not overwrite existing text")
+        canvas.tool = .arrow
+        for offset in [CGFloat(0), 40] {
+            canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 80 + offset, y: 30)))
+            canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 110 + offset, y: 60)))
+        }
+        expect(canvas.tool == .arrow && canvas.document.marks.filter { $0.tool == .arrow }.count == 2, "Arrow stays active for consecutive gestures")
+        canvas.tool = .draw
+        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 160, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: 180, y: 40)))
+        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: 200, y: 60)))
+        expect(canvas.tool == .draw, "Draw does not jump back to Select")
+        let marks = canvas.document.marks
+        canvas.tool = .crop
+        canvas.cropSelection = CGRect(x: 10, y: 10, width: 150, height: 100)
+        canvas.applyCropSelection()
+        expect(canvas.document.crop == CGRect(x: 10, y: 10, width: 150, height: 100), "crop is stored in original source-pixel coordinates")
+        expect(canvas.document.marks == marks, "cropping never flattens or translates editable annotations")
+        let mapped = canvas.imagePoint(canvas.imageRect.origin, clamp: true)!
+        expect(abs(mapped.x - 10) < 0.000001 && abs(mapped.y - 10) < 0.000001, "cropped viewport maps drawing back to the original image")
+        canvas.document.undo()
+        expect(canvas.document.crop == nil && canvas.document.marks == marks, "Undo restores the uncropped viewport and all objects")
+        canvas.document.redo()
+        expect(canvas.document.crop != nil, "Redo restores crop")
+        var saved: [String: Any]?
+        editor.completion = { saved = $0 }
+        editor.insert()
+        expect(saved?["text"] as? String == "", "cropping omits original-window accessibility text from delivery")
+        expect(saved?["originalAccessibilityText"] as? String == "Private text outside the crop", "original context is retained locally for Reset Crop")
+        expect(saved?["originalScreenshot"] as? String == original.path && saved?["crop"] != nil, "crop metadata preserves the clean original for reopening")
+        let exported = NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: saved!["screenshot"] as! String)))!
+        expect(exported.pixelsWide == 150 && exported.pixelsHigh == 100, "cropped export uses only selected source pixels")
     }
 
     static func geometryAndHistory() {
@@ -162,6 +230,12 @@ struct AnnotationTests {
         expect(bottom.blueComponent > 0.9 && bottom.redComponent < 0.3, "source image stays upright")
         let top = exported.colorAt(x: 250, y: 10)!.usingColorSpace(.deviceRGB)!
         expect(top.redComponent > 0.9 && top.greenComponent > 0.9, "unmarked image area is preserved")
+        let cropped = NSBitmapImageRep(data: try annotationPNG(image: image, marks: [marks[0]], crop: CGRect(x: 10, y: 10, width: 100, height: 100)))!
+        expect(cropped.pixelsWide == 100 && cropped.pixelsHigh == 100, "crop export dimensions are exact")
+        let cropMark = cropped.colorAt(x: 10, y: 25)!.usingColorSpace(.deviceRGB)!
+        expect(cropMark.redComponent > 0.9 && cropMark.greenComponent < 0.3, "crop preserves source-space annotation alignment")
+        let cropBottom = cropped.colorAt(x: 90, y: 90)!.usingColorSpace(.deviceRGB)!
+        expect(cropBottom.blueComponent > 0.9 && cropBottom.redComponent < 0.3, "crop samples the original image without flipping")
         let large = NSImage(size: NSSize(width: 4000, height: 2000), flipped: true) { rect in
             NSColor.white.setFill(); rect.fill(); return true
         }
