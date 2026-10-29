@@ -184,6 +184,8 @@ internal sealed class Preview : Forms.Form
 {
     readonly AnnotationCanvas canvas;
     internal Snapshot? Result { get; private set; }
+    internal bool Inserted { get; private set; }
+    internal bool Saved { get; private set; }
     internal Preview(Snapshot shot, string output, bool returnOnly = false)
     {
         Text = returnOnly ? "Annotate screenshot" : "Appshot — annotate, review, and insert";
@@ -229,6 +231,7 @@ internal sealed class Preview : Forms.Form
             try
             {
                 var exported = AnnotationDocument.Export(shot, canvas.Document, output);
+                Saved = true;
                 if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
                 Close();
             }
@@ -243,7 +246,14 @@ internal sealed class Preview : Forms.Form
         // Freeze the editor while an insertion awaits focus/clipboard operations.
         if (!returnOnly) insert.Click += async (_, _) => {
             canvas.Enabled = toolbar.Enabled = bottom.Enabled = false;
-            try { var annotated = AnnotationDocument.Export(shot, canvas.Document, output); await Inserter.Insert(annotated, output); Close(); }
+            try
+            {
+                var annotated = AnnotationDocument.Export(shot, canvas.Document, output);
+                Saved = true;
+                await Inserter.Insert(annotated, output);
+                Inserted = true;
+                Close();
+            }
             catch (Exception e) { Forms.MessageBox.Show(this, e.Message, "Appshot saved — insertion failed"); }
             finally { if (!IsDisposed) canvas.Enabled = toolbar.Enabled = bottom.Enabled = true; }
         };

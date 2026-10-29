@@ -358,9 +358,13 @@ left after a crash are ignored when they cannot authenticate/connect.
 
 Windows uses the same bridge and a WinForms composer: capture picker, destinations,
 context review, prefixes, skill mentions, recent captures, screen recording, instant
-replay, clip trim, and best-effort draft handoff. The tray can keep the last 10
-minutes of clicks and app switches, and can tail up to 4 log files (64 KB each)
-when you capture. Both are off until you choose them. A screen recording also
+replay, clip trim, and best-effort draft handoff. The tray's **Context sources**
+menu can keep the last 10 minutes of clicks and app switches, and can tail up to
+4 log files (64 KB each) when you capture. Both are off until you choose them.
+**Recent bundles** reopens a saved capture, and **Default destination** is the
+destination the composer selects next. **Insert latest capture** pastes the saved
+capture. **Capture, annotate, and insert** and **Capture and insert without
+annotation** capture the focused window. A screen recording also
 records scrolls, drags, selected text, and which field was typed into; the key
 itself is never stored. Instant replay is off by default.
 It samples the display under the pointer at 8 frames per second into memory (30

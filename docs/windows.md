@@ -127,9 +127,19 @@ asks that address to score one sample value. Known secret formats are still
 redacted without a model, and values that only might be secrets are redacted
 when the model does not answer.
 
-The tray can also open an empty composer, start or stop a recording, keep instant replay, record recent clicks, show the composer button, choose a local secret-check model, choose log files, annotate or insert the latest capture,
-annotate a clipboard image, open the captures folder, or quit the watcher.
-`/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
+The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture.
+**Default destination** chooses OpenCode, Clipboard, Save to folder, or another
+destination the composer has seen. **Context sources** holds instant replay,
+recent clicks, log files, the browser extension, and the local secret-check model.
+**Capture, annotate, and insert into current draft** captures the focused window,
+opens the editor, and inserts when you choose **Insert into OpenCode**.
+**Capture and insert without annotation** captures that window and inserts it.
+**Insert latest capture into OpenCode** inserts the saved capture and does not
+open the editor. **Annotate latest capture** and **Annotate clipboard image**
+open the editor. The tray can also open an empty composer, start or stop a
+recording, show the composer button, open the captures folder, or quit the watcher.
+`/capture-studio-insert` inserts the latest capture into the current draft.
+`/capture-studio-annotate` opens that capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
 `{ "hotkey": false }` in plugin options disables automatic watcher startup.
 Quitting the watcher does not stop explicitly requested live tool captures.
@@ -249,6 +259,9 @@ from the macOS development environment. Before calling Windows support verified:
   restart it. Inspect `status.json` if the shortcut does not fire.
 - Test Insert with an existing draft, clipboard changes, Settings/dialogs, missing
   Prompt accessibility, and multiple OpenCode windows. Verify **nothing is sent**.
+  **Insert latest capture** pastes without opening the editor. **Capture and insert
+  without annotation** captures the focused window and pastes it. **Capture,
+  annotate, and insert** opens the editor first.
 - Cancel a preview and confirm no draft change; use `/capture-studio` for the saved image.
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
   confirm exported marks agree with the editor on mixed-DPI monitors. Test Cancel

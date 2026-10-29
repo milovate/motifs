@@ -294,9 +294,14 @@ internal sealed class ComposerForm : Form
         targetBox.DisplayMember = "Label";
         if (targetBox.Items.Count > 0) targetBox.SelectedIndex = 0;
         filling = false;
+        bool changed = RememberDestinations();
         if (Current is ComposerDestination selected && selected.Status == "ready")
         {
             settings["defaultDestination"] = selected.Id;
+            changed = true;
+        }
+        if (changed)
+        {
             try { ComposerFiles.SaveSettings(output, settings); } catch (Exception error) { status.Text = error.Message; }
         }
         RefreshSend();
@@ -304,6 +309,23 @@ internal sealed class ComposerForm : Form
     }
 
     ComposerDestination? Current => destinationBox.SelectedItem as ComposerDestination;
+
+    bool RememberDestinations()
+    {
+        if (destinations.Count == 0) return false;
+        var known = new JsonArray();
+        foreach (var destination in destinations.Take(16))
+        {
+            if (destination.Id.Length == 0 || destination.Label.Length == 0) continue;
+            known.Add(new JsonObject { ["id"] = destination.Id, ["label"] = destination.Label.Length <= 60 ? destination.Label : destination.Label[..60] });
+        }
+        if (known.Count == 0) return false;
+        var previous = ComposerFiles.KnownDestinations(settings);
+        var next = known.Select(item => new ComposerFiles.KnownDestination(item?["id"]?.GetValue<string>() ?? "", item?["label"]?.GetValue<string>() ?? "")).ToList();
+        if (previous.Count == next.Count && previous.Zip(next).All(pair => pair.First == pair.Second)) return false;
+        settings["knownDestinations"] = known;
+        return true;
+    }
     ComposerTarget? CurrentTarget => targetBox.SelectedItem as ComposerTarget;
 
     int skillGeneration;
@@ -478,9 +500,14 @@ internal sealed class ComposerForm : Form
         list.DoubleClick += (_, _) => dialog.DialogResult = DialogResult.OK;
         dialog.Controls.Add(list);
         if (dialog.ShowDialog(this) != DialogResult.OK || list.SelectedIndex < 0) return;
+        LoadSaved(recent[list.SelectedIndex].Path);
+    }
+
+    internal void LoadSaved(string path)
+    {
         try
         {
-            var bundle = ComposerFiles.LoadBundle(recent[list.SelectedIndex].Path, output);
+            var bundle = ComposerFiles.LoadBundle(path, output);
             shots.Clear();
             shots.AddRange(bundle.Shots);
             videos.Clear();

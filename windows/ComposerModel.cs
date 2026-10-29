@@ -177,6 +177,44 @@ internal static class ComposerFiles
 
     internal static bool ShowBubble(JsonObject settings) => settings["showBubble"] is not JsonValue value || !value.TryGetValue(out bool shown) || shown;
 
+    internal readonly record struct KnownDestination(string Id, string Label);
+
+    // The tray lists destinations the composer has seen. A missing or empty list is the three built-ins.
+    internal static List<KnownDestination> KnownDestinations(JsonObject settings)
+    {
+        var list = new List<KnownDestination>();
+        if (settings["knownDestinations"] is JsonArray raw)
+        {
+            foreach (var node in raw)
+            {
+                if (node is not JsonObject entry) continue;
+                string id = Text(entry, "id") ?? "";
+                string label = Text(entry, "label") ?? "";
+                if (id.Length == 0 || label.Length == 0) continue;
+                list.Add(new KnownDestination(id, label.Length <= 60 ? label : label[..60]));
+                if (list.Count == 16) break;
+            }
+        }
+        if (list.Count == 0)
+        {
+            list.Add(new KnownDestination("opencode", "OpenCode"));
+            list.Add(new KnownDestination("clipboard", "Clipboard"));
+            list.Add(new KnownDestination("folder", "Save to folder"));
+        }
+        return list;
+    }
+
+    internal static string RelativeTime(DateTimeOffset updated, DateTimeOffset now)
+    {
+        var delta = now - updated;
+        if (delta < TimeSpan.Zero) delta = TimeSpan.Zero;
+        if (delta.TotalSeconds < 45) return "just now";
+        if (delta.TotalMinutes < 60) return Math.Max(1, (int)Math.Round(delta.TotalMinutes)) + " min ago";
+        if (delta.TotalHours < 24) return Math.Max(1, (int)Math.Round(delta.TotalHours)) + " hr ago";
+        if (delta.TotalDays < 7) return Math.Max(1, (int)Math.Round(delta.TotalDays)) + (delta.TotalDays < 1.5 ? " day ago" : " days ago");
+        return updated.ToLocalTime().ToString("MMM d", CultureInfo.CurrentCulture);
+    }
+
     // A hosted model would receive the values being checked, so only this machine is accepted.
     internal static string? LocalJudgeAddress(string? raw)
     {
@@ -839,6 +877,11 @@ internal static class ComposerTests
         var probe = ComposerFiles.SecretProbe("laya");
         Check(probe["model"]?.GetValue<string>() == "laya" && (probe["state"]?["text"]?.GetValue<string>() ?? "").Contains("⟦", StringComparison.Ordinal) && ComposerFiles.SecretProbe("")["model"] == null, "the probe asks about one marked sample and names the model");
         Check(ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":0.82}}")) is double scored && Math.Abs(scored - 0.82) < 0.001 && ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":{\"noul\":0.2}}}")) is double nested && Math.Abs(nested - 0.2) < 0.001 && ComposerFiles.SecretScore(JsonNode.Parse("{\"answers\":{\"secret\":1.5}}")) == null, "a secret score is a probability from 0 to 1");
+        var known = new JsonObject { ["knownDestinations"] = new JsonArray(new JsonObject { ["id"] = "opencode", ["label"] = "OpenCode" }, new JsonObject { ["id"] = "linear", ["label"] = new string('L', 80) }, new JsonObject { ["label"] = "Missing id" }) };
+        var parsed = ComposerFiles.KnownDestinations(known);
+        Check(parsed.Count == 2 && parsed[1].Id == "linear" && parsed[1].Label.Length == 60 && ComposerFiles.KnownDestinations(new JsonObject()).Count == 3, "the destination menu keeps labels short and falls back to the built-in destinations");
+        var recentAt = DateTimeOffset.Parse("2026-10-29T10:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        Check(ComposerFiles.RelativeTime(recentAt, recentAt.AddSeconds(10)) == "just now" && ComposerFiles.RelativeTime(recentAt, recentAt.AddMinutes(5)) == "5 min ago", "recent bundles show a short relative time");
         var bubbleBounds = ComposerBubble.BoundsOn(new Rectangle(0, 0, 1920, 1080));
         Check(bubbleBounds.Size == new Size(ComposerBubble.Diameter, ComposerBubble.Diameter) && bubbleBounds.Left + bubbleBounds.Width / 2 == 960 && bubbleBounds.Bottom == 1080 - ComposerBubble.Gap, "the composer button is centered above the capture hint");
         Check(DictationText.Base("Hello") == "Hello " && DictationText.Base("Hello ") == "Hello " && DictationText.Base("") == "" && DictationText.Commit("Hello", "there") == "Hello there" && DictationText.Apply("Note ", "Hello", "wor") == "Note Hello wor", "dictation keeps the note and shows the phrase being recognized");

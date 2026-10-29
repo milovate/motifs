@@ -61,7 +61,21 @@ internal static class Program
                 if (!owner) return 0;
                 Forms.Application.Run(new Tray(output));
             }
-            else if (args.Contains("--insert-latest") || args.Contains("--annotate-latest") || args.Contains("--annotate-clipboard"))
+            else if (args.Contains("--insert-latest"))
+            {
+                var shot = Latest(output);
+                Exception? failed = null;
+                using var host = new Forms.Form { ShowInTaskbar = false, Opacity = 0, FormBorderStyle = Forms.FormBorderStyle.FixedToolWindow, Size = new Size(0, 0) };
+                host.Shown += async (_, _) =>
+                {
+                    try { await Inserter.Insert(shot, output); }
+                    catch (Exception error) { failed = error; }
+                    host.Close();
+                };
+                Forms.Application.Run(host);
+                if (failed != null) throw failed;
+            }
+            else if (args.Contains("--annotate-latest") || args.Contains("--annotate-clipboard"))
             {
                 using var preview = new Preview(args.Contains("--annotate-clipboard") ? ClipboardSnapshot(output) : Latest(output), output);
                 Forms.Application.Run(preview);
@@ -281,7 +295,9 @@ internal sealed class Tray : Forms.Form
     readonly string output;
     readonly Forms.NotifyIcon icon;
     readonly InstantReplay replay = new();
+    readonly Forms.Timer focus = new() { Interval = 400 };
     readonly List<Forms.ToolStripItem> logItems = new();
+    nint lastExternal;
     bool busy;
     internal Tray(string output)
     {
@@ -292,61 +308,46 @@ internal sealed class Tray : Forms.Form
         var recordItem = new Forms.ToolStripMenuItem("Start screen recording (Ctrl+Alt+Shift+R)");
         recordItem.Click += async (_, _) => await ToggleRecording();
         menu.Items.Add(recordItem);
-        menu.Opening += (_, _) => recordItem.Text = RecordingSession.Active ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording (Ctrl+Alt+Shift+R)";
+        var recentItem = new Forms.ToolStripMenuItem("Recent bundles");
+        recentItem.DropDownOpening += (_, _) => FillRecents(recentItem);
+        menu.Items.Add(recentItem);
+        var destinationItem = new Forms.ToolStripMenuItem("Default destination");
+        destinationItem.DropDownOpening += (_, _) => FillDestinations(destinationItem);
+        menu.Items.Add(destinationItem);
+        var contextItem = new Forms.ToolStripMenuItem("Context sources");
         var replayItem = new Forms.ToolStripMenuItem("Keep instant replay (last 30 s)");
         replayItem.ToolTipText = "Keeps the last 30 seconds of the display in memory. Ctrl+Alt+Shift+A attaches it to the capture.";
         replayItem.Click += (_, _) => ToggleReplay();
-        menu.Items.Add(replayItem);
         var clicksItem = new Forms.ToolStripMenuItem("Record recent clicks");
         clicksItem.ToolTipText = "Keeps the last 10 minutes of clicks and app switches in memory only. Never records keystrokes.";
         clicksItem.Click += (_, _) => ToggleClicks();
-        menu.Items.Add(clicksItem);
+        var judgeItem = new Forms.ToolStripMenuItem("Local secret-check model…");
+        judgeItem.ToolTipText = "Asks a model running on this PC about values that only might be secrets. Hosted models are not allowed.";
+        judgeItem.Click += async (_, _) => await ChooseJudge();
+        var addLog = new Forms.ToolStripMenuItem("Add log file…");
+        addLog.ToolTipText = "Capture Studio reads the last 64 KB of this file when you capture.";
+        addLog.Click += (_, _) => AddLog();
+        var browserItem = new Forms.ToolStripMenuItem("Connect browser extension…");
+        browserItem.ToolTipText = "Registers the native messaging host for Chrome, Chrome Canary, Brave, Edge, Arc and Chromium. The extension is loaded separately.";
+        browserItem.Click += (_, _) => ConnectBrowser();
+        contextItem.DropDownItems.Add(clicksItem);
+        contextItem.DropDownItems.Add(replayItem);
+        contextItem.DropDownItems.Add(new Forms.ToolStripSeparator());
+        contextItem.DropDownItems.Add(new Forms.ToolStripMenuItem("Custom log files") { Enabled = false });
+        contextItem.DropDownItems.Add(addLog);
+        contextItem.DropDownItems.Add(new Forms.ToolStripSeparator());
+        contextItem.DropDownItems.Add(browserItem);
+        contextItem.DropDownItems.Add(new Forms.ToolStripSeparator());
+        contextItem.DropDownItems.Add(judgeItem);
+        contextItem.DropDownOpening += (_, _) => RefreshContextMenu(clicksItem, replayItem, judgeItem, addLog);
+        menu.Items.Add(contextItem);
         var bubbleItem = new Forms.ToolStripMenuItem("Show composer button");
         bubbleItem.ToolTipText = "Shows a button above the capture hint that opens the composer without taking a screenshot.";
         bubbleItem.Click += (_, _) => ToggleBubble();
         menu.Items.Add(bubbleItem);
-        var judgeItem = new Forms.ToolStripMenuItem("Local secret-check model…");
-        judgeItem.ToolTipText = "Asks a model running on this PC about values that only might be secrets. Hosted models are not allowed.";
-        judgeItem.Click += async (_, _) => await ChooseJudge();
-        menu.Items.Add(judgeItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(new Forms.ToolStripMenuItem("Custom log files") { Enabled = false });
-        var addLog = new Forms.ToolStripMenuItem("Add log file…");
-        addLog.ToolTipText = "Capture Studio reads the last 64 KB of this file when you capture.";
-        addLog.Click += (_, _) => AddLog();
-        menu.Items.Add(addLog);
-        var browserItem = new Forms.ToolStripMenuItem("Connect browser extension…");
-        browserItem.ToolTipText = "Registers the native messaging host for Chrome, Brave, Edge, Arc and Chromium. The extension is loaded separately.";
-        browserItem.Click += (_, _) => ConnectBrowser();
-        menu.Items.Add(browserItem);
-        menu.Opening += (_, _) =>
-        {
-            var menuSettings = ComposerFiles.Settings(output);
-            replayItem.Checked = replay.Enabled;
-            clicksItem.Checked = ComposerFiles.RecordClicks(menuSettings);
-            bubbleItem.Checked = ComposerFiles.ShowBubble(menuSettings);
-            string judge = ComposerFiles.RedactionJudge(menuSettings);
-            judgeItem.Text = judge.Length == 0 ? "Local secret-check model…" : "Local secret-check model: " + judge;
-            foreach (var item in logItems) menu.Items.Remove(item);
-            logItems.Clear();
-            var files = ComposerFiles.CustomLogFiles(menuSettings);
-            int insertAt = menu.Items.IndexOf(addLog);
-            foreach (string path in files)
-            {
-                string file = path;
-                var remove = new Forms.ToolStripMenuItem("Remove " + Path.GetFileName(file)) { Tag = file, ToolTipText = file };
-                remove.Click += (_, _) => RemoveLog(file);
-                menu.Items.Insert(insertAt, remove);
-                logItems.Add(remove);
-                insertAt++;
-            }
-            addLog.Enabled = files.Count < 4;
-        };
-        menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
-        menu.Items.Add("Insert latest capture into OpenCode", null, (_, _) => {
-            try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
-            catch (Exception e) { Error(e); }
-        });
+        menu.Items.Add("Capture, annotate, and insert into current draft", null, async (_, _) => await CaptureAndInsert(true));
+        menu.Items.Add("Capture and insert without annotation", null, async (_, _) => await CaptureAndInsert(false));
         menu.Items.Add("Annotate latest capture", null, (_, _) => {
             try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
             catch (Exception e) { Error(e); }
@@ -355,13 +356,22 @@ internal sealed class Tray : Forms.Form
             try { using var preview = new Preview(Program.ClipboardSnapshot(output), output); preview.ShowDialog(); }
             catch (Exception e) { Error(e); }
         });
+        menu.Items.Add("Insert latest capture into OpenCode", null, async (_, _) => await InsertLatest());
+        menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
         menu.Items.Add("Open captures folder", null, (_, _) => Process.Start(new ProcessStartInfo(output) { UseShellExecute = true }));
-        menu.Items.Add("Quit Appshots", null, (_, _) => Close());
+        menu.Items.Add("Quit Capture Studio", null, (_, _) => Close());
+        menu.Opening += (_, _) =>
+        {
+            recordItem.Text = RecordingSession.Active ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording (Ctrl+Alt+Shift+R)";
+            bubbleItem.Checked = ComposerFiles.ShowBubble(ComposerFiles.Settings(output));
+        };
         icon = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Capture Studio — Ctrl+Alt+Shift+A", ContextMenuStrip = menu, Visible = true };
         RecordingSession.StateChanged += UpdateIcon;
         if (ComposerFiles.InstantReplay(ComposerFiles.Settings(output))) replay.SetEnabled(true);
         UpdateIcon();
         _ = Handle; // The hidden form still needs an HWND for WM_HOTKEY delivery.
+        focus.Tick += (_, _) => { nint window = Native.GetForegroundWindow(); if (UsableExternal(window)) lastExternal = window; };
+        focus.Start();
         ClickHistory.Shared.EnableHooks();
         if (ComposerFiles.RecordClicks(ComposerFiles.Settings(output)))
         {
@@ -389,6 +399,151 @@ internal sealed class Tray : Forms.Form
     void UpdateIcon() => icon.Text = RecordingSession.Active
         ? "Capture Studio — recording (Ctrl+Alt+Shift+R)"
         : replay.Enabled ? "Capture Studio — replay on (Ctrl+Alt+Shift+A)" : "Capture Studio — Ctrl+Alt+Shift+A";
+
+    void FillRecents(Forms.ToolStripMenuItem menu)
+    {
+        menu.DropDownItems.Clear();
+        var bundles = ComposerFiles.Recents(output);
+        if (bundles.Count == 0)
+        {
+            menu.DropDownItems.Add(new Forms.ToolStripMenuItem("No bundles yet") { Enabled = false });
+            return;
+        }
+        foreach (var bundle in bundles)
+        {
+            string path = bundle.Path;
+            var entry = new Forms.ToolStripMenuItem(bundle.Title + " · " + ComposerFiles.RelativeTime(bundle.Updated, DateTimeOffset.Now))
+            {
+                ToolTipText = bundle.Screenshots + (bundle.Screenshots == 1 ? " screenshot" : " screenshots") + " · Reopen in the composer",
+            };
+            entry.Click += (_, _) => ReopenBundle(path);
+            menu.DropDownItems.Add(entry);
+        }
+    }
+
+    void FillDestinations(Forms.ToolStripMenuItem menu)
+    {
+        menu.DropDownItems.Clear();
+        var settings = ComposerFiles.Settings(output);
+        string current = settings["defaultDestination"]?.GetValue<string>() ?? "opencode";
+        foreach (var destination in ComposerFiles.KnownDestinations(settings))
+        {
+            string id = destination.Id;
+            var entry = new Forms.ToolStripMenuItem(destination.Label) { Checked = id == current };
+            entry.Click += (_, _) => ChooseDestination(id);
+            menu.DropDownItems.Add(entry);
+        }
+    }
+
+    void ChooseDestination(string id)
+    {
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            settings["defaultDestination"] = id;
+            ComposerFiles.SaveSettings(output, settings, false);
+        }
+        catch (Exception e) { Error(e); }
+    }
+
+    void RefreshContextMenu(Forms.ToolStripMenuItem clicksItem, Forms.ToolStripMenuItem replayItem, Forms.ToolStripMenuItem judgeItem, Forms.ToolStripMenuItem addLog)
+    {
+        var menuSettings = ComposerFiles.Settings(output);
+        replayItem.Checked = replay.Enabled;
+        clicksItem.Checked = ComposerFiles.RecordClicks(menuSettings);
+        string judge = ComposerFiles.RedactionJudge(menuSettings);
+        judgeItem.Text = judge.Length == 0 ? "Local secret-check model…" : "Local secret-check model: " + judge;
+        judgeItem.Checked = judge.Length > 0;
+        if (addLog.Owner is not Forms.ToolStrip owner) return;
+        foreach (var item in logItems) owner.Items.Remove(item);
+        logItems.Clear();
+        var files = ComposerFiles.CustomLogFiles(menuSettings);
+        int insertAt = owner.Items.IndexOf(addLog);
+        foreach (string path in files)
+        {
+            string file = path;
+            var remove = new Forms.ToolStripMenuItem("Remove " + Path.GetFileName(file)) { Tag = file, ToolTipText = file };
+            remove.Click += (_, _) => RemoveLog(file);
+            owner.Items.Insert(insertAt, remove);
+            logItems.Add(remove);
+            insertAt++;
+        }
+        addLog.Enabled = files.Count < 4;
+    }
+
+    void ReopenBundle(string path)
+    {
+        if (busy || RecordingSession.Busy) return;
+        busy = true;
+        try
+        {
+            using var composer = new ComposerForm(output, Array.Empty<Snapshot>());
+            composer.LoadSaved(path);
+            composer.ShowDialog();
+        }
+        catch (Exception e) { Error(e); }
+        finally { busy = false; }
+    }
+
+    async Task InsertLatest()
+    {
+        if (busy || RecordingSession.Busy) return;
+        busy = true;
+        string? notice = null;
+        try
+        {
+            await Inserter.Insert(Program.Latest(output), output);
+            notice = "Inserted latest capture into OpenCode. Add a question and send when ready.";
+        }
+        catch (Exception e) { Error(e); }
+        finally { busy = false; UpdateIcon(); }
+        if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
+    }
+
+    async Task CaptureAndInsert(bool annotate)
+    {
+        if (busy || RecordingSession.Busy) return;
+        busy = true;
+        string? notice = null;
+        try
+        {
+            nint window = ExternalWindow();
+            if (window == 0) throw new Exception("Focus a window, then choose this again.");
+            Program.Save(output, "status.json", new { phase = "capturing" });
+            var shot = await CaptureSelector.Take(new CaptureChoice(CaptureKind.Window, window, Rectangle.Empty), output);
+            Program.Save(output, "status.json", new { phase = "captured" });
+            if (!annotate)
+            {
+                await Inserter.Insert(shot, output);
+                notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
+            }
+            else
+            {
+                Program.Save(output, "status.json", new { phase = "annotating" });
+                using var preview = new Preview(shot, output);
+                preview.ShowDialog();
+                if (!preview.Inserted && !preview.Saved) Program.Save(output, "status.json", new { phase = "ready", lastAction = "annotation_cancelled" });
+                else if (preview.Inserted) notice = "Inserted " + shot.app + " into OpenCode. Add a question and send when ready.";
+            }
+        }
+        catch (Exception e) { Error(e); }
+        finally { busy = false; UpdateIcon(); }
+        if (notice != null) icon.Text = notice.Length <= 127 ? notice : notice[..127];
+    }
+
+    nint ExternalWindow()
+    {
+        nint window = Native.GetForegroundWindow();
+        if (!UsableExternal(window)) window = lastExternal;
+        return UsableExternal(window) ? window : 0;
+    }
+
+    bool UsableExternal(nint window)
+    {
+        if (window == 0 || window == Handle || !Native.IsWindow(window) || !Native.IsWindowVisible(window) || Native.IsIconic(window)) return false;
+        Native.GetWindowThreadProcessId(window, out uint pid);
+        return pid != (uint)Environment.ProcessId && Native.GetWindowTextLength(window) > 0;
+    }
 
     void ToggleReplay()
     {
@@ -621,7 +776,7 @@ internal sealed class Tray : Forms.Form
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); ClickHistory.Shared.Stop(); ClickHistory.Shared.DisableHooks(); replay.Dispose(); icon.Dispose(); }
+        if (disposing) { focus.Stop(); focus.Dispose(); Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); ClickHistory.Shared.Stop(); ClickHistory.Shared.DisableHooks(); replay.Dispose(); icon.Dispose(); }
         base.Dispose(disposing);
     }
 }
