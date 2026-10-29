@@ -192,6 +192,12 @@ internal sealed class ComposerForm : Form
         Open = this;
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
     static Button MakeButton(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(4, 16, 0, 0) };
     static void StyleQuiet(Button button)
     {
@@ -968,6 +974,12 @@ internal sealed class MentionPopup : Form
             session.Selected = visibleStart + list.SelectedIndex;
             Choose?.Invoke();
         };
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
     }
 
     protected override bool ShowWithoutActivation => true;

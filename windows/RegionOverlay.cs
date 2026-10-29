@@ -42,6 +42,12 @@ internal sealed class RegionOverlay : Form
         Text = "Capture Studio";
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -257,7 +263,7 @@ internal sealed class ComposerBubble : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        Native.SetWindowDisplayAffinity(Handle, 0x11);
+        Native.ExcludeFromCapture(Handle);
     }
 
     protected override bool ShowWithoutActivation => true;

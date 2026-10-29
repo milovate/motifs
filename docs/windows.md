@@ -69,7 +69,8 @@ seconds, and the recording stops at 5 minutes. Pause time is kept out of the cli
 Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
 key-frame PNGs into the captures folder and attaches the clip to the open composer,
 or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
-The bar sets display affinity and is hidden while each frame is grabbed. A window
+The bar and the dashed area outline set display affinity and are hidden while each
+frame is grabbed. An area recording shows that outline just outside the rectangle. A window
 recording follows that window's rectangle; unlike a still window capture, it is the
 visible pixels there, so overlapping windows can appear. Click a clip in the
 composer to review it. The filmstrip has yellow handles; drag them, or press
@@ -86,8 +87,9 @@ pixels, and at most 150 MB. **Ctrl+Alt+Shift+A** copies that buffer before the
 chooser opens. After you confirm a screenshot, it writes an H.264 MP4 plus key
 frames and attaches the clip with the screenshot. Cancelling the chooser leaves
 the buffer in memory. Turning replay off or quitting the watcher discards it.
-The sample is visible pixels, so Capture Studio's own windows can appear in it,
-and it has no audio. Sampling pauses while the chooser is open and while a
+The sample is visible pixels. Capture Studio windows set display affinity so capture
+APIs that honor it leave them out. The recording bar and the area outline are also
+hidden for each frame grab. There is no audio. Sampling pauses while the chooser is open and while a
 screen recording is in progress.
 
 **Record recent clicks** stays off until you turn it on from the tray. While it
@@ -194,8 +196,9 @@ error rather than replacing the saved capture.
   Enter captures the visible pixels in that rectangle, which can include
   whatever is on screen there. The composer says which kind you took.
 - Screen recording also captures visible pixels, including a clicked window's
-  rectangle, and does not record audio. It stops at 5 minutes. The control bar is
-  hidden for each frame grab.
+  rectangle, and does not record audio. It stops at 5 minutes. The control bar and
+  the dashed area outline are hidden for each frame grab. Capture Studio windows
+  set display affinity so capture APIs that honor it leave them out.
 - Instant replay is off by default. While the tray item is checked, the last 30
   seconds of the display under the pointer stay in memory, capped at 150 MB. A
   confirmed capture writes that buffer. Cancelling the chooser leaves it in
@@ -273,7 +276,7 @@ from the macOS development environment. Before calling Windows support verified:
   confirm Enter inserts a skill mention instead of sending.
 - Record a short display clip with **Control+Alt+Shift+R**. Pause, restart, and
   stop. Confirm the MP4 and key frames appear in the composer and the control bar
-  is absent from those frames. Escape on the bar discards the clip. Confirm nothing
+  and dashed outline are absent from those frames. Escape on the bar discards the clip. Confirm nothing
   is sent. Reopen the capture from Recents. Click the clip, trim it with the
   yellow handles, and choose **Use trimmed clip**. Confirm a second MP4 appears
   and the original file is still in the captures folder.

@@ -368,8 +368,9 @@ annotation** capture the focused window. A screen recording also
 records scrolls, drags, selected text, and which field was typed into; the key
 itself is never stored. Instant replay is off by default.
 It samples the display under the pointer at 8 frames per second into memory (30
-seconds, 150 MB) and writes an MP4 only after a capture is confirmed. The sample is
-visible pixels, including Capture Studio's own windows. Click a clip to review it:
+seconds, 150 MB) and writes an MP4 only after a capture is confirmed. Capture Studio
+windows set display affinity so capture APIs that honor it leave them out. The
+recording bar and area outline are also hidden for each frame grab. Click a clip to review it:
 yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
 clip** writes a new MP4 beside the original and takes key frames from the selection.
 **Connect browser extension…** registers the same extension with Chrome, Chrome

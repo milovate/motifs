@@ -259,6 +259,12 @@ internal sealed class Preview : Forms.Form
         };
         canvas.RefreshState();
     }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
     protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData)
     {
         // Let numeric/text controls handle their own editing shortcuts and arrow keys.

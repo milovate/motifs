@@ -628,6 +628,50 @@ internal sealed class Mp4Writer : IDisposable
     }
 }
 
+// A dashed outline just outside a recorded area. It ignores clicks, and each frame
+// grab hides it so the dashes are not in the video.
+internal sealed class RecordingOutline : Form
+{
+    internal static Rectangle FrameFor(Rectangle area) => Rectangle.Inflate(area, 4, 4);
+
+    internal RecordingOutline(Rectangle area)
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        TopMost = true;
+        BackColor = Color.Magenta;
+        TransparencyKey = Color.Magenta;
+        Bounds = FrameFor(area);
+        DoubleBuffered = true;
+        Text = "Recording area";
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            parameters.ExStyle |= 0x00080000 | 0x00000020 | 0x08000000;
+            return parameters;
+        }
+    }
+
+    protected override bool ShowWithoutActivation => true;
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        using var pen = new Pen(Color.Red, 2) { DashPattern = new[] { 6f, 4f } };
+        e.Graphics.DrawRectangle(pen, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+    }
+}
+
 // Timer, restart, pause, and Stop. The bar is excluded from capture APIs that honor
 // display affinity, and the recorder also hides it for each GDI grab.
 internal sealed class RecordingControls : Form
@@ -684,7 +728,7 @@ internal sealed class RecordingControls : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        Native.SetWindowDisplayAffinity(Handle, 0x11);
+        Native.ExcludeFromCapture(Handle);
     }
 
     internal void Place(Rectangle area)
@@ -735,6 +779,7 @@ internal sealed class RecordingSession
     readonly TaskCompletionSource<JsonObject?> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly int frameCount;
     RecordingControls controls;
+    RecordingOutline? outline;
     Timer timer;
     Mp4Writer? writer;
     Rectangle source;
@@ -808,6 +853,11 @@ internal sealed class RecordingSession
             if (stopping) return done.Task;
             controls.Place(source);
             controls.Show();
+            if (choice.Kind == CaptureKind.Region)
+            {
+                outline = new RecordingOutline(source);
+                outline.Show();
+            }
             if (stopping) return done.Task;
             ClickHistory.Shared.BeginRecording();
             browserSteps = Task.Run(() => { try { BrowserHost.CollectSteps(true); } catch { /* Recording continues when the extension is not connected. */ } });
@@ -847,7 +897,9 @@ internal sealed class RecordingSession
         if (area.Width < 2 || area.Height < 2) return;
         grabbing = true;
         bool hide = controls.Visible && controls.IsHandleCreated;
+        bool hideOutline = outline is { Visible: true, IsHandleCreated: true };
         if (hide) Native.ShowWindow(controls.Handle, 0);
+        if (hideOutline) Native.ShowWindow(outline!.Handle, 0);
         Bitmap? raw = null;
         Bitmap? frame = null;
         try
@@ -869,6 +921,7 @@ internal sealed class RecordingSession
             frame?.Dispose();
             raw?.Dispose();
             if (hide && !controls.IsDisposed) Native.ShowWindow(controls.Handle, 8);
+            if (hideOutline && outline is { IsDisposed: false }) Native.ShowWindow(outline.Handle, 8);
             grabbing = false;
             if (deferredSave is bool save) Finish(save, deferredError);
         }
@@ -977,7 +1030,7 @@ internal sealed class RecordingSession
             DeleteFiles();
             clip = null;
         }
-        try { controls.CloseFromSession(); timer.Dispose(); }
+        try { controls.CloseFromSession(); outline?.Close(); timer.Dispose(); }
         catch (Exception blown) { error ??= blown; clip = null; }
         try { EndSteps(clip); }
         catch { /* The clip still stands when step collection fails. */ }
@@ -1093,6 +1146,8 @@ internal static class RecordingTests
         }
         if (trimmedHeader[4] != (byte)'f' || trimmedHeader[5] != (byte)'t' || trimmedHeader[6] != (byte)'y' || trimmedHeader[7] != (byte)'p')
             throw new Exception("Recording regression: the trimmed file is not an MP4.");
+        var outlined = RecordingOutline.FrameFor(new Rectangle(100, 200, 300, 400));
+        if (outlined != new Rectangle(96, 196, 308, 408)) throw new Exception("Recording regression: the area outline sits outside the captured rectangle.");
         if (trimmed["frames"] is not JsonArray frames || frames.Count == 0) throw new Exception("Recording regression: trimming writes key frames.");
         Console.WriteLine("Windows recording regressions passed");
     }

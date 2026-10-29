@@ -383,6 +383,7 @@ internal sealed class Tray : Forms.Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
         const uint modifiers = 0x4000 | 0x1 | 0x2 | 0x4;
         bool registered = Native.RegisterHotKey(Handle, 1, modifiers, 0x41);
         bool recordRegistered = Native.RegisterHotKey(Handle, 2, modifiers, 0x52);
@@ -891,6 +892,8 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern bool PrintWindow(nint window, nint dc, uint flags);
     [DllImport("user32.dll")] internal static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] internal static extern bool SetWindowDisplayAffinity(nint window, uint affinity);
+
+    internal static void ExcludeFromCapture(nint window) => SetWindowDisplayAffinity(window, 0x11);
     [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(nint window, int id);
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);

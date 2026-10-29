@@ -676,6 +676,12 @@ internal sealed class ClipReviewForm : Form
         RefreshSelection();
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
     Control MakePlayer()
     {
         try

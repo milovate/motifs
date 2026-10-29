@@ -393,6 +393,12 @@ internal sealed class ContextDialog : Form
         RefreshDetail();
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Native.ExcludeFromCapture(Handle);
+    }
+
     void FillSources()
     {
         filling = true;
