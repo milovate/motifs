@@ -1549,10 +1549,19 @@ internal sealed class ComposerForm : Form
 // Stays above the note without taking focus. Up and Down move the selection from the composer.
 internal sealed class MentionPopup : Form
 {
+    internal const string HintText = "↑↓ navigate · ↵ select · esc close";
     readonly ListBox list = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false };
+    readonly Label hint = new() { Text = HintText, Dock = DockStyle.Bottom, Height = 22, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 2, 8, 0), ForeColor = Color.FromArgb(140, 140, 146) };
     int visibleStart;
     MentionSession? session;
     internal Action? Choose;
+
+    internal static string RowText(string id, string name)
+    {
+        string row = "@" + id;
+        if (name.Length > 0 && !string.Equals(name, id, StringComparison.OrdinalIgnoreCase)) row += "   " + name;
+        return row;
+    }
 
     internal MentionPopup()
     {
@@ -1560,11 +1569,13 @@ internal sealed class MentionPopup : Form
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         TopMost = true;
-        Size = new Size(280, 36);
+        Size = new Size(280, 58);
         BackColor = Color.FromArgb(28, 28, 30);
         list.BackColor = BackColor;
         list.ForeColor = Color.FromArgb(236, 236, 238);
+        hint.Font = new Font("Segoe UI", 8);
         Controls.Add(list);
+        Controls.Add(hint);
         list.Click += (_, _) =>
         {
             if (session == null || list.SelectedIndex < 0) return;
@@ -1588,13 +1599,11 @@ internal sealed class MentionPopup : Form
         list.Items.Clear();
         foreach (var skill in current.Candidates.Skip(visibleStart).Take(8))
         {
-            string row = "@" + skill.Id;
-            if (skill.Name.Length > 0 && !string.Equals(skill.Name, skill.Id, StringComparison.OrdinalIgnoreCase)) row += "   " + skill.Name;
-            list.Items.Add(row);
+            list.Items.Add(RowText(skill.Id, skill.Name));
         }
         int local = current.Selected - visibleStart;
         if (local >= 0 && local < list.Items.Count) list.SelectedIndex = local;
-        Height = Math.Max(1, list.Items.Count) * 22 + 8;
+        Height = Math.Max(1, list.Items.Count) * 22 + hint.Height + 8;
         var caret = note.GetPositionFromCharIndex(Math.Max(0, Math.Min(note.SelectionStart, note.Text.Length)));
         var screenCaret = note.PointToScreen(caret);
         var area = Screen.FromControl(owner).WorkingArea;

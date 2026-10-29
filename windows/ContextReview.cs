@@ -204,7 +204,7 @@ internal static class ContextReview
         string Line(JsonObject entry) => source switch
         {
             "console" => "[" + When(entry) + "] " + Field(entry, "level").ToUpperInvariant() + " " + (Field(entry, "source") == "browser" ? "page" : (StringOf(entry, "subsystem") ?? "app")) + ": " + Field(entry, "message"),
-            "network" => "[" + When(entry) + "] " + Field(entry, "method") + " " + StatusOrError(entry) + " " + Field(entry, "url"),
+            "network" => NetworkPreview(entry, When(entry)),
             "events" => "[" + When(entry) + "] " + Describe(entry) + (Field(entry, "kind") == "app-switch" || Field(entry, "app").Length == 0 ? "" : " in " + Field(entry, "app")),
             _ => "",
         };
@@ -309,6 +309,29 @@ internal static class ContextReview
     }
 
     static string Field(JsonObject entry, string key) => StringOf(entry, key) ?? (Number(entry, key)?.ToString(CultureInfo.InvariantCulture) ?? "");
+
+    internal static string NetworkPreview(JsonObject entry, string when)
+    {
+        string method = Field(entry, "method");
+        if (method.Length == 0) method = "GET";
+        string status = entry["status"] != null ? Field(entry, "status") : "Failed";
+        string url = Field(entry, "url");
+        string path = url;
+        string host = "";
+        if (Uri.TryCreate(url, UriKind.Absolute, out var parsed))
+        {
+            path = parsed.AbsolutePath.Length == 0 ? "/" : parsed.AbsolutePath;
+            if (parsed.Query.Length > 0) path += parsed.Query;
+            host = parsed.IdnHost;
+        }
+        string error = Field(entry, "error");
+        var extra = new List<string>();
+        if (host.Length > 0) extra.Add(host);
+        if (error.Length > 0) extra.Add(error);
+        string line = method + " " + status + " " + path + " · " + when;
+        if (extra.Count > 0) line += "\n" + string.Join(" · ", extra);
+        return line;
+    }
 
     static string StatusOrError(JsonObject entry) => entry["status"] != null ? Field(entry, "status") : Field(entry, "error");
 

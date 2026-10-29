@@ -58,7 +58,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
    Explorer**, or **Copy Path**. That shares the file and does not send the
    draft. **Context**
-   reviews window text, device, console, network, steps, and logs. Console and network show the first 200 rows and say how many are left out. Steps show the newest 200, newest first. A time inside a clip uses that clip's time. Hover it to
+   reviews window text, device, console, network, steps, and logs. Console and network show the first 200 rows and say how many are left out. A failed request shows the method, status, path, and host. Steps show the newest 200, newest first. A time inside a clip uses that clip's time. Hover it to
    see each source's count, or **off** when that source is switched off, and a
    rough token estimate. Each source has an include switch, a preview, and
    Markdown. For a native app, the button says **collecting…** while that app's
@@ -69,7 +69,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    going. Reopening a saved capture does not read either source again.
    The draft is saved when the composer opens, and again when **Recents** opens, so the list includes this capture. **Recents** lists up to 30 saved captures, newest first. Each row has a thumbnail, the screenshot and clip counts, and when it was edited. The capture already open is marked and cannot be chosen again. The composer stays up while a screenshot is being added, a recording is in progress, or a clip is being reviewed, and Send stays off until that finishes. Type **@** to pick a skill from the
    loaded project; Up and Down move through the matches, and Enter or Tab inserts
-   one. The **@** button opens that list beside the button, with **report** first and the skill name on each row. Choosing **@** again closes it. A note that is only @mentions does not enable Send until a screenshot or
+   one. The list shows the skill name when it differs from the id, and the hint ↑↓ navigate · ↵ select · esc close. The **@** button opens that list beside the button, with **report** first and the skill name on each row. Choosing **@** again closes it. A note that is only @mentions does not enable Send until a screenshot or
    recording is attached. Escape closes that list before it closes the composer. Once those skills
    have loaded, each known **@mention** is drawn in the accent color on a rounded
    tint. The composer grows with the note. **Prefix** saves a

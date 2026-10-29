@@ -1120,6 +1120,7 @@ internal static class ComposerTests
         var session = new MentionSession();
         session.Update("@re", 3, 0, skills);
         Check(session.Open && session.Candidates[0].Id == "report", "@ prefix opens matching completion with report first");
+        Check(MentionPopup.RowText("report", "Report") == "@report   Report" && MentionPopup.RowText("report", "report") == "@report" && MentionPopup.HintText == "↑↓ navigate · ↵ select · esc close", "a suggestion shows the skill name and the keyboard hint");
         var picker = SkillChoice.ForPicker(new[] { new SkillChoice { Id = "zeta", Name = "Z" }, new SkillChoice { Id = "alpha", Name = "A" }, new SkillChoice { Id = "report", Name = "Report" } }, "  ");
         Check(string.Join(",", picker.Select(skill => skill.Id)) == "report,alpha,zeta" && SkillChoice.ForPicker(picker, "alp").Count == 1 && SkillChoice.ForPicker(picker, "nope").Count == 0, "the skill list puts report first and filters by id or name");
         var chosen = session.Query!.Value;
@@ -1188,6 +1189,8 @@ internal static class ComposerTests
         Check(consolePreview.Contains("app: m0") && consolePreview.Contains("app: m199") && !consolePreview.Contains("app: m204") && consolePreview.EndsWith("5 more not shown", StringComparison.Ordinal), "the console preview keeps the first 200 messages");
         var stepPreview = ContextReview.Preview("events", Array.Empty<JsonObject>(), new JsonObject { ["events"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "t1", ["kind"] = "click", ["app"] = "Notes" }, new JsonObject { ["time"] = "t2", ["kind"] = "app-switch", ["app"] = "Chrome" }) } });
         Check(stepPreview.StartsWith("[t2]", StringComparison.Ordinal), "steps are shown newest first");
+        var failedRequest = new JsonObject { ["method"] = "POST", ["url"] = "https://shop.test/api?x=1", ["status"] = 502, ["error"] = "timeout" };
+        Check(ContextReview.NetworkPreview(failedRequest, "t") == "POST 502 /api?x=1 · t\nshop.test · timeout" && ContextReview.NetworkPreview(new JsonObject { ["url"] = "https://shop.test" }, "t") == "GET Failed / · t\nshop.test", "a failed request shows the method, status, path, and host");
         var timed = new JsonObject { ["console"] = new JsonObject { ["entries"] = new JsonArray(new JsonObject { ["time"] = "2026-10-29T10:00:05Z", ["level"] = "error", ["source"] = "app", ["message"] = "boom" }) } };
         Check(ContextReview.Preview("console", Array.Empty<JsonObject>(), timed, new[] { video }).Contains("Instant replay · 0:05.0", StringComparison.Ordinal), "a preview uses the clip time when the message falls inside a clip");
         var pausedClip = new JsonObject
