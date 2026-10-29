@@ -1,7 +1,4 @@
-# Motifs: Capture Studio for OpenCode
-
-This document uses ASD-STE100 Simplified Technical English. Each sentence has
-one idea. Each step has one instruction.
+# Motifs: Capture Studio
 
 ## 1. What Capture Studio does
 
