@@ -161,11 +161,19 @@ internal static class ComposerFiles
         ["include"] = DefaultInclude(),
         ["prefixes"] = new JsonArray(),
         ["showBubble"] = true,
+        ["instantReplay"] = false,
     };
 
     static JsonObject DestinationEntry(string id, string label) => new() { ["id"] = id, ["label"] = label };
 
-    internal static void SaveSettings(string output, JsonObject settings) => Program.Save(output, "settings.json", settings);
+    internal static bool InstantReplay(JsonObject settings) => settings["instantReplay"]?.GetValue<bool>() == true;
+
+    // Composer saves can race a tray toggle. Keep the value on disk unless the caller is that toggle.
+    internal static void SaveSettings(string output, JsonObject settings, bool preserveReplay = true)
+    {
+        if (preserveReplay) settings["instantReplay"] = InstantReplay(Settings(output));
+        Program.Save(output, "settings.json", settings);
+    }
 
     internal static List<string> Prefixes(JsonObject settings) =>
         (settings["prefixes"] as JsonArray ?? new JsonArray())
@@ -510,7 +518,18 @@ internal sealed class MentionSession
     static bool ContinuesToken(char value) => char.IsLetterOrDigit(value) || value is '_' or '-' or '.' or '@';
 }
 
-internal readonly record struct MentionQuery(int Start, int Length, string Prefix);
+internal readonly struct MentionQuery
+{
+    internal int Start { get; }
+    internal int Length { get; }
+    internal string Prefix { get; }
+    internal MentionQuery(int start, int length, string prefix)
+    {
+        Start = start;
+        Length = length;
+        Prefix = prefix;
+    }
+}
 
 internal static class ComposerTests
 {
@@ -563,6 +582,29 @@ internal static class ComposerTests
         ComposerFiles.SaveSettings(output, settings);
         var restored = ComposerFiles.Settings(output);
         Check(restored["defaultDestination"]?.GetValue<string>() == "clipboard" && ComposerFiles.Prefixes(restored).SequenceEqual(new[] { "Look at this:" }), "settings keep the destination and reject an oversized prefix");
+        Check(ComposerFiles.InstantReplay(ComposerFiles.DefaultSettings()) == false, "instant replay is off by default");
+        settings["instantReplay"] = true;
+        ComposerFiles.SaveSettings(output, settings, false);
+        Check(ComposerFiles.InstantReplay(ComposerFiles.Settings(output)), "instant replay persists");
+        var kept = ComposerFiles.Settings(output);
+        kept["defaultDestination"] = "opencode";
+        ComposerFiles.SaveSettings(output, kept);
+        Check(ComposerFiles.InstantReplay(ComposerFiles.Settings(output)), "saving the composer keeps instant replay");
+        var replay = new ReplayBuffer();
+        for (int second = 0; second <= 40; second++) replay.Add(second, new byte[] { 1 }, 8, 8);
+        Check(replay.Count == 31 && Math.Abs(replay.Duration - 30) < 0.001, "instant replay keeps the last 30 seconds");
+        replay.Add(41, new byte[] { 1 }, 16, 16);
+        Check(replay.Count == 1 && replay.Width == 16 && replay.Height == 16, "a display change starts a new replay buffer");
+        replay.Add(42, Array.Empty<byte>(), 16, 16);
+        Check(replay.Count == 1, "an empty replay frame is ignored");
+        replay.Add(43, new byte[] { 1 }, 16, 16, true);
+        Check(replay.Count == 1 && Math.Abs(replay.Duration) < 0.001, "moving to another display starts a new replay buffer");
+        var capped = new ReplayBuffer(2500);
+        var payload = new byte[1000];
+        capped.Add(0, payload, 8, 8);
+        capped.Add(1, payload, 8, 8);
+        capped.Add(2, payload, 8, 8);
+        Check(capped.Count == 2, "instant replay drops frames past the memory cap");
         var prefixes = new[] { "@other", "@report Checkout:" };
         Check(ComposerFiles.ApplyPrefix(prefixes, "button is broken", "@report Checkout:") == "@report Checkout: button is broken", "choosing a prefix puts it at the start");
         Check(ComposerFiles.ActivePrefix(prefixes, "@report Checkout: button is broken") == "@report Checkout:", "the longest matching prefix is active");

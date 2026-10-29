@@ -69,6 +69,7 @@ test("the draft describes the recording, numbers its frames after the screenshot
   const { bundle } = await videoBundle(t);
   const draft = contextDocument(bundle);
   assert.match(draft, /Instant replay: 30\.0 s of the display, starting 2026-10-29T10:00:00Z/);
+  assert.match(draft, process.platform === "win32" ? /Visible pixels can include Capture Studio's own windows/ : /Capture Studio's own windows are not recorded/);
   assert.match(draft, /Key frames attached as images 2–7, at \+0\.0 s, \+5\.0 s, \+10\.0 s, \+15\.0 s, \+20\.0 s, \+25\.0 s\./);
   assert.match(draft, /The full MP4 stays on the user's Mac and is not attached/);
   assert.match(draft, /Clicked button "Pay" in Chrome \(\+12\.4 s in instant replay\)/);

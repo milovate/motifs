@@ -71,10 +71,21 @@ key-frame PNGs into the captures folder and attaches the clip to the open compos
 or opens a composer when none is open. Nothing is sent. A composer holds 3 clips.
 The bar sets display affinity and is hidden while each frame is grabbed. A window
 recording follows that window's rectangle; unlike a still window capture, it is the
-visible pixels there, so overlapping windows can appear. Instant replay and clip
-trim are still macOS-only.
+visible pixels there, so overlapping windows can appear. Clip trim is still macOS-only.
 
-The tray can also open an empty composer, start or stop a recording, annotate or insert the latest capture,
+**Keep instant replay (last 30 s)** stays off until you turn it on from the tray.
+The choice is saved in `settings.json` and restored the next time the watcher
+starts. While it is on, Capture Studio keeps the last 30 seconds of the display
+under the pointer in memory: about 8 frames a second, long side at most 1280
+pixels, and at most 150 MB. **Ctrl+Alt+Shift+A** copies that buffer before the
+chooser opens. After you confirm a screenshot, it writes an H.264 MP4 plus key
+frames and attaches the clip with the screenshot. Cancelling the chooser leaves
+the buffer in memory. Turning replay off or quitting the watcher discards it.
+The sample is visible pixels, so Capture Studio's own windows can appear in it,
+and it has no audio. Sampling pauses while the chooser is open and while a
+screen recording is in progress.
+
+The tray can also open an empty composer, start or stop a recording, keep instant replay, annotate or insert the latest capture,
 annotate a clipboard image, open the captures folder, or quit the watcher.
 `/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
@@ -132,7 +143,12 @@ error rather than replacing the saved capture.
   whatever is on screen there. The composer says which kind you took.
 - Screen recording also captures visible pixels, including a clicked window's
   rectangle, and does not record audio. It stops at 5 minutes. The control bar is
-  hidden for each frame grab. Instant replay is not available.
+  hidden for each frame grab.
+- Instant replay is off by default. While the tray item is checked, the last 30
+  seconds of the display under the pointer stay in memory, capped at 150 MB. A
+  confirmed capture writes that buffer. Cancelling the chooser leaves it in
+  memory. The sample is visible pixels and can include Capture Studio's own
+  windows. There is no audio.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -189,4 +205,8 @@ from the macOS development environment. Before calling Windows support verified:
   stop. Confirm the MP4 and key frames appear in the composer and the control bar
   is absent from those frames. Escape on the bar discards the clip. Confirm nothing
   is sent. Reopen the capture from Recents.
+- Turn on **Keep instant replay (last 30 s)**, wait a few seconds, and capture.
+  Confirm the composer shows the screenshot and an instant-replay clip. Cancel
+  the chooser and confirm the captures folder gains no replay MP4. Turn replay
+  off and confirm the tray tooltip returns to the capture shortcut.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

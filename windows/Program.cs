@@ -275,6 +275,7 @@ internal sealed class Tray : Forms.Form
 {
     readonly string output;
     readonly Forms.NotifyIcon icon;
+    readonly InstantReplay replay = new();
     bool busy;
     internal Tray(string output)
     {
@@ -286,6 +287,11 @@ internal sealed class Tray : Forms.Form
         recordItem.Click += async (_, _) => await ToggleRecording();
         menu.Items.Add(recordItem);
         menu.Opening += (_, _) => recordItem.Text = RecordingSession.Active ? "Stop screen recording (Ctrl+Alt+Shift+R)" : "Start screen recording (Ctrl+Alt+Shift+R)";
+        var replayItem = new Forms.ToolStripMenuItem("Keep instant replay (last 30 s)");
+        replayItem.ToolTipText = "Keeps the last 30 seconds of the display in memory. Ctrl+Alt+Shift+A attaches it to the capture.";
+        replayItem.Click += (_, _) => ToggleReplay();
+        menu.Items.Add(replayItem);
+        menu.Opening += (_, _) => replayItem.Checked = replay.Enabled;
         menu.Items.Add("Open composer", null, (_, _) => OpenComposer(Array.Empty<Snapshot>()));
         menu.Items.Add("Insert latest capture into OpenCode", null, (_, _) => {
             try { using var preview = new Preview(Program.Latest(output), output); preview.ShowDialog(); }
@@ -302,7 +308,9 @@ internal sealed class Tray : Forms.Form
         menu.Items.Add("Open captures folder", null, (_, _) => Process.Start(new ProcessStartInfo(output) { UseShellExecute = true }));
         menu.Items.Add("Quit Appshots", null, (_, _) => Close());
         icon = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Capture Studio — Ctrl+Alt+Shift+A", ContextMenuStrip = menu, Visible = true };
-        RecordingSession.StateChanged += () => icon.Text = RecordingSession.Active ? "Capture Studio — recording (Ctrl+Alt+Shift+R)" : "Capture Studio — Ctrl+Alt+Shift+A";
+        RecordingSession.StateChanged += UpdateIcon;
+        if (ComposerFiles.InstantReplay(ComposerFiles.Settings(output))) replay.SetEnabled(true);
+        UpdateIcon();
         _ = Handle; // The hidden form still needs an HWND for WM_HOTKEY delivery.
     }
     protected override void SetVisibleCore(bool value) { base.SetVisibleCore(false); }
@@ -322,10 +330,30 @@ internal sealed class Tray : Forms.Form
         else if (m.Msg == 0x312 && m.WParam == 2) _ = ToggleRecording();
         base.WndProc(ref m);
     }
+    void UpdateIcon() => icon.Text = RecordingSession.Active
+        ? "Capture Studio — recording (Ctrl+Alt+Shift+R)"
+        : replay.Enabled ? "Capture Studio — replay on (Ctrl+Alt+Shift+A)" : "Capture Studio — Ctrl+Alt+Shift+A";
+
+    void ToggleReplay()
+    {
+        bool enabled = !replay.Enabled;
+        try
+        {
+            var settings = ComposerFiles.Settings(output);
+            settings["instantReplay"] = enabled;
+            ComposerFiles.SaveSettings(output, settings, false);
+            replay.SetEnabled(enabled);
+            UpdateIcon();
+        }
+        catch (Exception e) { Error(e); }
+    }
+
     async Task TakeShot()
     {
         if (busy || RecordingSession.Busy) return;
         busy = true;
+        replay.Paused = true;
+        var replayFrames = replay.Snapshot();
         try
         {
             Program.Save(output, "status.json", new { phase = "choosing" });
@@ -337,11 +365,17 @@ internal sealed class Tray : Forms.Form
             }
             Program.Save(output, "status.json", new { phase = "capturing" });
             var shot = await CaptureSelector.Take(choice, output);
+            JsonObject? clip = null;
+            if (replayFrames.Count > 0)
+            {
+                try { clip = ReplayBuffer.Export(output, replayFrames, ReplayMath.FramesPerClip(1)); }
+                catch { clip = null; }
+            }
             Program.Save(output, "status.json", new { phase = "composing" });
-            OpenComposer(new[] { shot });
+            OpenComposer(new[] { shot }, clip == null ? null : new[] { clip });
         }
         catch (Exception e) { Error(e); }
-        finally { busy = false; }
+        finally { replay.Paused = false; busy = false; }
     }
     async Task ToggleRecording()
     {
@@ -373,7 +407,7 @@ internal sealed class Tray : Forms.Form
     void Error(Exception e) { Program.Save(output, "status.json", new { phase = "failed" }); Forms.MessageBox.Show(e.Message, "Capture Studio"); }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); icon.Dispose(); }
+        if (disposing) { Native.UnregisterHotKey(Handle, 1); Native.UnregisterHotKey(Handle, 2); replay.Dispose(); icon.Dispose(); }
         base.Dispose(disposing);
     }
 }

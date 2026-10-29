@@ -107,6 +107,203 @@ internal sealed class RecordingTimeline
     internal double Seconds(double now) => Active ? Math.Max(0, (pausedAt ?? now) - pausedTotal - origin) : 0;
 }
 
+internal readonly struct ReplaySample
+{
+    internal double Time { get; }
+    internal DateTimeOffset At { get; }
+    internal byte[] Jpeg { get; }
+    internal int Width { get; }
+    internal int Height { get; }
+    internal ReplaySample(double time, DateTimeOffset at, byte[] jpeg, int width, int height)
+    {
+        Time = time;
+        At = at;
+        Jpeg = jpeg;
+        Width = width;
+        Height = height;
+    }
+}
+
+// The last 30 seconds of one display, held in memory until a capture attaches them.
+internal sealed class ReplayBuffer
+{
+    internal const double Window = 30;
+    internal const int MaxBytes = 150_000_000;
+    readonly object gate = new();
+    readonly List<ReplaySample> frames = new();
+    readonly int maxBytes;
+    int bytes;
+
+    internal ReplayBuffer(int maxBytes = MaxBytes) => this.maxBytes = Math.Max(1, maxBytes);
+
+    internal int Count { get { lock (gate) return frames.Count; } }
+    internal int Width { get; private set; }
+    internal int Height { get; private set; }
+    internal double Duration { get { lock (gate) return frames.Count < 2 ? 0 : frames[^1].Time - frames[0].Time; } }
+
+    internal void Clear() { lock (gate) Reset(); }
+
+    internal void Add(double time, byte[] jpeg, int width, int height, bool restart = false)
+    {
+        if (jpeg.Length == 0 || width < 2 || height < 2) return;
+        lock (gate)
+        {
+            if (restart || (frames.Count > 0 && (width != Width || height != Height))) Reset();
+            Width = width;
+            Height = height;
+            frames.Add(new ReplaySample(time, DateTimeOffset.UtcNow, jpeg, width, height));
+            bytes += jpeg.Length;
+            while (frames.Count > 1 && (frames[^1].Time - frames[0].Time > Window || bytes > maxBytes))
+            {
+                bytes -= frames[0].Jpeg.Length;
+                frames.RemoveAt(0);
+            }
+        }
+    }
+
+    internal List<ReplaySample> Snapshot() { lock (gate) return frames.ToList(); }
+
+    void Reset()
+    {
+        frames.Clear();
+        bytes = 0;
+        Width = 0;
+        Height = 0;
+    }
+
+    internal static JsonObject? Export(string output, IReadOnlyList<ReplaySample> frames, int frameCount)
+    {
+        if (frames.Count == 0) return null;
+        int width = frames[0].Width;
+        int height = frames[0].Height;
+        for (int index = 0; index < frames.Count; index++)
+            if (frames[index].Width != width || frames[index].Height != height) return null;
+        string movie = Path.Combine(output, "replay-" + Guid.NewGuid().ToString("D") + ".mp4");
+        var pictures = new JsonArray();
+        try
+        {
+            using (var writer = new Mp4Writer(movie, width, height, ReplayMath.FramesPerSecond))
+            {
+                double start = frames[0].Time;
+                foreach (var frame in frames)
+                {
+                    using var stream = new MemoryStream(frame.Jpeg);
+                    using var image = Image.FromStream(stream);
+                    using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(bitmap)) graphics.DrawImage(image, new Rectangle(0, 0, width, height));
+                    writer.Write(bitmap, (long)((frame.Time - start) * 10_000_000));
+                }
+                writer.Finish();
+            }
+            double span = frames.Count < 2 ? 1.0 / ReplayMath.FramesPerSecond : frames[^1].Time - frames[0].Time + (1.0 / ReplayMath.FramesPerSecond);
+            double duration = Math.Min(Window, Math.Round(span, 1, MidpointRounding.AwayFromZero));
+            string stem = Path.GetFileNameWithoutExtension(movie);
+            foreach (double offset in ReplayMath.Offsets(Math.Max(duration, 0), frameCount))
+            {
+                int best = 0;
+                double gap = double.MaxValue;
+                for (int index = 0; index < frames.Count; index++)
+                {
+                    double distance = Math.Abs((frames[index].Time - frames[0].Time) - offset);
+                    if (distance < gap) { gap = distance; best = index; }
+                }
+                string file = Path.Combine(output, stem + "-frame-" + (pictures.Count + 1).ToString(CultureInfo.InvariantCulture) + ".png");
+                using (var stream = new MemoryStream(frames[best].Jpeg))
+                using (var image = Image.FromStream(stream))
+                    image.Save(file, ImageFormat.Png);
+                pictures.Add(new JsonObject
+                {
+                    ["screenshot"] = file,
+                    ["offsetSeconds"] = Math.Round(Math.Max(0, frames[best].Time - frames[0].Time), 1, MidpointRounding.AwayFromZero),
+                });
+            }
+            return new JsonObject
+            {
+                ["kind"] = "video",
+                ["video"] = movie,
+                ["source"] = "replay",
+                ["area"] = "display",
+                ["target"] = "",
+                ["startedAt"] = ComposerFiles.Iso(frames[0].At),
+                ["durationSeconds"] = duration,
+                ["frames"] = pictures,
+                ["pauses"] = new JsonArray(),
+            };
+        }
+        catch
+        {
+            try { File.Delete(movie); } catch { /* The failed export leaves no clip to attach. */ }
+            foreach (var picture in pictures)
+            {
+                string? file = picture?["screenshot"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(file)) try { File.Delete(file); } catch { /* The frame file is already gone. */ }
+            }
+            throw;
+        }
+    }
+}
+
+// Samples the display under the pointer while the tray setting is on. Frames stay in memory.
+internal sealed class InstantReplay : IDisposable
+{
+    readonly ReplayBuffer buffer = new();
+    readonly System.Threading.Timer timer;
+    readonly System.Diagnostics.Stopwatch clock = new();
+    Rectangle? display;
+    int capturing;
+    int disposed;
+    volatile bool enabled;
+    volatile bool paused;
+    internal bool Enabled => enabled;
+    internal bool Paused { get => paused; set => paused = value; }
+
+    internal InstantReplay() => timer = new System.Threading.Timer(_ => Capture(), null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+
+    internal void SetEnabled(bool value)
+    {
+        enabled = value;
+        buffer.Clear();
+        display = null;
+        if (!value) { timer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite); return; }
+        if (!clock.IsRunning) clock.Start();
+        timer.Change(0, 1000 / ReplayMath.FramesPerSecond);
+    }
+
+    internal List<ReplaySample> Snapshot() => enabled ? buffer.Snapshot() : new List<ReplaySample>();
+
+    void Capture()
+    {
+        if (System.Threading.Volatile.Read(ref disposed) == 1 || !enabled || paused || RecordingSession.Busy) return;
+        if (System.Threading.Interlocked.Exchange(ref capturing, 1) == 1) return;
+        try
+        {
+            if (!enabled || paused || RecordingSession.Busy) return;
+            var screen = Screen.FromPoint(Cursor.Position).Bounds;
+            if (screen.Width < 2 || screen.Height < 2 || (long)screen.Width * screen.Height > 40_000_000) return;
+            bool moved = display is Rectangle previous && previous != screen;
+            var (width, height) = ReplayMath.OutputSize(screen.Width, screen.Height);
+            using var raw = new Bitmap(screen.Width, screen.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(raw)) graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size, CopyPixelOperation.SourceCopy);
+            using var frame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(frame)) graphics.DrawImage(raw, new Rectangle(0, 0, width, height));
+            using var stream = new MemoryStream();
+            frame.Save(stream, ImageFormat.Jpeg);
+            if (!enabled || paused || RecordingSession.Busy) return;
+            display = screen;
+            buffer.Add(clock.Elapsed.TotalSeconds, stream.ToArray(), width, height, moved);
+        }
+        catch { /* A missed sample leaves the previous frames in place. */ }
+        finally { System.Threading.Interlocked.Exchange(ref capturing, 0); }
+    }
+
+    public void Dispose()
+    {
+        if (System.Threading.Interlocked.Exchange(ref disposed, 1) == 1) return;
+        enabled = false;
+        timer.Dispose();
+    }
+}
+
 // A JPEG about twice a second, so a five-minute recording stays small. The frames
 // nearest the shared key-frame offsets are written as PNGs.
 sealed class KeyShelf

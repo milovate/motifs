@@ -390,7 +390,8 @@ internal sealed class ComposerForm : Form
             }
             double duration = 0;
             try { if (videos[index]["durationSeconds"] is JsonNode seconds) duration = seconds.GetValue<double>(); } catch { duration = 0; }
-            picture.AccessibleName = "Screen recording " + (index + 1) + ", " + ContextReview.ClipTime(duration);
+            string clipKind = videos[index]["source"]?.GetValue<string>() == "recording" ? "Screen recording" : "Instant replay";
+            picture.AccessibleName = clipKind + " " + (index + 1) + ", " + ContextReview.ClipTime(duration);
             var caption = new Label { Text = ContextReview.ClipTime(duration), AutoSize = false, Size = new Size(72, 16), Location = new Point(0, 40), ForeColor = Color.White, BackColor = Color.FromArgb(160, 0, 0, 0), TextAlign = ContentAlignment.MiddleCenter };
             var remove = new Button { Text = "×", Size = new Size(18, 18), Location = new Point(64, 0), FlatStyle = FlatStyle.Flat };
             remove.AccessibleName = "Remove recording " + (index + 1);
