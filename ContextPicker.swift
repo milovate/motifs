@@ -16,7 +16,12 @@ import AppKit
     private(set) var selectedSource = BundleInclude.sources[0]
     var rows: [String: ContextSourceRow] = [:]
     var shots: [[String: Any]] = []
+    var videos: [[String: Any]] = []
     var context: [String: Any] = [:]
+    let modeControl = FirstClickSegmentedControl(labels: ["Preview", "Markdown"], trackingMode: .selectOne, target: nil, action: nil)
+    let copyButton = FirstClickButton(title: "Copy", target: nil, action: nil)
+    var pasteboard = NSPasteboard.general
+    var markdownMode: Bool { modeControl.selectedSegment == 1 }
     var collecting = false
     var include = BundleInclude()
     private var lengths: [String: Int] = [:]
@@ -45,8 +50,20 @@ import AppKit
         estimate.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         estimate.textColor = .secondaryLabelColor
         estimate.toolTip = "Rough size of the included context (about 4 characters per token)"
-        let header = NSStackView(views: [titles, NSView(), estimate])
+        modeControl.selectedSegment = 0
+        modeControl.controlSize = .small
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+        modeControl.setAccessibilityLabel("Show the selected source as a preview or as Markdown")
+        copyButton.bezelStyle = .rounded
+        copyButton.controlSize = .small
+        copyButton.target = self
+        copyButton.action = #selector(copyMarkdown)
+        copyButton.toolTip = "Copy this source as Markdown"
+        copyButton.isHidden = true
+        let header = NSStackView(views: [titles, NSView(), modeControl, copyButton, estimate])
         header.alignment = .centerY
+        header.setCustomSpacing(14, after: copyButton)
 
         sidebar.orientation = .vertical
         sidebar.alignment = .leading
@@ -159,11 +176,39 @@ import AppKit
         return length
     }
 
+    @objc func modeChanged() {
+        copyButton.isHidden = !markdownMode
+        refresh()
+    }
+
+    var selectedMarkdown: String { Self.markdown(selectedSource, shots: shots, videos: videos, context: context) }
+
+    @objc func copyMarkdown() {
+        let text = selectedMarkdown
+        guard !text.isEmpty else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        copyButton.title = "Copied"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.copyButton.title = "Copy" }
+    }
+
     func refresh() {
         refreshSummary()
         for view in detail.arrangedSubviews { detail.removeArrangedSubview(view); view.removeFromSuperview() }
         var views: [NSView] = []
-        view.effectiveAppearance.performAsCurrentDrawingAppearance { views = rowViews(selectedSource) }
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            if markdownMode {
+                let text = selectedMarkdown
+                if !text.isEmpty {
+                    let shown = text.count > Self.markdownLimit ? String(text.prefix(Self.markdownLimit)) + "\n… \(text.count - Self.markdownLimit) more characters (Copy includes everything)" : text
+                    let content = Self.body(shown, monospaced: true)
+                    content.maximumNumberOfLines = 0
+                    views = [Self.card([content])]
+                }
+            } else {
+                views = rowViews(selectedSource)
+            }
+        }
         for view in views.isEmpty ? [Self.emptyView(Self.emptyText(selectedSource, collecting: collecting))] : views {
             detail.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: detail.widthAnchor).isActive = true
@@ -207,7 +252,7 @@ import AppKit
         case "windowText":
             views = shots.enumerated().compactMap { index, shot in
                 guard let text = shot["text"] as? String, !text.isEmpty else { return nil }
-                return Self.textCard(title: "Screenshot \(index + 1) · \(shot["app"] as? String ?? "App")", text: text, monospaced: false)
+                return Self.textCard(title: Self.screenshotTitle(index, shot), text: text, monospaced: false)
             }
         case "device":
             let pairs = Self.devicePairs(context)
@@ -219,7 +264,7 @@ import AppKit
                 let origin = field(entry, "source") == "browser" ? "Page" : (entry["subsystem"] as? String ?? entry["process"] as? String ?? "App")
                 let originLabel = Self.secondary(origin)
                 originLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(700), for: .horizontal)
-                let top = Self.line([Self.badge(level.isEmpty ? "LOG" : level.uppercased(), color: Self.levelColor(level)), originLabel, NSView(), Self.clock(field(entry, "time"))])
+                let top = Self.line([Self.badge(level.isEmpty ? "LOG" : level.uppercased(), color: Self.levelColor(level)), originLabel, NSView(), moment(field(entry, "time"))])
                 return Self.card([top, Self.body(field(entry, "message"), monospaced: true)])
             }
             if entries.count > Self.rowLimit { views.append(Self.secondary("\(entries.count - Self.rowLimit) more not shown")) }
@@ -232,7 +277,7 @@ import AppKit
                 let path = url.map { ($0.path.isEmpty ? "/" : $0.path) + ($0.query.map { "?" + $0 } ?? "") } ?? field(entry, "url")
                 let title = Self.body(path, monospaced: true)
                 title.maximumNumberOfLines = 2
-                let top = Self.line([Self.badge(field(entry, "method").isEmpty ? "GET" : field(entry, "method"), color: .secondaryLabelColor), Self.badge(statusText, color: (status ?? 500) >= 500 ? .systemRed : .systemOrange), title, NSView(), Self.clock(field(entry, "time"))])
+                let top = Self.line([Self.badge(field(entry, "method").isEmpty ? "GET" : field(entry, "method"), color: .secondaryLabelColor), Self.badge(statusText, color: (status ?? 500) >= 500 ? .systemRed : .systemOrange), title, NSView(), moment(field(entry, "time"))])
                 var lines: [NSView] = [top]
                 let host = [url?.host, field(entry, "error").isEmpty ? nil : field(entry, "error")].compactMap { $0 }.joined(separator: " · ")
                 if !host.isEmpty { lines.append(Self.secondary(host)) }
@@ -249,7 +294,7 @@ import AppKit
                 label.maximumNumberOfLines = 2
                 var parts: [NSView] = [icon, label, NSView()]
                 if kind != "app-switch" { parts.append(Self.secondary(field(entry, "app"))) }
-                parts.append(Self.clock(field(entry, "time")))
+                parts.append(moment(field(entry, "time")))
                 return Self.card([Self.line(parts)])
             }
         case "customLogs":
@@ -258,6 +303,67 @@ import AppKit
             views = []
         }
         return views
+    }
+
+    // When an entry happened: its place in a clip when it falls inside one, else the clock time.
+    func moment(_ time: String) -> NSTextField {
+        guard let clip = Self.clipMoment(time, videos: videos) else { return Self.clock(time) }
+        let label = Self.secondary(clip)
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .systemPurple
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }
+
+    static func clipMoment(_ time: String, videos: [[String: Any]]) -> String? {
+        guard let date = ReplayWriter.parseDate(time) else { return nil }
+        for (index, video) in videos.enumerated() {
+            guard let offset = ReplayWriter.offset(of: date, in: video) else { continue }
+            let name = video["source"] as? String == "recording" ? "Screen recording" : "Instant replay"
+            return (videos.count > 1 ? "\(name) \(index + 1)" : name) + " · " + clipTime(offset)
+        }
+        return nil
+    }
+
+    static func screenshotTitle(_ index: Int, _ shot: [String: Any]) -> String {
+        "Screenshot \(index + 1) · \(shot["app"] as? String ?? "App")" + ((shot["title"] as? String).flatMap { $0.isEmpty ? nil : " · \"\($0)\"" } ?? "")
+    }
+
+    static let markdownLimit = 20_000
+
+    // The selected source as Markdown, with the same screenshot numbers and clip times
+    // the agent sees in the context file.
+    static func markdown(_ source: String, shots: [[String: Any]], videos: [[String: Any]], context: [String: Any]) -> String {
+        let field = { (entry: [String: Any], key: String) in entry[key].map { "\($0)" } ?? "" }
+        let when = { (entry: [String: Any]) in "`" + (clipMoment(field(entry, "time"), videos: videos) ?? field(entry, "time")) + "`" }
+        let block = { (text: String) -> String in
+            let fence = text.contains("```") ? "````" : "```"
+            return "\(fence)text\n\(text)\n\(fence)"
+        }
+        switch source {
+        case "windowText":
+            return shots.enumerated().compactMap { index, shot -> String? in
+                guard let text = shot["text"] as? String, !text.isEmpty else { return nil }
+                return "### \(screenshotTitle(index, shot))\n\n" + block(text)
+            }.joined(separator: "\n\n")
+        case "device":
+            return devicePairs(context).map { "- **\($0.0):** \($0.1.replacingOccurrences(of: "\n", with: " · "))" }.joined(separator: "\n")
+        case "console":
+            return ContextText.entries(context, "console").map { entry in
+                let origin = field(entry, "source") == "browser" ? "page" : (entry["subsystem"] as? String ?? entry["process"] as? String ?? "app")
+                return "- \(when(entry)) **\(field(entry, "level").uppercased())** \(origin): " + field(entry, "message").replacingOccurrences(of: "\n", with: " ")
+            }.joined(separator: "\n")
+        case "network":
+            return ContextText.entries(context, "network").map { "- \(when($0)) `\(field($0, "method")) \($0["status"].map { "\($0)" } ?? field($0, "error"))` \(field($0, "url"))" }.joined(separator: "\n")
+        case "events":
+            return ContextText.entries(context, "events").enumerated().map { index, entry in
+                "\(index + 1). \(when(entry)) \(ContextText.describeEvent(entry))" + (field(entry, "kind") == "app-switch" || field(entry, "app").isEmpty ? "" : " in \(field(entry, "app"))") + ((entry["selector"] as? String).map { " — `\($0)`" } ?? "")
+            }.joined(separator: "\n")
+        case "customLogs":
+            return (context["customLogs"] as? [[String: Any]] ?? []).map { "### \(field($0, "name"))\n\n" + block(field($0, "text")) }.joined(separator: "\n\n")
+        default:
+            return ""
+        }
     }
 
     static func devicePairs(_ context: [String: Any]) -> [(String, String)] {
@@ -472,5 +578,13 @@ import AppKit
 // The picker lives in a popover of a non-activating panel, which never becomes key;
 // a plain NSSwitch ignores clicks in a window that is not key.
 final class FirstClickSwitch: NSSwitch {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+final class FirstClickSegmentedControl: NSSegmentedControl {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+final class FirstClickButton: NSButton {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

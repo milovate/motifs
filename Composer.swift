@@ -454,6 +454,7 @@ struct ComposerEndpoint: Decodable {
         if contextPopover.isShown { contextPopover.close(); return }
         let picker = ComposerContextPicker()
         picker.shots = shots
+        picker.videos = videos
         picker.context = context
         picker.collecting = collecting
         picker.include = include

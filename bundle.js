@@ -361,9 +361,9 @@ export function contextSections(bundle) {
     sections.push({ id, title, body });
   };
   if (bundle.include.console)
-    add("console", `Console (${bundle.console.length})`, bundle.console.map((entry) => `[${entry.time}] ${entry.level.toUpperCase()} ${entry.source === "browser" ? "page" : entry.subsystem || "app"}: ${entry.message}`));
+    add("console", `Console (${bundle.console.length})`, bundle.console.map((entry) => `[${entry.time}] ${entry.level.toUpperCase()} ${entry.source === "browser" ? "page" : entry.subsystem || "app"}: ${entry.message}` + eventOffset(bundle, entry.time)));
   if (bundle.include.network)
-    add("network", `Failed network requests (${bundle.network.length})`, bundle.network.map((entry) => `[${entry.time}] ${entry.method} ${entry.status ?? entry.error ?? "failed"} ${entry.url}${entry.type ? ` (${entry.type})` : ""}`));
+    add("network", `Failed network requests (${bundle.network.length})`, bundle.network.map((entry) => `[${entry.time}] ${entry.method} ${entry.status ?? entry.error ?? "failed"} ${entry.url}${entry.type ? ` (${entry.type})` : ""}` + eventOffset(bundle, entry.time)));
   if (bundle.include.events) {
     add("events", `${bundle.videos?.length ? "Steps" : "Recent user events"} (${bundle.events.length})`, bundle.events.map((entry) => `[${entry.time}] ${describeEvent(entry)}${entry.kind === "app-switch" || !entry.app ? "" : ` in ${entry.app}`}${entry.selector ? ` [${entry.selector}]` : ""}` + eventOffset(bundle, entry.time)));
     const sketch = playwrightSketch(bundle.events);

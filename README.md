@@ -224,8 +224,12 @@ The **Context** chip opens a review popover. The sidebar lists each source with 
 entry count (red when it holds errors or failed requests) and an include switch; the
 pane shows the selected source as readable rows: console messages with level badges,
 failed requests with method, status, path and host, clicks as sentences, device
-details as labeled fields, and window text and log files as text. The header shows a
-size estimate. Switched-off sources are left out of every destination. Sources that take a moment (console, browser) show
+details as labeled fields, and window text and log files as text. Window text is
+labeled per screenshot (**Screenshot 2 · Safari · "Checkout"**); console messages,
+requests and steps that fall inside a recording show which clip and moment they belong
+to (**Screen recording 2 · 0:06.5**), and the same offsets appear in the context file.
+**Preview | Markdown** switches the pane to the Markdown that source contributes, with
+**Copy**. The header shows a size estimate. Switched-off sources are left out of every destination. Sources that take a moment (console, browser) show
 "collecting…" and fill in while you type. A reopened bundle shows the context stored
 with it, not a fresh collection.
 

@@ -368,6 +368,26 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(markers.map(\.kind) == [.click, .error, .warning, .error] && markers.map(\.time) == [4, 6.5, 7, 9] && markers[3].label == "POST 500 /pay" && markers[0].title == "Click · 0:04.0", "clicks, errors, warnings and failed requests become timeline markers (\(markers))")
         let review = ClipReviewController(video: clip(2), context: markerContext, frameCount: 2)
         precondition(review.timeline.markers.count == 4 && !review.trimmed && review.useButton.title == "Use clip", "the review opens untrimmed")
+        let markdownPicker = ComposerContextPicker()
+        markdownPicker.shots = [["app": "Google Chrome", "title": "Agent Builder", "text": "button Run"], ["app": "Notes", "text": "```swift\nlet x = 1\n```"]]
+        markdownPicker.videos = [clip(2)]
+        markdownPicker.context = markerContext
+        markdownPicker.pasteboard = NSPasteboard(name: NSPasteboard.Name("composer-tests-\(UUID().uuidString)"))
+        _ = markdownPicker.view
+        markdownPicker.select("console")
+        precondition(markdownPicker.detailText.contains("· 0:06.5") && markdownPicker.copyButton.isHidden, "console rows say where in the clip they happened")
+        markdownPicker.modeControl.selectedSegment = 1
+        markdownPicker.modeChanged()
+        precondition(!markdownPicker.copyButton.isHidden && markdownPicker.detailText.contains("· 0:06.5` **ERROR** app: boom"), "Markdown mode shows the source as Markdown (\(markdownPicker.detailText))")
+        markdownPicker.copyMarkdown()
+        precondition(markdownPicker.pasteboard.string(forType: .string) == markdownPicker.selectedMarkdown, "Copy puts the source's Markdown on the pasteboard")
+        markdownPicker.select("windowText")
+        precondition(markdownPicker.selectedMarkdown.hasPrefix("### Screenshot 1 · Google Chrome · \"Agent Builder\"\n\n```text\nbutton Run\n```") && markdownPicker.selectedMarkdown.contains("### Screenshot 2 · Notes\n\n````text"), "window text is split per screenshot and fences survive code in the text")
+        markdownPicker.select("events")
+        precondition(markdownPicker.selectedMarkdown.hasPrefix("1. `") && markdownPicker.selectedMarkdown.contains("· 0:04.0` Clicked"), "steps are numbered with their clip time")
+        markdownPicker.modeControl.selectedSegment = 0
+        markdownPicker.modeChanged()
+        precondition(markdownPicker.copyButton.isHidden, "Preview hides Copy")
         review.timeline.trimIn = 5
         review.timeline.trimOut = 12
         review.refreshSelection()
@@ -426,6 +446,17 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             picker.shots = [["app": "Cursor", "text": (0..<30).map { String(repeating: "    ", count: $0 % 4) + "container button (expanded) text opencode-appshots-fork New Agent \($0)" }.joined(separator: "\n")]]
             picker.select("windowText")
             try render(picker.view, "context-window-text", dark: true)
+            let markdownPreview = ComposerContextPicker()
+            markdownPreview.shots = shots
+            markdownPreview.videos = [clip(2)]
+            markdownPreview.context = markerContext
+            _ = markdownPreview.view
+            markdownPreview.view.frame = NSRect(origin: .zero, size: ComposerContextPicker.size)
+            markdownPreview.view.appearance = NSAppearance(named: .aqua)
+            markdownPreview.modeControl.selectedSegment = 1
+            markdownPreview.modeChanged()
+            markdownPreview.select("events")
+            try render(markdownPreview.view, "context-markdown", dark: false)
             let recentsPreview = ComposerRecents(output: output, current: path)
             recentsPreview.view.frame = NSRect(origin: .zero, size: ComposerRecents.size)
             try render(recentsPreview.view, "recents", dark: false)
