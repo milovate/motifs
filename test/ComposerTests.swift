@@ -299,6 +299,13 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         settings.include = BundleInclude(windowText: false, device: true)
         try settings.save(output: output)
         precondition(CaptureSettings.load(output: output).include == BundleInclude(windowText: false, device: true), "context switches are remembered")
+        precondition(settings.showBubble && settings.bubbleOrigin == nil, "the floating composer button is shown by default at its default spot")
+        settings.showBubble = false
+        settings.bubbleOrigin = CGPoint(x: 120, y: 340)
+        try settings.save(output: output)
+        precondition(CaptureSettings.load(output: output) == settings, "hiding and moving the floating button persist")
+        settings.showBubble = true
+        settings.bubbleOrigin = nil
         settings.include = BundleInclude()
         settings.instantReplay = false
         try settings.save(output: output)
@@ -397,6 +404,18 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(review.timeline.marker(near: review.timeline.x(9) + 3)?.label == "POST 500 /pay" && review.timeline.marker(near: review.timeline.x(2)) == nil, "hovering near a marker finds it")
         precondition(review.window is ComposerPanel && !review.window!.styleMask.contains(.titled) && (review.window!.contentView as? NSVisualEffectView)?.maskImage != nil, "the review is a rounded glass panel like the composer")
 
+        let bubble = ComposerBubble()
+        var bubbleOpened = 0, bubbleHidden = 0
+        bubble.onOpen = { bubbleOpened += 1 }
+        bubble.onHide = { bubbleHidden += 1 }
+        precondition(bubble.panel.sharingType == .none && bubble.panel.styleMask.contains(.nonactivatingPanel) && bubble.button.acceptsFirstMouse(for: nil), "the floating button is never captured, never takes focus and answers the first click")
+        bubble.show(at: CGPoint(x: -50_000, y: -50_000))
+        precondition(bubble.panel.isVisible && NSScreen.screens.contains { $0.visibleFrame.contains(bubble.panel.frame) }, "an off-screen saved spot falls back onto a screen")
+        _ = bubble.button.accessibilityPerformPress()
+        bubble.hideFromMenu()
+        precondition(bubbleOpened == 1 && bubbleHidden == 1 && bubble.button.menu?.items.map(\.title) == ["Open composer", "Hide floating button"], "clicking opens the composer; its menu can hide it")
+        bubble.hide()
+        precondition(!bubble.panel.isVisible, "the floating button hides while other windows are up")
         precondition(RecordingControls.format(65) == "01:05", "controls show minutes and seconds")
         let controls = RecordingControls()
         controls.update(seconds: 280, paused: true, limit: 300)
@@ -414,6 +433,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
                 try representation.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
             }
             try render(controls.panel.contentView!, "recording-controls", dark: true)
+            try render(ComposerBubble().panel.contentView!, "composer-bubble", dark: false)
             review.timeline.frames = (0..<ClipReviewController.filmstripCount).map { index in
                 NSImage(size: NSSize(width: 160, height: 100), flipped: false) { rect in
                     NSColor(calibratedHue: CGFloat(index) / 14, saturation: 0.35, brightness: 0.85, alpha: 1).setFill()

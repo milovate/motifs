@@ -279,13 +279,15 @@ struct CaptureSettings: Equatable {
     var instantReplay = false
     var include = BundleInclude()
     var prefixes: [String] = []
+    var showBubble = true
+    var bubbleOrigin: CGPoint?
     static let maxPrefixes = 12
     static let maxPrefixLength = 500
 
     static func == (lhs: CaptureSettings, rhs: CaptureSettings) -> Bool {
         lhs.defaultDestination == rhs.defaultDestination && lhs.knownDestinations.map(\.id) == rhs.knownDestinations.map(\.id) && lhs.knownDestinations.map(\.label) == rhs.knownDestinations.map(\.label)
             && lhs.recordClicks == rhs.recordClicks && lhs.customLogFiles == rhs.customLogFiles && lhs.instantReplay == rhs.instantReplay
-            && lhs.include == rhs.include && lhs.prefixes == rhs.prefixes
+            && lhs.include == rhs.include && lhs.prefixes == rhs.prefixes && lhs.showBubble == rhs.showBubble && lhs.bubbleOrigin == rhs.bubbleOrigin
     }
 
     static func load(output: String) -> CaptureSettings {
@@ -302,12 +304,14 @@ struct CaptureSettings: Equatable {
         settings.instantReplay = raw["instantReplay"] as? Bool == true
         settings.include = BundleInclude(raw["include"] as? [String: Any])
         settings.prefixes = Array((raw["prefixes"] as? [String] ?? []).filter { !$0.isEmpty && $0.count <= maxPrefixLength }.prefix(maxPrefixes))
+        settings.showBubble = raw["showBubble"] as? Bool ?? true
+        if let origin = raw["bubbleOrigin"] as? [Double], origin.count == 2, origin.allSatisfy(\.isFinite) { settings.bubbleOrigin = CGPoint(x: origin[0], y: origin[1]) }
         settings.customLogFiles = Array((raw["customLogFiles"] as? [String] ?? []).filter { $0.hasPrefix("/") && $0.count <= 1024 }.prefix(4))
         return settings
     }
 
     func save(output: String) throws {
-        let raw: [String: Any] = [
+        var raw: [String: Any] = [
             "defaultDestination": defaultDestination,
             "knownDestinations": knownDestinations.map { ["id": $0.id, "label": $0.label] },
             "recordClicks": recordClicks,
@@ -315,7 +319,9 @@ struct CaptureSettings: Equatable {
             "customLogFiles": Array(customLogFiles.prefix(4)),
             "include": include.dictionary,
             "prefixes": Array(prefixes.prefix(CaptureSettings.maxPrefixes)),
+            "showBubble": showBubble,
         ]
+        if let bubbleOrigin { raw["bubbleOrigin"] = [Double(bubbleOrigin.x), Double(bubbleOrigin.y)] }
         let path = output + "/settings.json"
         let temporary = path + ".tmp"
         let data = try JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys, .prettyPrinted])

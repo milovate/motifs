@@ -105,6 +105,109 @@ import AppKit
     @objc func stop() { onStop?() }
 }
 
+// A small floating circle that opens the composer without capturing anything first.
+// Drag it to move it; it never takes focus and is excluded from captures like the pills.
+@MainActor final class ComposerBubble: NSObject {
+    static let diameter: CGFloat = 44
+    var onOpen: (() -> Void)?
+    var onHide: (() -> Void)?
+    var onMove: ((CGPoint) -> Void)?
+    let panel: RecordingPanel
+    let button = BubbleView(frame: NSRect(x: 0, y: 0, width: ComposerBubble.diameter, height: ComposerBubble.diameter))
+
+    override init() {
+        panel = RecordingPanel(contentRect: button.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        super.init()
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.sharingType = .none
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.title = "Capture Studio composer button"
+        let surface = ComposerSurface(frame: button.frame, radius: Self.diameter / 2)
+        button.autoresizingMask = [.width, .height]
+        surface.addSubview(button)
+        panel.contentView = surface
+        button.onClick = { [weak self] in self?.onOpen?() }
+        button.onDragEnd = { [weak self] in
+            guard let self else { return }
+            self.onMove?(self.panel.frame.origin)
+        }
+        button.menu = NSMenu()
+        for (title, action) in [("Open composer", #selector(open)), ("Hide floating button", #selector(hideFromMenu))] {
+            button.menu?.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
+        }
+    }
+
+    // A saved origin is used only while the whole circle still fits on a screen.
+    func show(at origin: CGPoint?) {
+        let size = panel.frame.size
+        if let origin, NSScreen.screens.contains(where: { $0.visibleFrame.contains(NSRect(origin: origin, size: size)) }) {
+            panel.setFrameOrigin(origin)
+        } else if let frame = NSScreen.main?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(x: frame.maxX - size.width - 16, y: frame.minY + frame.height * 0.25))
+        }
+        guard !panel.isVisible else { return }
+        panel.present { panel.orderFrontRegardless() }
+    }
+
+    func hide() { panel.orderOut(nil) }
+
+    @objc func open() { onOpen?() }
+    @objc func hideFromMenu() { onHide?() }
+
+    final class BubbleView: NSView {
+        var onClick: (() -> Void)?
+        var onDragEnd: (() -> Void)?
+        private var start: NSPoint?
+        private var dragged = false
+        private let icon = NSImageView()
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            icon.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
+            icon.contentTintColor = .labelColor
+            icon.frame = bounds
+            icon.autoresizingMask = [.width, .height]
+            addSubview(icon)
+            toolTip = "Open the composer to write a note or reopen a recent capture · Drag to move"
+            setAccessibilityElement(true)
+            setAccessibilityRole(.button)
+            setAccessibilityLabel("Open Capture Studio composer")
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+
+        override func mouseDown(with event: NSEvent) {
+            start = NSEvent.mouseLocation
+            dragged = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start, let window else { return }
+            let now = NSEvent.mouseLocation
+            if !dragged, hypot(now.x - start.x, now.y - start.y) < 3 { return }
+            dragged = true
+            window.setFrameOrigin(NSPoint(x: window.frame.minX + now.x - start.x, y: window.frame.minY + now.y - start.y))
+            self.start = now
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            defer { start = nil }
+            if dragged { onDragEnd?() } else if start != nil { onClick?() }
+        }
+
+        override func accessibilityPerformPress() -> Bool { onClick?(); return true }
+    }
+}
+
 // A dashed outline just outside a recorded area, so the user sees what is captured.
 @MainActor final class RecordingAreaOutline {
     let panel: NSPanel

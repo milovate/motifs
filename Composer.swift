@@ -55,7 +55,8 @@ struct ComposerEndpoint: Decodable {
 @MainActor final class AppshotComposer: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
     // The menu-bar helper records the screen; the composer only asks for a clip.
     static var onRecord: ((AppshotComposer) -> Void)?
-    static weak var current: AppshotComposer?
+    static weak var current: AppshotComposer? { didSet { onCurrentChange?() } }
+    static var onCurrentChange: (() -> Void)?
     var shots: [[String: Any]]
     var selectedShotIndex = 0
     var shot: [String: Any] {

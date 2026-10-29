@@ -81,13 +81,15 @@ struct Appshots {
     var recordHotkey: EventHotKeyRef?
     var handler: EventHandlerRef?
     var lock: Int32 = -1
-    var busy = false
+    var busy = false { didSet { refreshBubble() } }
     var shortcutCount = 0
     var commandObserver: NSObjectProtocol?
     var workspaceObserver: NSObjectProtocol?
     var lastExternalApp: NSRunningApplication?
     var browserSteps: Task<Void, Never>?
-    var choosingRecording = false
+    var choosingRecording = false { didSet { refreshBubble() } }
+    let bubble = ComposerBubble()
+    var bubbleItem: NSMenuItem?
     var controls: RecordingControls?
     var outline: RecordingAreaOutline?
     var controlsTimer: Timer?
@@ -115,14 +117,29 @@ struct Appshots {
             entry.submenu = submenu
             menu.insertItem(entry, at: 2 + index)
         }
-        menu.insertItem(.separator(), at: 5)
+        let bubbleItem = NSMenuItem(title: "Show floating composer button", action: #selector(toggleBubble), keyEquivalent: "")
+        bubbleItem.target = self
+        bubbleItem.toolTip = "A small circle that opens the composer without capturing, so you can write a note or reopen a recent capture."
+        menu.insertItem(bubbleItem, at: 5)
+        self.bubbleItem = bubbleItem
+        menu.insertItem(.separator(), at: 6)
         item?.menu = menu
         recordItem = menu.item(at: 1)
         let settings = CaptureSettings.load(output: output)
+        bubble.onOpen = { [weak self] in self?.openComposer() }
+        bubble.onHide = { [weak self] in self?.setBubble(false) }
+        bubble.onMove = { [weak self] origin in
+            guard let self else { return }
+            var settings = CaptureSettings.load(output: self.output)
+            settings.bubbleOrigin = origin
+            try? settings.save(output: self.output)
+        }
+        refreshBubble()
         if settings.recordClicks { events.start() }
         replay.onChange = { [weak self] in self?.refreshRecordingState() }
         replay.onRecordingLimit = { [weak self] in self?.stopRecordingAndCompose() }
         AppshotComposer.onRecord = { [weak self] composer in self?.beginRecording(for: composer) }
+        AppshotComposer.onCurrentChange = { [weak self] in self?.refreshBubble() }
         if settings.instantReplay {
             Task { @MainActor in
                 do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Capture Studio — instant replay could not start: " + error.localizedDescription }
@@ -179,6 +196,7 @@ struct Appshots {
     func refreshRecordingState() {
         recordItem?.title = replay.recording ? "Stop screen recording (⌥⇧G)" : "Start screen recording… (⌥⇧G)"
         updateStatusIcon()
+        refreshBubble()
         controls?.update(seconds: replay.recordedSeconds, paused: replay.paused, limit: ReplayPipeline.recordingLimit)
     }
 
@@ -481,6 +499,41 @@ struct Appshots {
         Task { @MainActor in
             defer { busy = false }
             do { try await composeBundle(path: path, output: output, returnTo: returnTo) } catch { NSAlert(error: error).runModal() }
+        }
+    }
+
+    // The circle stays out of the way while anything else is on screen.
+    func refreshBubble() {
+        let settings = CaptureSettings.load(output: output)
+        bubbleItem?.state = settings.showBubble ? .on : .off
+        if settings.showBubble, !busy, !choosingRecording, !replay.recording, AppshotComposer.current == nil {
+            bubble.show(at: settings.bubbleOrigin)
+        } else {
+            bubble.hide()
+        }
+    }
+
+    @objc func toggleBubble() { setBubble(!CaptureSettings.load(output: output).showBubble) }
+
+    func setBubble(_ shown: Bool) {
+        var settings = CaptureSettings.load(output: output)
+        settings.showBubble = shown
+        do { try settings.save(output: output) } catch { NSAlert(error: error).runModal() }
+        refreshBubble()
+    }
+
+    // Opens an empty composer with Recents beside it. Nothing is captured until the user adds it.
+    @objc func openComposer() {
+        guard !busy else { raiseEditor(); return }
+        busy = true
+        let returnTo = lastExternalApp
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                let composer = try AppshotComposer(shots: [], note: "", context: [:], include: CaptureSettings.load(output: output).include, output: output, returnTo: returnTo)
+                if !recentBundles(output: output).isEmpty { Task { @MainActor in composer.showRecents() } }
+                await presentComposer(composer)
+            } catch { NSAlert(error: error).runModal() }
         }
     }
 
