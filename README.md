@@ -357,7 +357,9 @@ instead of the shortcut to use the original flow below. Windows keeps its shortc
    cancels and returns focus to the app you were using. Escape first clears a
    selection; press it again to close. The next shortcut opens
    a fresh editor; repeated shortcuts while editing bring the current editor forward.
-   Undo and Redo use Command+Z and Command+Shift+Z.
+   Undo and Redo use Command+Z and Command+Shift+Z. The copy button (Command+C), or
+   right-clicking an empty part of the image, copies the annotated and cropped image to
+   the clipboard without inserting it, so you can paste it into Slack, Mail or a doc.
 4. OpenCode comes forward. The screenshot is attached to the current conversation's
    input, and the capture's timestamp and accessibility text are appended to the draft.
 5. Add your question and send when ready.

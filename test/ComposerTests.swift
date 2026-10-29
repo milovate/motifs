@@ -2,7 +2,6 @@ import AppKit
 
 func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 @MainActor func saveStatus(output: String, phase: String, details: [String: Any]) {}
-@MainActor func annotateScreenshot(_ shot: [String: Any], output: String, returnTo: NSRunningApplication? = nil, confirmationTitle: String = "Insert") async throws -> [String: Any]? { shot }
 @MainActor func openSessionDraft(sessionID: String, title: String, draftText: String, shot: [String: Any], output: String) async throws { fatalError("Tests must never hand a draft to the real desktop") }
 @MainActor func captureScreenRegion(output: String) async throws -> [String: Any]? { fatalError("Tests must never capture the real desktop") }
 

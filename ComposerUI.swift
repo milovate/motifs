@@ -334,13 +334,10 @@ extension NSWindow {
 
     @objc func copyFile() {
         guard let file else { return }
-        pasteboard.clearContents()
-        if isImage, let data = try? Data(contentsOf: file), let image = NSImage(data: data) {
-            let item = NSPasteboardItem()
-            item.setData(data, forType: .png)
-            if let tiff = image.tiffRepresentation { item.setData(tiff, forType: .tiff) }
-            pasteboard.writeObjects([item])
+        if isImage, let data = try? Data(contentsOf: file), NSImage(data: data) != nil {
+            copyPNG(data, to: pasteboard)
         } else {
+            pasteboard.clearContents()
             pasteboard.writeObjects([file as NSURL])
         }
     }

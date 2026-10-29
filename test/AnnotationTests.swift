@@ -51,6 +51,18 @@ struct AnnotationTests {
         editor.moveToolbar(by: .zero)
         expect(content.bounds.contains(editor.tray.frame), "toolbar stays inside a resized window")
         expect(editor.tray.layer?.borderWidth == 0, "toolbar has no outline")
+        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("appshots-annotation-\(UUID().uuidString)"))
+        defer { testPasteboard.releaseGlobally() }
+        editor.pasteboard = testPasteboard
+        editor.canvas.document = AnnotationDocument(marks: [AnnotationMark(tool: .box, points: [CGPoint(x: 10, y: 10), CGPoint(x: 90, y: 90)], color: .red, width: 4)])
+        editor.canvas.document.setCrop(CGRect(x: 0, y: 0, width: 600, height: 400))
+        editor.copyImage()
+        let copied = testPasteboard.data(forType: .png).flatMap { NSBitmapImageRep(data: $0) }
+        expect(copied?.pixelsWide == 600 && copied?.pixelsHigh == 400, "copy puts the cropped, annotated PNG on the clipboard")
+        expect(editor.copyButton.keyEquivalent == "c" && editor.copyButton.keyEquivalentModifierMask == .command, "copy has ⌘C")
+        expect(editor.canvas.document.marks.count == 1, "copying leaves the annotations editable")
+        let click = NSEvent.mouseEvent(with: .rightMouseDown, location: content.convert(CGPoint(x: content.bounds.maxX - 20, y: content.bounds.maxY - 40), to: nil), modifierFlags: [], timestamp: 0, windowNumber: editor.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        expect(editor.canvas.menu(for: click)?.items.map(\.title) == ["Copy Image"], "right-clicking the image offers Copy Image")
         editor.window?.close()
     }
 

@@ -64,6 +64,8 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
     var trayBottom: NSLayoutConstraint!
     var cropActions: NSStackView!
     var applyCropButton: NSButton!
+    var copyButton: NSButton!
+    var pasteboard = NSPasteboard.general
 
     init(image: NSImage, shot: [String: Any], output: String, confirmationTitle: String = "Insert") throws {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -124,6 +126,7 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
         width.toolTip = "Stroke width"
         undoButton = iconButton("Undo", symbol: "arrow.uturn.backward", action: #selector(undoMark), key: "z")
         redoButton = iconButton("Redo", symbol: "arrow.uturn.forward", action: #selector(redoMark), key: "z", modifiers: [.command, .shift])
+        copyButton = iconButton("Copy image (⌘C)", symbol: "doc.on.doc", action: #selector(copyImage), key: "c")
         let cancel = iconButton("Cancel", symbol: "xmark", action: #selector(cancel), key: "", modifiers: [])
         let insert = button(confirmationTitle, action: #selector(insert), key: "\r")
         insert.bezelColor = .controlAccentColor
@@ -132,7 +135,7 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
         insert.setAccessibilityLabel(confirmationTitle == "Insert" ? "Insert into OpenCode" : "Return to composer")
         let handle = AnnotationToolbarHandle()
         handle.didDrag = { [weak self] delta in self?.moveToolbar(by: delta) }
-        let controls = NSStackView(views: [handle, tools, separator(), colorWell, width, separator(), undoButton, redoButton, separator(), cancel, insert])
+        let controls = NSStackView(views: [handle, tools, separator(), colorWell, width, separator(), undoButton, redoButton, separator(), copyButton, cancel, insert])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 8
@@ -181,7 +184,24 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
             self?.moveToolbar(by: .zero)
         }
         canvas.didChangeCrop = { [weak self] in self?.applyCropButton.isEnabled = self?.canvas.cropSelection != nil }
+        canvas.copyImage = { [weak self] in self?.copyImage() }
         updateHistory()
+    }
+
+    @objc func copyImage() {
+        if let editor = canvas.inlineEditor { editor.copy(nil); return }
+        do {
+            copyPNG(try annotationPNG(image: canvas.image, marks: canvas.document.marks, crop: canvas.document.crop), to: pasteboard)
+            copyButton.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Copied")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                self?.copyButton.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy image")
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not copy the image"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     @objc func insert() {
@@ -369,6 +389,7 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
     var didChange: (() -> Void)?
     var didChangeTool: ((AnnotationTool) -> Void)?
     var didChangeCrop: (() -> Void)?
+    var copyImage: (() -> Void)?
     var cropSelection: CGRect? { didSet { didChangeCrop?(); needsDisplay = true } }
     var cropStart: CGPoint?
     var inlineEditor: AnnotationInlineTextView?
@@ -539,15 +560,20 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let point = imagePoint(convert(event.locationInWindow, from: nil), clamp: false),
-              let mark = document.marks.reversed().first(where: { annotationHit($0, point: point, tolerance: 8 * pixels.width / sourceRect.width) }) else { return nil }
-        selectedID = mark.id; tool = .select; needsDisplay = true
         let menu = NSMenu()
+        guard let point = imagePoint(convert(event.locationInWindow, from: nil), clamp: false),
+              let mark = document.marks.reversed().first(where: { annotationHit($0, point: point, tolerance: 8 * pixels.width / sourceRect.width) }) else {
+            menu.addItem(withTitle: "Copy Image", action: #selector(copyAnnotatedImage), keyEquivalent: "").target = self
+            return menu
+        }
+        selectedID = mark.id; tool = .select; needsDisplay = true
         if mark.tool == .text { menu.addItem(withTitle: "Edit text…", action: #selector(editSelectionText), keyEquivalent: "").target = self }
         menu.addItem(withTitle: "Duplicate", action: #selector(duplicateSelection), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Delete", action: #selector(deleteSelection), keyEquivalent: "").target = self
         return menu
     }
+
+    @objc func copyAnnotatedImage() { copyImage?() }
 
     @objc func editSelectionText() {
         guard let mark = selectedMark, mark.tool == .text else { return }
@@ -781,6 +807,14 @@ func annotationValidCrop(_ rect: CGRect, pixels: CGSize) -> CGRect? {
     guard rect.minX.isFinite, rect.minY.isFinite, rect.width.isFinite, rect.height.isFinite else { return nil }
     let result = rect.standardized.integral.intersection(CGRect(origin: .zero, size: pixels))
     return result.isNull || result.width < 2 || result.height < 2 ? nil : result
+}
+
+@MainActor func copyPNG(_ png: Data, to pasteboard: NSPasteboard) {
+    let item = NSPasteboardItem()
+    item.setData(png, forType: .png)
+    if let tiff = NSImage(data: png)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+    pasteboard.clearContents()
+    pasteboard.writeObjects([item])
 }
 
 func annotationPNG(image: NSImage, marks: [AnnotationMark], crop: CGRect? = nil) throws -> Data {
