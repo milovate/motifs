@@ -365,8 +365,8 @@ internal sealed class Tray : Forms.Form
         contextItem.DropDownItems.Add(judgeItem);
         contextItem.DropDownOpening += (_, _) => RefreshContextMenu(clicksItem, replayItem, judgeItem, addLog);
         menu.Items.Add(contextItem);
-        var bubbleItem = new Forms.ToolStripMenuItem("Show composer button");
-        bubbleItem.ToolTipText = "Shows a button above the capture hint that opens the composer without taking a screenshot.";
+        var bubbleItem = new Forms.ToolStripMenuItem(ComposerBubble.MenuTitle);
+        bubbleItem.ToolTipText = ComposerBubble.MenuTip;
         bubbleItem.Click += (_, _) => ToggleBubble();
         menu.Items.Add(bubbleItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -474,9 +474,9 @@ internal sealed class Tray : Forms.Form
         foreach (var bundle in bundles)
         {
             string path = bundle.Path;
-            var entry = new Forms.ToolStripMenuItem(bundle.Title + " · " + ComposerFiles.RelativeTime(bundle.Updated, DateTimeOffset.Now))
+            var entry = new Forms.ToolStripMenuItem(ComposerFiles.TrayTitle(bundle.Title, bundle.Created, DateTimeOffset.Now))
             {
-                ToolTipText = ComposerFiles.RecentDetail(bundle.Screenshots, bundle.Videos, "Reopen in the composer", false),
+                ToolTipText = ComposerFiles.TrayTip(bundle.Screenshots),
             };
             entry.Click += (_, _) => ReopenBundle(path);
             menu.DropDownItems.Add(entry);

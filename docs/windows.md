@@ -43,7 +43,8 @@ needed, warn about interrupting active work before `opencode service restart`.
 2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
    window, or press **Enter** for the whole display. The window under the pointer
    is named. While you drag, the readout shows the region's width and height.
-   Escape cancels and returns to the app that was in front. A window
+   Escape cancels and returns to the app that was in front. Switching to another
+   application cancels the chooser as well. A window
    capture uses `PrintWindow` and UI Automation for that window. A region or full
    screen capture is the visible pixels in that rectangle. Pressing the shortcut
    again while the chooser, composer, or annotation editor is open brings that
@@ -136,8 +137,8 @@ the item off while nothing is recording, discards the memory buffer.
 64 KB of each regular file at that moment. The paths are saved in `settings.json`.
 What is sent includes the file name and the tail, not a live watch.
 
-**Show composer button** is on by default. While the capture chooser is open, a
-small button sits above the hint. Clicking it closes the chooser and opens an
+**Show composer button while capturing** is on by default. While the capture chooser is open, a
+small button sits above the hint. Hovering it says it skips the capture and opens the composer, with Recents. Clicking it closes the chooser and opens an
 empty composer. Its menu can hide it. The chooser closes before any screenshot
 is taken, so the button is not in the image.
 
@@ -165,7 +166,7 @@ when the model does not answer.
 
 The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. The strokes are black on a light taskbar and white on a dark one.
 
-The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture.
+The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture and shows when that capture was created.
 **Default destination** chooses OpenCode, Clipboard, Save to folder, or another
 destination the composer has seen. **Context sources** holds instant replay,
 recent clicks, log files, the browser extension, and the local secret-check model.
@@ -357,7 +358,7 @@ from the macOS development environment. Before calling Windows support verified:
   Confirm the composer shows the screenshot and an instant-replay clip. Cancel
   the chooser and confirm the captures folder gains no replay MP4. Turn replay
   off and confirm the tray tooltip returns to the capture shortcut.
-- With **Show composer button** on, start a capture and click the round button.
+- With **Show composer button while capturing** on, start a capture and click the round button.
   Confirm the composer opens and the captures folder gains no new screenshot.
   Hide the button from its menu and confirm the next chooser has none.
 - Click **Dictate**, speak, then **Stop**. Confirm the words are in the note and

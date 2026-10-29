@@ -378,8 +378,8 @@ clip** writes a new MP4 beside the original and takes key frames from the select
 **Connect browser extension…** registers the same extension with Chrome, Chrome
 Canary, Brave, Edge, Arc and Chromium. The host and the helper use a named pipe and accept only
 this `Appshots.exe`. **Dictate** uses a Windows speech language installed on this PC. It does not save
-audio and it does not call a cloud recognizer. **Show composer button** skips the
-chooser and opens an empty composer. **Local secret-check model…** accepts only
+audio and it does not call a cloud recognizer. The capture chooser closes when another application comes forward. **Show composer button while capturing** skips the
+chooser and opens an empty composer. Recent bundles in the tray are listed by when they were created. **Local secret-check model…** accepts only
 `http://127.0.0.1`, `localhost`, or `::1`. The frosted macOS composer stays on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
 contract tests or a successful build does not verify native interaction.

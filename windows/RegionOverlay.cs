@@ -53,6 +53,12 @@ internal static class CaptureChrome
 
 internal sealed record CaptureChoice(CaptureKind Kind, nint Window, Rectangle Bounds);
 
+// The chooser closes when another application is in front. This process, including the composer button, stays up.
+internal static class ChooserFocus
+{
+    internal static bool ShouldCancel(uint ourPid, uint foregroundPid) => foregroundPid != 0 && foregroundPid != ourPid;
+}
+
 // Full-screen dimmer. Drag chooses a visible region. A click chooses the window
 // under the pointer, or the display when the pointer is not over an app window.
 internal sealed class RegionOverlay : Form
@@ -65,7 +71,9 @@ internal sealed class RegionOverlay : Form
     nint hovered;
     Rectangle hoveredBounds;
     string hoveredApp = "";
+    readonly Timer otherApps = new() { Interval = 200 };
     ComposerBubble? bubble;
+    bool armed;
     internal CaptureChoice? Choice;
     internal bool OpenComposerInstead { get; private set; }
 
@@ -84,6 +92,7 @@ internal sealed class RegionOverlay : Form
         KeyPreview = true;
         DoubleBuffered = true;
         Text = "Capture Studio";
+        otherApps.Tick += (_, _) => CancelIfAnotherApp();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -101,6 +110,25 @@ internal sealed class RegionOverlay : Form
         UpdateHover(PointToClient(Cursor.Position));
         if (!string.IsNullOrEmpty(captures) && ComposerFiles.ShowBubble(ComposerFiles.Settings(captures)))
             bubble = ComposerBubble.Show(this, SkipToComposer, HideBubble);
+        armed = true;
+        otherApps.Start();
+    }
+
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        if (!armed || IsDisposed || !IsHandleCreated || DialogResult != DialogResult.None) return;
+        try { BeginInvoke(CancelIfAnotherApp); }
+        catch (InvalidOperationException) { /* The chooser is already closing. */ }
+    }
+
+    void CancelIfAnotherApp()
+    {
+        if (!armed || IsDisposed || DialogResult != DialogResult.None) return;
+        nint foreground = Native.GetForegroundWindow();
+        Native.GetWindowThreadProcessId(foreground, out uint pid);
+        if (!ChooserFocus.ShouldCancel((uint)Environment.ProcessId, pid)) return;
+        DialogResult = DialogResult.Cancel;
     }
 
     void SkipToComposer()
@@ -120,13 +148,18 @@ internal sealed class RegionOverlay : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        otherApps.Stop();
         ActiveSurface.Pop(this);
         base.OnFormClosed(e);
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) bubble?.Dispose();
+        if (disposing)
+        {
+            otherApps.Dispose();
+            bubble?.Dispose();
+        }
         base.Dispose(disposing);
     }
 
@@ -285,6 +318,9 @@ internal sealed class ComposerBubble : Form
 {
     internal const int Diameter = 44;
     internal const int Gap = 88;
+    internal const string MenuTitle = "Show composer button while capturing";
+    internal const string MenuTip = "While Ctrl+Alt+Shift+A is choosing what to capture, a small circle skips the capture and opens the composer with Recents, so you can write a note or reopen a recent capture.";
+    internal const string Tip = "Skip the capture and open the composer, with Recents";
 
     internal static Rectangle BoundsOn(Rectangle screen)
     {
@@ -327,6 +363,9 @@ internal sealed class ComposerBubble : Form
         };
         button.FlatAppearance.BorderSize = 0;
         button.AccessibleName = "Skip capture and open the composer";
+        var tips = new ToolTip { ShowAlways = true };
+        tips.SetToolTip(button, Tip);
+        Disposed += (_, _) => tips.Dispose();
         button.Click += (_, _) => open();
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open composer", null, (_, _) => open());

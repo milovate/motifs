@@ -39,6 +39,7 @@ internal sealed class RecentCapture
 {
     internal string Path = "";
     internal string Title = "";
+    internal DateTimeOffset Created;
     internal DateTimeOffset Updated;
     internal int Screenshots;
     internal int Videos;
@@ -262,6 +263,10 @@ internal static class ComposerFiles
     }
 
     internal const int ComposerRecentLimit = 30;
+
+    internal static string TrayTitle(string title, DateTimeOffset created, DateTimeOffset now) => title + " · " + RelativeTime(created, now);
+
+    internal static string TrayTip(int screenshots) => screenshots.ToString(CultureInfo.InvariantCulture) + (screenshots == 1 ? " screenshot" : " screenshots") + " · Reopen in the composer";
 
     internal static string RecentDetail(int screenshots, int videos, string when, bool current)
     {
@@ -581,8 +586,8 @@ internal static class ComposerFiles
                 if (new FileInfo(file).Length > 2_000_000) continue;
                 if (JsonNode.Parse(File.ReadAllText(file)) is not JsonObject raw || raw["schema"]?.GetValue<string>() != Schema) continue;
                 var createdText = raw["createdAt"]?.GetValue<string>();
-                var updatedText = raw["updatedAt"]?.GetValue<string>() ?? createdText;
-                if (!DateTimeOffset.TryParse(updatedText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var updated)) continue;
+                if (!DateTimeOffset.TryParse(createdText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var created)) continue;
+                if (!DateTimeOffset.TryParse(raw["updatedAt"]?.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var updated)) updated = created;
                 var entries = raw["media"] as JsonArray ?? new JsonArray();
                 var media = entries.Where(item => item?["kind"]?.GetValue<string>() != "video").ToList();
                 int videos = entries.Count(item => item?["kind"]?.GetValue<string>() == "video");
@@ -592,7 +597,7 @@ internal static class ComposerFiles
                 string note = (raw["note"]?.GetValue<string>() ?? "").Split('\n')[0].Trim();
                 string fallback = media.Count > 0 ? media[0]?["app"]?.GetValue<string>() ?? "Capture" : videos > 0 ? "Screen recording" : "Capture";
                 string title = note.Length == 0 ? fallback : note.Length > 48 ? note[..45] + "…" : note;
-                found.Add(new RecentCapture { Path = file, Title = title, Updated = updated, Screenshots = media.Count, Videos = videos, Thumbnail = thumbnail });
+                found.Add(new RecentCapture { Path = file, Title = title, Created = created, Updated = updated, Screenshots = media.Count, Videos = videos, Thumbnail = thumbnail });
             }
             catch { /* A damaged bundle stays on disk and is omitted from Recents. */ }
         }
@@ -955,7 +960,9 @@ internal static class ComposerTests
         File.WriteAllText(foreign, new JsonObject { ["schema"] = ComposerFiles.Schema, ["id"] = "22222222-2222-2222-2222-222222222222", ["createdAt"] = "2026-10-29T00:00:00Z", ["note"] = "", ["media"] = new JsonArray(outside), ["context"] = new JsonObject(), ["include"] = ComposerFiles.DefaultInclude() }.ToJsonString());
         Check(ComposerFiles.LoadBundle(foreign, output).Missing == 1 && ComposerFiles.LoadBundle(foreign, output).Shots.Count == 0, "screenshots outside the captures folder are not reopened");
         var listed = ComposerFiles.Recents(output)[0];
-        Check(listed.Title == "Blank PDF" && listed.Screenshots == 1 && listed.Videos == 0 && ComposerFiles.RecentThumbnail(listed.Thumbnail, output) == Path.GetFullPath(image), "recents use the first note line and its capture thumbnail");
+        var listedCreated = DateTimeOffset.Parse("2026-10-29T00:00:00Z", CultureInfo.InvariantCulture);
+        Check(listed.Title == "Blank PDF" && listed.Screenshots == 1 && listed.Videos == 0 && listed.Created == listedCreated && ComposerFiles.RecentThumbnail(listed.Thumbnail, output) == Path.GetFullPath(image), "recents use the first note line and its capture thumbnail");
+        Check(ComposerFiles.TrayTitle(listed.Title, listed.Created, listedCreated.AddMinutes(5)) == "Blank PDF · 5 min ago" && ComposerFiles.TrayTip(1) == "1 screenshot · Reopen in the composer" && ComposerFiles.TrayTip(0) == "0 screenshots · Reopen in the composer", "the tray names a capture by when it was created");
         Check(ComposerFiles.RecentThumbnail(Path.Combine(Path.GetTempPath(), "outside.png"), output) == null, "thumbnails come only from the captures folder");
 
         var settings = ComposerFiles.DefaultSettings();
@@ -1068,6 +1075,8 @@ internal static class ComposerTests
         Check(ComposerFiles.RelativeTime(recentAt, recentAt.AddSeconds(10)) == "just now" && ComposerFiles.RelativeTime(recentAt, recentAt.AddMinutes(5)) == "5 min ago", "recent bundles show a short relative time");
         var bubbleBounds = ComposerBubble.BoundsOn(new Rectangle(0, 0, 1920, 1080));
         Check(bubbleBounds.Size == new Size(ComposerBubble.Diameter, ComposerBubble.Diameter) && bubbleBounds.Left + bubbleBounds.Width / 2 == 960 && bubbleBounds.Bottom == 1080 - ComposerBubble.Gap, "the composer button is centered above the capture hint");
+        Check(ComposerBubble.MenuTitle == "Show composer button while capturing" && ComposerBubble.Tip == "Skip the capture and open the composer, with Recents" && ComposerBubble.MenuTip.Contains("Ctrl+Alt+Shift+A", StringComparison.Ordinal) && ComposerBubble.MenuTip.Contains("Recents", StringComparison.Ordinal), "the tray explains the composer button");
+        Check(!ChooserFocus.ShouldCancel(10, 10) && !ChooserFocus.ShouldCancel(10, 0) && ChooserFocus.ShouldCancel(10, 20), "the chooser closes when another app comes forward");
         Check(DictationText.Base("Hello") == "Hello " && DictationText.Base("Hello ") == "Hello " && DictationText.Base("") == "" && DictationText.Commit("Hello", "there") == "Hello there" && DictationText.Apply("Note ", "Hello", "wor") == "Note Hello wor", "dictation keeps the note and shows the phrase being recognized");
         var clipWindow = new JsonObject { ["startedAt"] = "2026-10-29T10:00:00Z", ["durationSeconds"] = 30, ["pauses"] = new JsonArray() };
         var pageSteps = ClickHistory.RecordingEvents(new[]
