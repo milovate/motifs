@@ -1,0 +1,49 @@
+import { execFileSync } from "node:child_process";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const mac = process.platform === "darwin" && process.arch === "arm64";
+const windows = process.platform === "win32" && process.arch === "x64";
+if (!mac && !windows) {
+  throw new Error("Package Motifs on Apple Silicon macOS or x64 Windows.");
+}
+
+const files = execFileSync("git", [
+  "ls-files", "-z", "--", ":(top,glob)*.js", "package.json", "package-lock.json",
+  "README.md", "INSTALL.md", "docs/", "browser-extension/",
+], { cwd: root, encoding: "utf8" }).split("\0").filter(file => file && file !== "build.js");
+const output = path.join(root, "dist");
+const filename = `motifs-${version}-${mac ? "macos-arm64" : "windows-x64"}.zip`;
+mkdirSync(output, { recursive: true });
+const staging = mkdtempSync(path.join(output, ".motifs-"));
+const plugin = path.join(staging, "motifs");
+const archive = path.join(staging, filename);
+
+try {
+  for (const file of files) {
+    const destination = path.join(plugin, file);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    copyFileSync(path.join(root, file), destination);
+  }
+
+  if (mac) {
+    const app = "Capture Studio.app";
+    execFileSync("/usr/bin/ditto", [path.join(root, app), path.join(plugin, app)], { stdio: "inherit" });
+    execFileSync("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", plugin, archive], { stdio: "inherit" });
+  } else {
+    cpSync(path.join(root, "windows", "dist"), path.join(plugin, "windows", "dist"), {
+      recursive: true,
+      filter: file => path.extname(file).toLowerCase() !== ".pdb",
+    });
+    execFileSync("tar.exe", ["-a", "-cf", archive, "-C", staging, "motifs"], { stdio: "inherit" });
+  }
+
+  renameSync(archive, path.join(output, filename));
+} finally {
+  rmSync(staging, { recursive: true, force: true });
+}
+
+console.log(`Packaged ${path.join(output, filename)}`);

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "node build.js",
     "verify:version": "node scripts/check-build-version.js",
+    "package:local": "npm run verify:version && node scripts/package-local.js",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {

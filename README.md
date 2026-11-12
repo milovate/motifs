@@ -138,3 +138,9 @@ For a release PR, run `npm version X.Y.Z --no-git-tag-version` to update
 in `package.json` above the previous macOS release build number. After building
 on macOS or Windows, run `npm run verify:version` to check the helper's metadata
 against `package.json`.
+
+From a clean checkout, run `npm run build` followed by `npm run package:local`
+to make a versioned ZIP in `dist/` for Apple Silicon macOS or x64 Windows.
+The ZIP contains the OpenCode plugin and its native helper. The local macOS
+build uses ad hoc signing. See [INSTALL.md](INSTALL.md#9-procedure-update-the-plugin)
+for how to upgrade a ZIP installation.

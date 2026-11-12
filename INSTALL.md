@@ -174,6 +174,16 @@ key event.
 
 ## 9. Procedure: update the plugin
 
+For a ZIP installation, quit Capture Studio and OpenCode. Extract the new ZIP
+and replace the old plugin folder with the extracted `motifs` folder at the
+same path. Keep the whole folder together so the plugin can locate the helper.
+Move any backup outside OpenCode's plugin discovery folder before you restart
+OpenCode. Leave the capture data directory and your OpenCode configuration in
+place. The helper stores captures and settings in that data directory. On macOS,
+if a local ad hoc build needs permissions again, follow section 6.
+
+For an installation from a Git checkout:
+
 1. Go to the plugin folder.
 2. Run `git status`.
 3. If the folder has local changes, stop. Ask the user. Do not reset the changes.

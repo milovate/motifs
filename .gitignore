@@ -12,6 +12,7 @@ status.json
 windows/bin/
 windows/obj/
 windows/dist/
+/dist/
 
 prototype/reference/
 Capture Studio.app/
