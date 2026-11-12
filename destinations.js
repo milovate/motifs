@@ -3,6 +3,7 @@ import { copyFile, mkdir, open, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { contextDocument, contextFilePath, draftText, markdownBundle, shareMarkdown, BUNDLE_SCHEMA } from "./bundle.js";
+import { ownerOnly } from "./permissions.js";
 
 // Writes the bundle's full context beside it (owner-only, never through a symlink)
 // and returns the path, or undefined when there is nothing to write.
@@ -12,11 +13,11 @@ export async function writeContextFile(bundle) {
   const file = contextFilePath(bundle);
   const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
   try {
-    await handle.chmod(0o600);
     await handle.writeFile(`# Appshot context\n\n${body}\n`);
   } finally {
     await handle.close();
   }
+  await ownerOnly(file);
   return file;
 }
 
@@ -157,8 +158,13 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
       const slug = request.note.trim().split("\n")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "capture";
       const folder = path.join(exportRoot, `${stamp} ${slug} ${request.requestID.slice(-8)}`);
       await mkdir(folder, { mode: 0o700 });
+      await ownerOnly(folder, { directory: true });
       const names = bundle.media.map((_, index) => `screenshot-${index + 1}.png`);
-      for (const [index, capture] of bundle.media.entries()) await copyFile(capture.screenshot, path.join(folder, names[index]));
+      for (const [index, capture] of bundle.media.entries()) {
+        const destination = path.join(folder, names[index]);
+        await copyFile(capture.screenshot, destination);
+        await ownerOnly(destination);
+      }
       // recording.mp4 for the first clip, recording-2.mp4 and so on for the others.
       const videoName = (video, index) => {
         const clip = bundle.videos.indexOf(video);
@@ -166,10 +172,18 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
         return index < 0 ? `${stem}.mp4` : `${stem}-frame-${index + 1}.png`;
       };
       for (const video of bundle.videos) {
-        await copyFile(video.video, path.join(folder, videoName(video, -1)));
-        for (const [index, frame] of video.frames.entries()) await copyFile(frame.screenshot, path.join(folder, videoName(video, index)));
+        const movie = path.join(folder, videoName(video, -1));
+        await copyFile(video.video, movie);
+        await ownerOnly(movie);
+        for (const [index, frame] of video.frames.entries()) {
+          const image = path.join(folder, videoName(video, index));
+          await copyFile(frame.screenshot, image);
+          await ownerOnly(image);
+        }
       }
-      await writeFile(path.join(folder, "README.md"), markdownBundle(bundle, request.note, (_, index) => names[index], videoName), { mode: 0o600, flag: "wx" });
+      const readme = path.join(folder, "README.md");
+      await writeFile(readme, markdownBundle(bundle, request.note, (_, index) => names[index], videoName), { mode: 0o600, flag: "wx" });
+      await ownerOnly(readme);
       const exported = {
         schema: BUNDLE_SCHEMA,
         id: bundle.id,
@@ -192,7 +206,9 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
         context: exportedContext(bundle),
         include: bundle.include,
       };
-      await writeFile(path.join(folder, "bundle.json"), JSON.stringify(exported, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      const manifest = path.join(folder, "bundle.json");
+      await writeFile(manifest, JSON.stringify(exported, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      await ownerOnly(manifest);
       return { action: "reveal-folder", path: folder, message: `Saved to ${path.basename(folder)}.` };
     },
   };

@@ -4,6 +4,7 @@ import { mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { readBundle } from "./bundle.js";
 import { builtinDestinations, describeDestinations, validateHandoff } from "./destinations.js";
+import { ownerOnly } from "./permissions.js";
 import { configuredJudge, redactBundle, redactText, createSession } from "./redact.js";
 
 // One private, authenticated loopback endpoint per loaded OpenCode location.
@@ -12,6 +13,7 @@ export async function startComposerBridge(ctx, captures, destinations = builtinD
   const token = randomBytes(32).toString("hex");
   const directory = path.join(captures, "composers");
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  await ownerOnly(directory, { directory: true });
   const descriptor = path.join(directory, `${randomUUID()}.json`);
   const submissions = new Map();
   const server = createServer(async (request, response) => {
@@ -76,7 +78,9 @@ export async function startComposerBridge(ctx, captures, destinations = builtinD
   const temporary = descriptor + ".tmp";
   try {
     await writeFile(temporary, JSON.stringify({ directory: ctx.location.directory, port: server.address().port, token }), { mode: 0o600 });
+    await ownerOnly(temporary);
     await rename(temporary, descriptor);
+    await ownerOnly(descriptor);
   } catch (error) {
     server.close();
     await unlink(temporary).catch(() => {});

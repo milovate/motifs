@@ -233,7 +233,9 @@ test("extension manifest pins the ID the helper trusts", async () => {
   const manifest = JSON.parse(await readFile(new URL("../browser-extension/manifest.json", import.meta.url), "utf8"));
   const id = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex").slice(0, 32).split("").map((h) => String.fromCharCode(97 + parseInt(h, 16))).join("");
   const swift = await readFile(new URL("../BrowserBridge.swift", import.meta.url), "utf8");
+  const windows = await readFile(new URL("../windows/BrowserHost.cs", import.meta.url), "utf8");
   assert.ok(swift.includes(`"${id}"`), "BrowserBridge.swift must allow exactly this extension ID");
+  assert.ok(windows.includes(`"${id}"`), "BrowserHost.cs must allow exactly this extension ID");
   assert.deepEqual(manifest.permissions.sort(), ["alarms", "nativeMessaging", "storage", "tabs", "webRequest"]);
   assert.equal(manifest.manifest_version, 3);
 });

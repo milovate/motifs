@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, writeFile, readFile, readdir, realpath, stat, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, writeFile, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BUNDLE_SCHEMA, readBundle, contextDocument, contextFilePath, draftText, markdownBundle, deviceSummary } from "../bundle.js";
 import { builtinDestinations, clipboardDestination, describeDestinations, folderDestination, opencodeDestination, validateDestination, validateHandoff } from "../destinations.js";
 import { startComposerBridge, submitComposer } from "../composer-bridge.js";
+import { assertOwnerOnly } from "./owner-only.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII=", "base64");
 const DEVICE = { os: "macOS 15.2", arch: "arm64", model: "Mac15,8", cpu: "Apple M3 Max", memoryBytes: 64 * 2 ** 30, displays: [{ width: 3024, height: 1964, scale: 2 }], locale: "en_IN" };
@@ -112,7 +114,7 @@ test("OpenCode destination creates an empty session and an unsent draft only", a
   assert.ok(!result.draftText.includes("Untrusted window text") && !result.draftText.includes("Apple M3 Max"), "window text and device details stay in the context file");
   const contextFile = contextFilePath(bundle);
   assert.ok(result.draftText.includes(`Full context (window text, device): ${contextFile}`));
-  assert.equal((await stat(contextFile)).mode & 0o777, 0o600);
+  await assertOwnerOnly(contextFile, 0o600);
   const written = await readFile(contextFile, "utf8");
   assert.match(written, /Device context/);
   assert.match(written, /Untrusted window text/);
@@ -140,10 +142,10 @@ test("Save to folder writes an owner-only, self-contained export without private
   const result = await submitComposer(f.ctx, f.directory, { ...f.input, destination: "folder" }, f.destinations);
   assert.equal(result.action, "reveal-folder");
   assert.equal(path.dirname(result.path), f.exports);
-  assert.equal((await stat(result.path)).mode & 0o777, 0o700);
+  await assertOwnerOnly(result.path, 0o700);
   assert.deepEqual((await readdir(result.path)).sort(), ["README.md", "bundle.json", "screenshot-1.png"]);
   assert.deepEqual(await readFile(path.join(result.path, "screenshot-1.png")), PNG);
-  assert.equal((await stat(path.join(result.path, "bundle.json"))).mode & 0o777, 0o600);
+  await assertOwnerOnly(path.join(result.path, "bundle.json"), 0o600);
   const exported = JSON.parse(await readFile(path.join(result.path, "bundle.json"), "utf8"));
   assert.equal(exported.schema, BUNDLE_SCHEMA);
   assert.equal(exported.media[0].screenshot, "screenshot-1.png");
@@ -152,6 +154,25 @@ test("Save to folder writes an owner-only, self-contained export without private
   assert.ok(!raw.includes(f.directory), "exports must not leak the private captures folder");
   assert.match(await readFile(path.join(result.path, "README.md"), "utf8"), /!\[Screenshot 1\]\(<screenshot-1\.png>\)/);
   assert.equal(f.created.length, 0);
+});
+
+test("Save to folder preserves permissions on an existing export root", async (t) => {
+  const f = await fixture(t);
+  await mkdir(f.exports);
+  if (process.platform !== "win32") await chmod(f.exports, 0o750);
+  const permissions = async () => {
+    if (process.platform === "win32") {
+      return execFileSync("icacls", [f.exports], { encoding: "utf8", windowsHide: true });
+    }
+    return (await stat(f.exports)).mode & 0o777;
+  };
+  const before = await permissions();
+
+  const result = await submitComposer(f.ctx, f.directory, { ...f.input, destination: "folder" }, f.destinations);
+
+  assert.equal(path.dirname(result.path), f.exports);
+  assert.equal(await permissions(), before);
+  await assertOwnerOnly(result.path, 0o700);
 });
 
 test("unknown destinations and targets are rejected before anything is prepared", async (t) => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -69,13 +69,15 @@ test("the draft describes the recording, numbers its frames after the screenshot
   const { bundle } = await videoBundle(t);
   const draft = contextDocument(bundle);
   assert.match(draft, /Instant replay: 30\.0 s of the display, starting 2026-10-29T10:00:00Z/);
+  assert.match(draft, process.platform === "win32" ? /Visible pixels can include Capture Studio's own windows/ : /Capture Studio's own windows are not recorded/);
   assert.match(draft, /Key frames attached as images 2–7, at \+0\.0 s, \+5\.0 s, \+10\.0 s, \+15\.0 s, \+20\.0 s, \+25\.0 s\./);
   assert.match(draft, /The full MP4 stays on the user's Mac and is not attached/);
   assert.match(draft, /Clicked button "Pay" in Chrome \(\+12\.4 s in instant replay\)/);
   assert.match(draft, /Switched to Finder\n|Switched to Finder$/m, "events outside the recording get no offset");
   assert.ok(!draft.includes("replay.mp4"), "local paths stay out of the context document");
   const lean = draftText(bundle, "Payment spinner never stops", "/captures/bundle-context.md");
-  assert.match(lean, /- Instant replay: \/.*replay\.mp4 · 30\.0 s of the display · key frames attached as images 2–7: /);
+  const replay = lean.match(/- Instant replay: (.+?) · 30\.0 s of the display · key frames attached as images 2–7: /);
+  assert.ok(replay && path.isAbsolute(replay[1]) && path.basename(replay[1]) === "replay.mp4", "the draft gives the absolute recording path");
   assert.match(lean, /- Full context \(.*steps 2.*recording timelines\): \/captures\/bundle-context\.md/);
   const { bundle: recording } = await videoBundle(t, { source: "recording", frames: [] });
   assert.match(contextDocument(recording), /Screen recording: 30\.0 s[\s\S]*No key frames were extracted/);
@@ -84,7 +86,8 @@ test("the draft describes the recording, numbers its frames after the screenshot
 test("Markdown links the recording and the folder export copies it with its frames", async (t) => {
   const { directory, bundle } = await videoBundle(t);
   const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "note", requestID: randomUUID() });
-  assert.match(copied.text, /^- Instant replay: 30\.0 s of the display · `\/[^`]*\/capture-studio-video-[^/]+\/replay\.mp4`$/m);
+  const linked = copied.text.match(/^- Instant replay: 30\.0 s of the display · `([^`]+)`$/m);
+  assert.ok(linked && path.isAbsolute(linked[1]) && path.basename(linked[1]) === "replay.mp4" && linked[1].includes(`${path.sep}capture-studio-video-`), "markdown links the absolute recording");
   assert.match(copied.text, /^Full context: `[^`]+-context\.md`$/m);
   assert.ok(!copied.text.includes("<appshot"), "clipboard summary leaves the full context in the file");
   assert.equal(copied.message, "Copied Markdown with 1 screenshot path and the recording path.");
@@ -100,7 +103,7 @@ test("Markdown links the recording and the folder export copies it with its fram
   const readme = await readFile(path.join(result.path, "README.md"), "utf8");
   assert.match(readme, /\[Open the MP4\]\(<recording\.mp4>\)/);
   assert.match(readme, /!\[Frame at \+25\.0 s\]\(<recording-frame-6\.png>\)/);
-  assert.match(markdownBundle(bundle, "n", () => "s.png"), new RegExp(`<\\/[^>]*${path.basename(directory)}\\/replay-frame-0\\.png>`), "clipboard Markdown uses absolute local frame paths");
+  assert.ok(markdownBundle(bundle, "n", () => "s.png").includes(`<${await realpath(path.join(directory, "replay-frame-0.png"))}>`), "clipboard Markdown uses absolute local frame paths");
 });
 
 test("several clips share six key frames, describe what they recorded and skip paused time", async (t) => {

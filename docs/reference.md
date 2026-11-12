@@ -9,13 +9,14 @@ On top of Appshots it adds destinations, bundles, context preview and recent cap
 
 A plugin for OpenCode V2. Captures one app window and the accessibility
 text from that same window, then returns both as native model-visible tool content.
-Supports macOS 14+ and an initial Windows 10/11 implementation. Requires a model
-that accepts images. The macOS implementation was verified against OpenCode 2.0.24;
-native Windows behavior still needs validation on a Windows desktop.
+Supports macOS 14+ and Windows 10/11. Requires a model that accepts images. The
+macOS implementation was verified against OpenCode 2.0.24; native Windows desktop
+behavior still needs validation on a Windows desktop.
 
 **Windows:** see [Windows setup and validation](windows.md). The instructions
-below describe macOS unless noted. Windows supports capture, UI Automation text,
-a tray shortcut, annotation editing, and best-effort draft insertion.
+below describe macOS unless noted. Windows has the capture picker, composer,
+destinations, context review, skill mentions, recent captures, annotation editing,
+screen recording, instant replay, clip trim, recent clicks, custom logs, and best-effort draft handoff.
 
 ## Installation
 
@@ -355,9 +356,33 @@ under the local captures folder's `composers/` directory. Do not share these fil
 Plugin cleanup closes the endpoint and removes its descriptor. Stale descriptors
 left after a crash are ignored when they cannot authenticate/connect.
 
-This composer is **macOS-only**. Windows retains its existing insertion workflow.
+Windows uses the same bridge and a WinForms composer: capture picker, destinations,
+context review that shows console messages, failed requests, and steps as cards, closes when Context is chosen again or the composer is clicked, and keeps the first 200 console and network rows and the newest steps, prefixes, skill mentions, recent captures listed to the left of the composer (choosing Recents again, Escape, or a click on the composer closes the list) with a thumbnail that leaves the open bundle alone, a selected-screenshot
+outline when more than one image is attached, a right-click menu to copy, share, or show a screenshot or recording without sending the draft, thumbnail hover text that names the app or clip, a composer that opens centered above the bottom of the screen, highlighted known @mentions, a Context hover list, Application log errors and faults for a native app from the last 5 minutes, browser console and failed requests collected after the composer opens, annotation editing with
+a floating toolbar, inline text, crop, and copy, screen recording, instant replay, clip trim with hover text for the handles, events, and buttons, and best-effort draft
+handoff. Cancelling the chooser, composer, or a standalone annotation returns to the previous app. Copy does too. OpenCode and Save to folder keep those windows in front. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. Hovering it names capture, recording, or instant replay, and a failed insert says the capture was saved. The tray's **Context sources**
+menu can keep the last 10 minutes of clicks and app switches, and can tail up to
+4 log files (64 KB each) when you capture. Both are off until you choose them.
+**Recent bundles** reopens a saved capture, and **Default destination** is the
+destination the composer selects next. **Insert latest capture** pastes the saved
+capture. **Capture, annotate, and insert** and **Capture and insert without
+annotation** capture the focused window. A screen recording also
+records scrolls, drags, selected text, and which field was typed into; the key
+itself is never stored. Instant replay is off by default.
+It samples the display under the pointer at 8 frames per second into memory (30
+seconds, 150 MB) and writes an MP4 only after a capture is confirmed. Capture Studio
+windows set display affinity so capture APIs that honor it leave them out. The
+recording bar and area outline are also hidden for each frame grab. Click a clip to review it:
+yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
+clip** writes a new MP4 beside the original and takes key frames from the selection.
+**Connect browser extension…** registers the same extension with Chrome, Chrome
+Canary, Brave, Edge, Arc and Chromium. The host and the helper use a named pipe and accept only
+this `Appshots.exe`. **Dictate** uses a Windows speech language installed on this PC. It does not save
+audio and it does not call a cloud recognizer. The capture chooser closes when another application comes forward. **Show composer button while capturing** skips the
+chooser and opens an empty composer. Recent bundles in the tray are listed by when they were created. **Local secret-check model…** accepts only
+`http://127.0.0.1`, `localhost`, or `::1`. The frosted macOS composer stays on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
-contract tests or Swift type-checking does not verify native interaction.
+contract tests or a successful build does not verify native interaction.
 
 ### Existing draft-insertion workflow
 
