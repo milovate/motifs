@@ -154,3 +154,14 @@ platform, version, and SHA-256 checksum. Run the Windows desktop checks in
 [docs/windows.md](docs/windows.md) with the resulting Windows package.
 From a checkout of the same commit, run `npm run release:verify -- <macOS check directory> <Windows check directory>`
 to confirm both reports and ZIPs match that commit and version.
+
+Once the desktop checks pass, run `npm run release:check -- --sign` on each
+platform to sign the helper before packaging. On macOS, set
+`MOTIFS_MACOS_TEAM_ID`, `MOTIFS_MACOS_SIGNING_IDENTITY` to the Developer ID
+Application identity, and `MOTIFS_MACOS_NOTARY_PROFILE` to an existing
+`notarytool` keychain profile. On Windows, put the Windows SDK's `signtool.exe`
+on `PATH` and set `MOTIFS_WINDOWS_SIGNING_THUMBPRINT` to the local certificate's
+thumbprint and `MOTIFS_WINDOWS_TIMESTAMP_URL` to its RFC 3161 timestamp service.
+The command checks signatures after extracting the ZIP and records `signed: true`
+in the report after those checks pass. Pass `--signed` before the two directories
+when running `npm run release:verify` to require signed reports for both packages.

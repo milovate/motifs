@@ -12,6 +12,9 @@ if (!mac && !windows) throw new Error("Run the release check on Apple Silicon ma
 const platform = mac ? "macos-arm64" : "windows-x64";
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error("Run npm run release:check.");
+const args = process.argv.slice(2);
+const sign = args[0] === "--sign";
+if (args.length !== (sign ? 1 : 0)) throw new Error("Use npm run release:check -- --sign to sign the test package.");
 
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const scratch = mkdtempSync(path.join(tmpdir(), "motifs-release-check-"));
@@ -31,6 +34,8 @@ try {
   runNpm("ci", "--ignore-scripts");
   runNpm("run", "build");
   runNpm("test");
+  const signer = path.join(checkout, "scripts", "sign-release.js");
+  if (sign) execFileSync(process.execPath, [signer], { cwd: checkout, env, stdio: "inherit" });
   runNpm("run", "package:local");
 
   const filename = `motifs-${version}-${platform}.zip`;
@@ -47,12 +52,13 @@ try {
   }
   const verifier = path.join(checkout, "scripts", "check-build-version.js");
   execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
+  if (sign) execFileSync(process.execPath, [signer, packageRoot], { cwd: checkout, env, stdio: "inherit" });
   const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
   const dist = path.join(root, "dist");
   mkdirSync(dist, { recursive: true });
   reportDirectory = mkdtempSync(path.join(dist, `check-${commit.slice(0, 12)}-${platform}-`));
   copyFileSync(archive, path.join(reportDirectory, filename));
-  const report = { commit, version, platform, archive: filename, sha256 };
+  const report = { commit, version, platform, archive: filename, sha256, signed: sign };
   writeFileSync(path.join(reportDirectory, "release-check.json"), JSON.stringify(report, null, 2) + "\n");
 } catch (error) {
   if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true });

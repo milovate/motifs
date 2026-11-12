@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const inputs = process.argv.slice(2);
+const args = process.argv.slice(2);
+const requireSigned = args[0] === "--signed";
+const inputs = requireSigned ? args.slice(1) : args;
 if (inputs.length !== 2) {
-  throw new Error("Run npm run release:verify -- <macOS check directory> <Windows check directory>.");
+  throw new Error("Run npm run release:verify -- [--signed] <macOS check directory> <Windows check directory>.");
 }
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -24,6 +26,7 @@ for (const directory of inputs) {
   if (report.commit !== commit || report.version !== version) {
     throw new Error(`${report.platform} reports ${report.version} at ${report.commit}, expected ${version} at ${commit}.`);
   }
+  if (requireSigned && report.signed !== true) throw new Error(`${report.platform} has no signed release report.`);
   const expectedArchive = `motifs-${version}-${report.platform}.zip`;
   if (report.archive !== expectedArchive) throw new Error(`Expected archive ${expectedArchive}.`);
   const archive = path.join(directory, expectedArchive);
