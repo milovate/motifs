@@ -35,12 +35,18 @@ try {
 
   const filename = `motifs-${version}-${platform}.zip`;
   const archive = path.join(checkout, "dist", filename);
+  const unpacked = path.join(scratch, "unpacked");
+  const packageRoot = path.join(unpacked, "motifs");
+  mkdirSync(unpacked);
   if (mac) {
-    const unpacked = path.join(scratch, "unpacked");
     execFileSync("/usr/bin/ditto", ["-x", "-k", archive, unpacked], { stdio: "inherit" });
-    const bundle = path.join(unpacked, "motifs", "Capture Studio.app");
+    const bundle = path.join(packageRoot, "Capture Studio.app");
     execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle], { stdio: "inherit" });
+  } else {
+    execFileSync("tar.exe", ["-xf", archive, "-C", unpacked], { stdio: "inherit" });
   }
+  const verifier = path.join(checkout, "scripts", "check-build-version.js");
+  execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
   const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
   const dist = path.join(root, "dist");
   mkdirSync(dist, { recursive: true });
