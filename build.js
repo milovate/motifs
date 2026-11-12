@@ -1,16 +1,27 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const { version, macosBuildNumber } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+  throw new Error("Set package.json version to a numeric major.minor.patch version.");
+}
 if (process.platform === "win32") {
-  execFileSync("dotnet", ["publish", path.join(root, "windows/Appshots.csproj"), "-c", "Release", "-o", path.join(root, "windows/dist")], { stdio: "inherit" });
+  execFileSync("dotnet", [
+    "publish", path.join(root, "windows/Appshots.csproj"),
+    "-c", "Release", "-o", path.join(root, "windows/dist"),
+    `-p:Version=${version}`, "-p:IncludeSourceRevisionInInformationalVersion=false",
+  ], { stdio: "inherit" });
   console.log("Built Windows helper in windows/dist");
   process.exit(0);
 }
 if (process.platform !== "darwin") throw new Error("Build Appshots on macOS or Windows.");
+if (!Number.isSafeInteger(macosBuildNumber) || macosBuildNumber < 1) {
+  throw new Error("Set package.json macosBuildNumber to a positive integer.");
+}
 const app = path.join(root, "Capture Studio.app");
 mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
 const resources = path.join(app, "Contents/Resources");
@@ -34,8 +45,8 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <key>CFBundleExecutable</key><string>CaptureStudio</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.3</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>${version}</string>
+<key>CFBundleVersion</key><string>${macosBuildNumber}</string>
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSScreenCaptureUsageDescription</key><string>Capture a single app window when you request a capture.</string>

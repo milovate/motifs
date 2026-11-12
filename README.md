@@ -132,3 +132,9 @@ You can set plugin options in the OpenCode configuration.
 The build makes `Capture Studio.app` and signs it ad hoc. A new build can
 cancel the macOS permissions. Refer to [INSTALL.md](INSTALL.md) before you
 rebuild an installed helper.
+
+For a release PR, run `npm version X.Y.Z --no-git-tag-version` to update
+`package.json` and `package-lock.json` together. Increase `macosBuildNumber`
+in `package.json` above the previous macOS release build number. After building
+on macOS or Windows, run `npm run verify:version` to check the helper's metadata
+against `package.json`.

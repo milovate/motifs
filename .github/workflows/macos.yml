@@ -20,4 +20,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: codesign --verify --deep --strict "Capture Studio.app"
+      - run: npm run verify:version
       - run: npm test

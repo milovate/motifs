@@ -1,12 +1,14 @@
 {
   "name": "opencode-appshots-local",
   "version": "0.4.3",
+  "macosBuildNumber": 9,
   "private": true,
   "type": "module",
   "main": "./index.js",
   "exports": "./index.js",
   "scripts": {
     "build": "node build.js",
+    "verify:version": "node scripts/check-build-version.js",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
