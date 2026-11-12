@@ -11,6 +11,16 @@ export function platformConfig(platform = process.platform, env = process.env, h
   };
 }
 
+export function releaseTarget(platform = process.platform, arch = process.arch) {
+  if (platform === "darwin" && arch === "arm64") return "macos-arm64";
+  if (platform === "win32" && arch === "x64") return "windows-x64";
+  return undefined;
+}
+
+export function releaseArchiveName(version, target) {
+  return `motifs-${version}-${target}.zip`;
+}
+
 export function helperCommand(root, config, action, args = []) {
   const flags = [`--${action}`, "--output", config.captures, ...args];
   if (config.platform === "win32") {

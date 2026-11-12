@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { releaseArchiveName } from "../platform.js";
 
 const args = process.argv.slice(2);
 const requireSigned = args[0] === "--signed";
@@ -20,19 +21,23 @@ const verified = new Set();
 
 for (const directory of inputs) {
   const report = JSON.parse(readFileSync(path.join(directory, "release-check.json"), "utf8"));
-  if (!platforms.includes(report.platform) || verified.has(report.platform)) {
-    throw new Error(`Expected one macOS arm64 and one Windows x64 report. Unexpected platform ${report.platform}.`);
+  if (!platforms.includes(report.target) || verified.has(report.target)) {
+    throw new Error(`Expected one macOS arm64 and one Windows x64 report. Unexpected platform ${report.target}.`);
   }
   if (report.commit !== commit || report.version !== version) {
-    throw new Error(`${report.platform} reports ${report.version} at ${report.commit}, expected ${version} at ${commit}.`);
+    throw new Error(`${report.target} reports ${report.version} at ${report.commit}, expected ${version} at ${commit}.`);
   }
-  if (requireSigned && report.signed !== true) throw new Error(`${report.platform} has no signed release report.`);
-  const expectedArchive = `motifs-${version}-${report.platform}.zip`;
+  if (report.tests?.fail !== 0 || !Number.isInteger(report.tests.pass) || report.tests.pass < 1 ||
+      report.tests.pass + report.tests.skipped !== report.tests.tests) {
+    throw new Error(`${report.target} has no passing test summary.`);
+  }
+  if (requireSigned && report.signed !== true) throw new Error(`${report.target} has no signed release report.`);
+  const expectedArchive = releaseArchiveName(version, report.target);
   if (report.archive !== expectedArchive) throw new Error(`Expected archive ${expectedArchive}.`);
   const archive = path.join(directory, expectedArchive);
   const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
   if (sha256 !== report.sha256) throw new Error(`${expectedArchive} does not match its recorded SHA-256 checksum.`);
-  verified.add(report.platform);
+  verified.add(report.target);
 }
 
 console.log(`Verified both Motifs ${version} packages at commit ${commit}.`);

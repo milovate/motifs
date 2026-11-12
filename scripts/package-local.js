@@ -2,21 +2,22 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { releaseArchiveName, releaseTarget } from "../platform.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-const mac = process.platform === "darwin" && process.arch === "arm64";
-const windows = process.platform === "win32" && process.arch === "x64";
-if (!mac && !windows) {
+const target = releaseTarget();
+if (!target) {
   throw new Error("Package Motifs on Apple Silicon macOS or x64 Windows.");
 }
+const mac = target === "macos-arm64";
 
 const files = execFileSync("git", [
   "ls-files", "-z", "--", ":(top,glob)*.js", "package.json", "package-lock.json",
   "README.md", "INSTALL.md", "docs/", "browser-extension/",
 ], { cwd: root, encoding: "utf8" }).split("\0").filter(file => file && file !== "build.js");
 const output = path.join(root, "dist");
-const filename = `motifs-${version}-${mac ? "macos-arm64" : "windows-x64"}.zip`;
+const filename = releaseArchiveName(version, target);
 mkdirSync(output, { recursive: true });
 const staging = mkdtempSync(path.join(output, ".motifs-"));
 const plugin = path.join(staging, "motifs");
