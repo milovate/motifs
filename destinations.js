@@ -154,7 +154,6 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
     async prepare(bundle, chosen, request) {
       if (chosen.id !== target.id) throw new Error("Unknown export folder.");
       await mkdir(exportRoot, { recursive: true, mode: 0o700 });
-      await ownerOnly(exportRoot, { directory: true });
       const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
       const slug = request.note.trim().split("\n")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "capture";
       const folder = path.join(exportRoot, `${stamp} ${slug} ${request.requestID.slice(-8)}`);

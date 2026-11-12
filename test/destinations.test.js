@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, writeFile, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, writeFile, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -153,6 +154,25 @@ test("Save to folder writes an owner-only, self-contained export without private
   assert.ok(!raw.includes(f.directory), "exports must not leak the private captures folder");
   assert.match(await readFile(path.join(result.path, "README.md"), "utf8"), /!\[Screenshot 1\]\(<screenshot-1\.png>\)/);
   assert.equal(f.created.length, 0);
+});
+
+test("Save to folder preserves permissions on an existing export root", async (t) => {
+  const f = await fixture(t);
+  await mkdir(f.exports);
+  if (process.platform !== "win32") await chmod(f.exports, 0o750);
+  const permissions = async () => {
+    if (process.platform === "win32") {
+      return execFileSync("icacls", [f.exports], { encoding: "utf8", windowsHide: true });
+    }
+    return (await stat(f.exports)).mode & 0o777;
+  };
+  const before = await permissions();
+
+  const result = await submitComposer(f.ctx, f.directory, { ...f.input, destination: "folder" }, f.destinations);
+
+  assert.equal(path.dirname(result.path), f.exports);
+  assert.equal(await permissions(), before);
+  await assertOwnerOnly(result.path, 0o700);
 });
 
 test("unknown destinations and targets are rejected before anything is prepared", async (t) => {
