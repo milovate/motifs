@@ -144,3 +144,10 @@ to make a versioned ZIP in `dist/` for Apple Silicon macOS or x64 Windows.
 The ZIP contains the OpenCode plugin and its native helper. The local macOS
 build uses ad hoc signing. See [INSTALL.md](INSTALL.md#9-procedure-update-the-plugin)
 for how to upgrade a ZIP installation.
+
+Run `npm run release:check` on Apple Silicon macOS and x64 Windows to check a
+release candidate locally. Check out the same commit on both machines. The
+command builds, tests, and packages `HEAD` in a temporary checkout. Each run
+saves the ZIP and a `release-check.json` report in `dist/` with the commit,
+platform, version, and SHA-256 checksum. Run the Windows desktop checks in
+[docs/windows.md](docs/windows.md) with the resulting Windows package.
