@@ -37,7 +37,7 @@ open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
 Finder reveals **Capture Studio.app**. The app's display name is **Motifs**.
 Keep it inside the plugin directory.
 
-From the Motifs menu bar, choose **Permission setup**. Select **Settings** next to
+From the Motifs menu bar, choose **Permission setup**. Select **Set up** next to
 the permission you want. Drag the Motifs app tile into the permission list, then
 turn it on. If it is already listed, use its switch.
 You can also choose **Show in Finder** and add the app with **+** in System

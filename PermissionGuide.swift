@@ -19,7 +19,7 @@ enum CapturePermission: Int, CaseIterable {
     var detail: String {
         switch self {
         case .screenRecording: return "Screenshots and recordings"
-        case .accessibility: return "Window text and drafts · Optional"
+        case .accessibility: return "Optional · Window text and drafts"
         }
     }
     var settingsURL: URL {
@@ -36,8 +36,7 @@ enum CapturePermission: Int, CaseIterable {
     private var window: NSWindow?
     private var panel: NSPanel?
     private var tile: PermissionAppTile?
-    private var buttons: [NSButton] = []
-    private var statuses: [NSTextField] = []
+    private var buttons: [ComposerButton] = []
     private var notice: NSTextField?
     private var selected: CapturePermission?
     private var timer: Timer?
@@ -48,8 +47,14 @@ enum CapturePermission: Int, CaseIterable {
         if window == nil { makeWindow() }
         refresh()
         NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
-        if let permission { window?.makeFirstResponder(buttons[permission.rawValue]) }
+        if let window {
+            if window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                window.present { window.makeKeyAndOrderFront(nil) }
+            }
+            if let permission { window.makeFirstResponder(buttons[permission.rawValue]) }
+        }
         if timer == nil {
             timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
@@ -65,72 +70,74 @@ enum CapturePermission: Int, CaseIterable {
     }
 
     private func makeWindow() {
-        let setup = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 223),
-                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let frame = NSRect(x: 0, y: 0, width: 340, height: 164)
+        let setup = ComposerPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         setup.title = "Motifs Permissions"
-        setup.titleVisibility = .hidden
-        setup.titlebarAppearsTransparent = true
         setup.identifier = NSUserInterfaceItemIdentifier("capture-studio-permissions")
         setup.isReleasedWhenClosed = false
+        setup.hidesOnDeactivate = false
+        setup.isOpaque = false
+        setup.backgroundColor = .clear
+        setup.hasShadow = true
+        setup.isMovableByWindowBackground = true
         setup.delegate = self
         setup.center()
-        guard let content = setup.contentView else { return }
-        let logo = NSImageView(frame: NSRect(x: 16, y: 172, width: 40, height: 40))
+        let content = ComposerSurface(frame: frame, radius: CornerRadius.pill)
+        setup.contentView = content
+        let logo = NSImageView(frame: NSRect(x: 11, y: 129, width: 24, height: 24))
         logo.image = motifsIcon()
         content.addSubview(logo)
-        let heading = label("Motifs Permissions", size: 21, weight: .semibold)
-        heading.frame = NSRect(x: 64, y: 176, width: 330, height: 32)
+        let heading = label("Motifs Permissions", size: 14, weight: .semibold)
+        heading.frame = NSRect(x: 42, y: 131, width: 243, height: 19)
         content.addSubview(heading)
+        let close = ComposerButton(symbol: "xmark")
+        close.target = setup
+        close.action = #selector(NSWindow.performClose(_:))
+        close.frame = NSRect(x: 303, y: 128, width: 25, height: 25)
+        close.setAccessibilityLabel("Close permissions")
+        close.toolTip = "Close"
+        content.addSubview(close)
 
-        let card = NSBox(frame: NSRect(x: 20, y: 45, width: 380, height: 116))
-        card.boxType = .custom
-        card.cornerRadius = CornerRadius.popup
-        card.fillColor = .controlBackgroundColor
-        card.borderColor = .separatorColor
-        content.addSubview(card)
-        let divider = NSBox(frame: NSRect(x: 44, y: 57, width: 322, height: 1))
-        divider.boxType = .separator
-        card.addSubview(divider)
+        for y in [122, 78] {
+            let divider = NSBox(frame: NSRect(x: 14, y: y, width: 312, height: 1))
+            divider.boxType = .separator
+            content.addSubview(divider)
+        }
 
         for permission in CapturePermission.allCases {
-            let y = 58 - CGFloat(permission.rawValue) * 58
-            let icon = NSImageView(frame: NSRect(x: 14, y: y + 18, width: 20, height: 20))
+            let y = 78 - CGFloat(permission.rawValue) * 44
+            let icon = NSImageView(frame: NSRect(x: 15, y: y + 13, width: 17, height: 17))
             icon.image = NSImage(systemSymbolName: permission.symbol, accessibilityDescription: nil)
             icon.contentTintColor = .secondaryLabelColor
-            card.addSubview(icon)
-            let title = label(permission.title, size: 14, weight: .semibold)
-            title.frame = NSRect(x: 46, y: y + 30, width: 177, height: 18)
-            card.addSubview(title)
-            let status = label("", size: 11, weight: .medium, color: .secondaryLabelColor)
-            status.alignment = .right
-            status.frame = NSRect(x: 232, y: y + 20, width: 42, height: 16)
-            card.addSubview(status)
-            statuses.append(status)
+            content.addSubview(icon)
+            let title = label(permission.title, size: 12, weight: .semibold)
+            title.frame = NSRect(x: 43, y: y + 23, width: 175, height: 16)
+            content.addSubview(title)
             let detail = label(permission.detail, size: 11, color: .secondaryLabelColor)
-            detail.frame = NSRect(x: 46, y: y + 12, width: 181, height: 16)
-            card.addSubview(detail)
+            detail.frame = NSRect(x: 43, y: y + 7, width: 183, height: 15)
+            content.addSubview(detail)
 
-            let button = NSButton(title: "Settings", target: self, action: #selector(openSettings(_:)))
-            button.bezelStyle = .rounded
-            button.controlSize = .small
-            button.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-            button.frame = NSRect(x: 286, y: y + 15, width: 83, height: 28)
+            let button = ComposerButton()
+            button.target = self
+            button.action = #selector(openSettings(_:))
+            button.frame = NSRect(x: 244, y: y + 8, width: 82, height: 28)
             button.tag = permission.rawValue
-            button.setAccessibilityLabel("Open \(permission.title) settings")
-            card.addSubview(button)
+            button.toolTip = "Open \(permission.title) settings"
+            content.addSubview(button)
             buttons.append(button)
         }
 
         let notice = NSTextField(wrappingLabelWithString: "")
         notice.font = .systemFont(ofSize: 11)
         notice.textColor = .secondaryLabelColor
-        notice.frame = NSRect(x: 20, y: 8, width: 264, height: 30)
+        notice.frame = NSRect(x: 14, y: 3, width: 209, height: 28)
         content.addSubview(notice)
         self.notice = notice
         if appURL.pathExtension == "app" {
-            let reveal = NSButton(title: "Show in Finder", target: self, action: #selector(revealApp))
-            reveal.bezelStyle = .inline
-            reveal.frame = NSRect(x: 289, y: 12, width: 111, height: 22)
+            let reveal = ComposerButton("Show in Finder")
+            reveal.target = self
+            reveal.action = #selector(revealApp)
+            reveal.frame = NSRect(x: 224, y: 5, width: 108, height: 25)
             content.addSubview(reveal)
         }
         window = setup
@@ -154,7 +161,7 @@ enum CapturePermission: Int, CaseIterable {
     }
 
     private func makeGuide(for permission: CapturePermission) {
-        let size = NSSize(width: 368, height: 113)
+        let size = NSSize(width: 340, height: 100)
         let guide = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         guide.title = "Add Motifs"
@@ -167,23 +174,24 @@ enum CapturePermission: Int, CaseIterable {
         guide.backgroundColor = .clear
         guide.hasShadow = true
         guide.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let content = ComposerSurface(frame: NSRect(origin: .zero, size: size))
+        let content = ComposerSurface(frame: NSRect(origin: .zero, size: size), radius: CornerRadius.pill)
         guide.contentView = content
         let instruction = label("Drag into \(permission.title), then turn it on.", size: 12, weight: .medium)
-        instruction.frame = NSRect(x: 14, y: 80, width: 310, height: 18)
+        instruction.frame = NSRect(x: 14, y: 73, width: 286, height: 18)
         content.addSubview(instruction)
-        let close = NSButton(title: "×", target: self, action: #selector(dismissGuide))
-        close.isBordered = false
-        close.font = .systemFont(ofSize: 20)
+        let close = ComposerButton(symbol: "xmark")
+        close.target = self
+        close.action = #selector(dismissGuide)
         close.setAccessibilityLabel("Close permission guide")
-        close.frame = NSRect(x: 330, y: 75, width: 24, height: 27)
+        close.frame = NSRect(x: 303, y: 70, width: 25, height: 25)
         content.addSubview(close)
 
-        let tile = PermissionAppTile(frame: NSRect(x: 14, y: 31, width: 340, height: 42), appURL: appURL)
+        let tile = PermissionAppTile(frame: NSRect(x: 14, y: 27, width: 312, height: 40), appURL: appURL)
         content.addSubview(tile)
-        let reveal = NSButton(title: "Show in Finder", target: self, action: #selector(revealApp))
-        reveal.bezelStyle = .inline
-        reveal.frame = NSRect(x: 246, y: 7, width: 108, height: 20)
+        let reveal = ComposerButton("Show in Finder")
+        reveal.target = self
+        reveal.action = #selector(revealApp)
+        reveal.frame = NSRect(x: 224, y: 3, width: 108, height: 22)
         content.addSubview(reveal)
         self.tile = tile
         panel = guide
@@ -192,9 +200,16 @@ enum CapturePermission: Int, CaseIterable {
     private func refresh() {
         for permission in CapturePermission.allCases {
             let granted = permission.granted
-            let status = statuses[permission.rawValue]
-            status.stringValue = granted ? "✓ On" : "Off"
-            status.textColor = granted ? .systemGreen : .secondaryLabelColor
+            let button = buttons[permission.rawValue]
+            let title = granted ? "On" : "Set up"
+            if button.title != title {
+                button.title = title
+                button.symbolName = granted ? "checkmark" : "arrow.up.right"
+                button.treatment = !granted && permission == .screenRecording ? .primary : .chip
+                button.setAccessibilityLabel(granted
+                    ? "\(permission.title) is on. Open settings."
+                    : "Set up \(permission.title)")
+            }
         }
         guard let selected, let panel else { return }
         if selected.granted {
@@ -223,7 +238,8 @@ enum CapturePermission: Int, CaseIterable {
                 if animate {
                     tile?.animateArrival()
                     NSAnimationContext.runAnimationGroup { animation in
-                        animation.duration = 0.2
+                        animation.duration = 0.18
+                        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
                         panel.animator().alphaValue = 1
                     }
                 }
@@ -296,8 +312,8 @@ enum CapturePermission: Int, CaseIterable {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlAccentColor.withAlphaComponent(0.11).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: CornerRadius.control, yRadius: CornerRadius.control).fill()
-        icon.draw(in: NSRect(x: 9, y: 7, width: 30, height: 30))
-        ("Motifs" as NSString).draw(at: NSPoint(x: 48, y: 13), withAttributes: [
+        icon.draw(in: NSRect(x: 8, y: 5, width: 30, height: 30))
+        ("Motifs" as NSString).draw(at: NSPoint(x: 45, y: 12), withAttributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.labelColor,
         ])
         let grip = NSBezierPath()
@@ -330,7 +346,7 @@ enum CapturePermission: Int, CaseIterable {
 
     func animateArrival() {
         let rise = CASpringAnimation(keyPath: "transform.translation.y")
-        rise.fromValue = -24
+        rise.fromValue = -12
         rise.toValue = 0
         rise.damping = 16
         rise.stiffness = 180
