@@ -441,7 +441,7 @@ Add **Capture Studio.app** (inside this plugin folder) to these macOS settings:
 macOS may attribute a command-line capture to **OpenCode** or the terminal used
 to launch it; grant the responsible app shown by macOS. Restart OpenCode after
 granting access. The helper checks access; it never grants permissions itself.
-To restart this helper after a permission change, choose **Quit Capture Studio** and
+To restart this helper after a permission change, choose **Quit Motifs** and
 run `/capture-studio-start`. You can also open the bundled .app directly.
 The helper is ad-hoc signed with the hardened runtime, so other processes cannot
 inject libraries into it to borrow these grants.
@@ -507,7 +507,7 @@ are forwarded to that helper when it is running, so closing an editor does not
 leave a second helper instance or block the next capture. Disable its automatic start
 by configuring this plugin with `{ "hotkey": false }` in its OpenCode options;
 named-app capture remains available. The menu-bar helper stays available across
-plugin reloads until you choose **Quit Capture Studio**. This avoids losing the global
+plugin reloads until you choose **Quit Motifs**. This avoids losing the global
 shortcut when multiple OpenCode projects load the plugin at once. If you quit it
 from the menu, run `/capture-studio-start` to restart it. Reopening the OpenCode window
 alone may reuse its existing server and does not necessarily reload the plugin.

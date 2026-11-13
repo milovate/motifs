@@ -181,7 +181,7 @@ key event.
 5. Run `npm ci --ignore-scripts`.
 6. Run `npm test`.
 7. Tell the user about the caution for a new build.
-8. Tell the user to choose **Quit Capture Studio** in the menu bar.
+8. Tell the user to choose **Quit Motifs** in the menu bar.
 9. Run `npm run build`.
 10. Reload OpenCode.
 11. Tell the user to run `/capture-studio-start`.
@@ -190,7 +190,7 @@ key event.
 
 ## 10. Procedure: remove the plugin
 
-1. Tell the user to choose **Quit Capture Studio** in the menu bar.
+1. Tell the user to choose **Quit Motifs** in the menu bar.
 2. If the user added a `plugins` entry for Capture Studio, remove only that entry.
 3. Delete the plugin folder.
 4. Ask the user about the captures folder. It contains screenshots, window text

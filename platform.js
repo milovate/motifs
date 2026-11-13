@@ -2,7 +2,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 
 export function platformConfig(platform = process.platform, env = process.env, home = homedir()) {
-  if (!["darwin", "win32"].includes(platform)) throw new Error("Capture Studio requires macOS 14+ or Windows 10/11 (a local desktop session, not WSL).");
+  if (!["darwin", "win32"].includes(platform)) throw new Error("Motifs requires macOS 14+ or Windows 10/11 (a local desktop session, not WSL).");
   const base = env.XDG_DATA_HOME || (platform === "win32" ? env.LOCALAPPDATA || path.join(home, "AppData", "Local") : path.join(home, ".local/share"));
   return {
     platform,

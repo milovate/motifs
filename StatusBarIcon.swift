@@ -56,6 +56,6 @@ enum AppshotStatusIcon { case ready, success, warning, replay, recording }
         return true
     }
     image.isTemplate = true
-    image.accessibilityDescription = "Capture Studio — capture and compose"
+    image.accessibilityDescription = "Motifs — capture and compose"
     return image
 }

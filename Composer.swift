@@ -986,7 +986,7 @@ struct ComposerEndpoint: Decodable {
 
     func loadSkills() {
         guard let endpoint = selectedEndpoint else {
-            status.stringValue = endpoints.isEmpty ? "Open a project in OpenCode with the Capture Studio plugin loaded." : "\(selectedDestination?.label ?? "This destination") is not available right now."
+            status.stringValue = endpoints.isEmpty ? "Open a project in OpenCode with the Motifs plugin loaded." : "\(selectedDestination?.label ?? "This destination") is not available right now."
             refreshSendAvailability()
             return
         }

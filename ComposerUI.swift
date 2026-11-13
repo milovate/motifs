@@ -6,8 +6,8 @@ import AppKit
     guard NSApp.mainMenu == nil else { return }
     let menu = NSMenu()
     let application = NSMenuItem()
-    application.submenu = NSMenu(title: "Capture Studio")
-    application.submenu?.addItem(NSMenuItem(title: "Quit Capture Studio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+    application.submenu = NSMenu(title: "Motifs")
+    application.submenu?.addItem(NSMenuItem(title: "Quit Motifs", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
     menu.addItem(application)
     let entry = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
     let edit = NSMenu(title: "Edit")
