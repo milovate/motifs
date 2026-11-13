@@ -75,6 +75,7 @@ struct Appshots {
     let contextMenu = NSMenu(title: "Context sources")
     let events = UserEventRecorder()
     let replay = ReplayRecorder()
+    let permissionGuide = PermissionGuide()
     var recordItem: NSMenuItem?
     var item: NSStatusItem?
     var hotkey: EventHotKeyRef?
@@ -206,6 +207,7 @@ struct Appshots {
 
     func beginRecording(for composer: AppshotComposer?) {
         guard !replay.recording, !choosingRecording else { composer?.recordingFinished(nil); return }
+        guard requireScreenRecording() else { composer?.recordingFinished(nil); return }
         choosingRecording = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -325,6 +327,7 @@ struct Appshots {
 
     @objc func toggleInstantReplay() {
         let enabled = !CaptureSettings.load(output: output).instantReplay
+        if enabled && !requireScreenRecording() { return }
         updateSettings { $0.instantReplay = enabled }
         Task { @MainActor in
             do { try await replay.setReplay(enabled) } catch {
@@ -356,6 +359,7 @@ struct Appshots {
 
     @objc func composeShot() {
         guard !busy else { raiseEditor(); return }
+        guard requireScreenRecording() else { return }
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -363,7 +367,6 @@ struct Appshots {
         Task { @MainActor in
             defer { busy = false }
             do {
-                guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
                 saveStatus(output: output, phase: "choosing")
                 choosingCapture = true
                 let chosen = await chooseScreenTarget(hint: screenshotHint)
@@ -460,7 +463,7 @@ struct Appshots {
         let enabled = !CaptureSettings.load(output: output).recordClicks
         updateSettings { $0.recordClicks = enabled }
         if enabled { events.start() } else if !events.isRecording { events.stop() }
-        if enabled && !AXIsProcessTrusted() { permissions() }
+        if enabled && !AXIsProcessTrusted() { permissionGuide.show(focusing: .accessibility) }
     }
 
     @objc func addCustomLog() {
@@ -616,6 +619,7 @@ struct Appshots {
 
     func captureAndInsert(annotate: Bool) {
         guard !busy else { raiseEditor(); return }
+        guard requireScreenRecording() else { return }
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -710,12 +714,13 @@ struct Appshots {
 
     @objc func openFolder() { NSWorkspace.shared.open(URL(fileURLWithPath: output)) }
 
-    @objc func permissions() {
-        let alert = NSAlert()
-        alert.messageText = "Capture Studio permissions"
-        alert.informativeText = "In System Settings → Privacy & Security, add Capture Studio to Screen & System Audio Recording and Accessibility. The app is in the Capture Studio plugin folder. After granting permissions, choose Quit Capture Studio, then run /capture-studio-start in OpenCode."
-        alert.runModal()
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+    @objc func permissions() { permissionGuide.show() }
+
+    private func requireScreenRecording() -> Bool {
+        guard !CapturePermission.screenRecording.granted else { return true }
+        saveStatus(output: output, phase: "permission_required", details: ["permission": "screenRecording"])
+        permissionGuide.show(focusing: .screenRecording)
+        return false
     }
 
     @objc func quit() {
@@ -1028,7 +1033,7 @@ func draftContext(_ shot: [String: Any]) -> String {
     return try await capture(choice, output: output)
 }
 
-let screenRecordingRequired = "Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access."
+let screenRecordingRequired = "Screen Recording permission is required. Choose Permission setup in the Capture Studio menu bar, or add Capture Studio.app in System Settings → Privacy & Security → Screen & System Audio Recording. Follow any macOS prompt to quit and reopen the helper."
 let screenshotHint = "Drag an area or click a window · ↩ full screen · esc to cancel"
 
 func isWindowSharingOverlay(_ window: AXUIElement) -> Bool {

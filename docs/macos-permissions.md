@@ -37,6 +37,13 @@ open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
 Finder reveals **Capture Studio.app**. Keep it at the path where it was built:
 the plugin expects the helper inside its own directory.
 
+From the Capture Studio menu bar, choose **Permission setup**. Select **Open
+Settings** next to the permission you want. Drag the Capture Studio app tile into
+the permission list, then turn it on. If it is already listed, use its switch.
+You can also choose **Show in Finder** and add the app with **+** in System
+Settings. Follow any macOS prompt to quit and reopen the helper. The guide
+refreshes the status as macOS makes the grant available.
+
 ## 2. Enable screen capture
 
 1. Open Apple menu → **System Settings** → **Privacy & Security**.
