@@ -10,8 +10,8 @@ enum CapturePermission: Int, CaseIterable {
     var symbol: String { self == .screenRecording ? "rectangle.dashed" : "accessibility" }
     var detail: String {
         switch self {
-        case .screenRecording: return "Required for screenshots and recordings."
-        case .accessibility: return "Optional for capture. Enables window text and OpenCode draft insertion."
+        case .screenRecording: return "Screenshots and recordings"
+        case .accessibility: return "Window text and drafts · Optional"
         }
     }
     var settingsURL: URL {
@@ -57,49 +57,44 @@ enum CapturePermission: Int, CaseIterable {
     }
 
     private func makeWindow() {
-        let setup = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 286),
+        let setup = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 432, height: 174),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         setup.title = "Capture Studio Permissions"
         setup.identifier = NSUserInterfaceItemIdentifier("capture-studio-permissions")
         setup.isReleasedWhenClosed = false
         setup.delegate = self
         setup.center()
-        let content = NSView(frame: setup.contentRect(forFrameRect: setup.frame))
-        let heading = label("Set up permissions", size: 23, weight: .semibold)
-        heading.frame = NSRect(x: 24, y: 233, width: 472, height: 30)
-        content.addSubview(heading)
-        let subtitle = label("Choose which features Capture Studio can use on this Mac.", color: .secondaryLabelColor)
-        subtitle.frame = NSRect(x: 24, y: 207, width: 472, height: 20)
-        content.addSubview(subtitle)
+        guard let content = setup.contentView else { return }
+        let card = NSBox(frame: NSRect(x: 16, y: 47, width: 400, height: 111))
+        card.boxType = .custom
+        card.cornerRadius = CornerRadius.popup
+        card.fillColor = .controlBackgroundColor
+        card.borderColor = .separatorColor
+        content.addSubview(card)
+        let divider = NSBox(frame: NSRect(x: 44, y: 54, width: 341, height: 1))
+        divider.boxType = .separator
+        card.addSubview(divider)
 
         for permission in CapturePermission.allCases {
-            let y = 123 - CGFloat(permission.rawValue) * 73
-            let card = NSBox(frame: NSRect(x: 24, y: y, width: 472, height: 64))
-            card.boxType = .custom
-            card.cornerRadius = 12
-            card.fillColor = .controlBackgroundColor
-            card.borderColor = .separatorColor
-            content.addSubview(card)
-            let icon = NSImageView(frame: NSRect(x: 13, y: 22, width: 23, height: 23))
+            let y = 55 - CGFloat(permission.rawValue) * 55
+            let icon = NSImageView(frame: NSRect(x: 14, y: y + 16, width: 21, height: 21))
             icon.image = NSImage(systemSymbolName: permission.symbol, accessibilityDescription: nil)
             icon.contentTintColor = .controlAccentColor
             card.addSubview(icon)
             let title = label(permission.title, size: 14, weight: .semibold)
-            title.frame = NSRect(x: 46, y: 36, width: 150, height: 18)
+            title.frame = NSRect(x: 46, y: y + 29, width: 193, height: 18)
             card.addSubview(title)
             let status = label("", size: 11, weight: .medium, color: .secondaryLabelColor)
-            status.frame = NSRect(x: 207, y: 37, width: 100, height: 17)
+            status.frame = NSRect(x: 239, y: y + 18, width: 40, height: 16)
             card.addSubview(status)
             statuses.append(status)
-            let detail = NSTextField(wrappingLabelWithString: permission.detail)
-            detail.font = .systemFont(ofSize: 11)
-            detail.textColor = .secondaryLabelColor
-            detail.frame = NSRect(x: 46, y: 6, width: 285, height: 29)
+            let detail = label(permission.detail, size: 11, color: .secondaryLabelColor)
+            detail.frame = NSRect(x: 46, y: y + 11, width: 191, height: 16)
             card.addSubview(detail)
 
             let button = NSButton(title: "Open Settings", target: self, action: #selector(openSettings(_:)))
             button.bezelStyle = .rounded
-            button.frame = NSRect(x: 342, y: 18, width: 118, height: 28)
+            button.frame = NSRect(x: 282, y: y + 12, width: 107, height: 28)
             button.tag = permission.rawValue
             button.setAccessibilityLabel("Open \(permission.title) settings")
             card.addSubview(button)
@@ -109,28 +104,28 @@ enum CapturePermission: Int, CaseIterable {
         let notice = NSTextField(wrappingLabelWithString: "")
         notice.font = .systemFont(ofSize: 11)
         notice.textColor = .secondaryLabelColor
-        notice.frame = NSRect(x: 24, y: 8, width: 340, height: 32)
+        notice.frame = NSRect(x: 16, y: 8, width: 280, height: 30)
         content.addSubview(notice)
         self.notice = notice
         if appURL.pathExtension == "app" {
             let reveal = NSButton(title: "Show in Finder", target: self, action: #selector(revealApp))
-            reveal.bezelStyle = .rounded
-            reveal.frame = NSRect(x: 373, y: 12, width: 123, height: 27)
+            reveal.bezelStyle = .inline
+            reveal.frame = NSRect(x: 305, y: 13, width: 111, height: 22)
             content.addSubview(reveal)
         }
-        setup.contentView = content
         window = setup
     }
 
     @objc private func openSettings(_ sender: NSButton) {
         guard let permission = CapturePermission(rawValue: sender.tag) else { return }
         closeGuide()
+        notice?.stringValue = ""
         guard NSWorkspace.shared.open(permission.settingsURL) else {
-            notice?.stringValue = "Open Privacy & Security in System Settings, then choose \(permission.title)."
+            notice?.stringValue = "Find \(permission.title) in Privacy & Security."
             return
         }
         if permission.granted { return }
-        notice?.stringValue = "If Capture Studio is already enabled, follow any macOS prompt to quit and reopen it."
+        notice?.stringValue = "Quit and reopen if macOS asks."
         guard appURL.pathExtension == "app" else { return }
         selected = permission
         openedAt = Date()
@@ -140,7 +135,7 @@ enum CapturePermission: Int, CaseIterable {
     }
 
     private func makeGuide(for permission: CapturePermission) {
-        let size = NSSize(width: 414, height: 147)
+        let size = NSSize(width: 368, height: 113)
         let guide = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         guide.title = "Add Capture Studio"
@@ -153,34 +148,24 @@ enum CapturePermission: Int, CaseIterable {
         guide.backgroundColor = .clear
         guide.hasShadow = true
         guide.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let content = NSBox(frame: NSRect(origin: .zero, size: size))
-        content.boxType = .custom
-        content.cornerRadius = 16
-        content.fillColor = .windowBackgroundColor
-        content.borderColor = .separatorColor
+        let content = ComposerSurface(frame: NSRect(origin: .zero, size: size))
         guide.contentView = content
-        let instruction = label("Add Capture Studio to \(permission.title)", size: 14, weight: .semibold)
-        instruction.frame = NSRect(x: 16, y: 111, width: 350, height: 21)
+        let instruction = label("Drag into \(permission.title), then switch on.", size: 12, weight: .medium)
+        instruction.frame = NSRect(x: 14, y: 80, width: 310, height: 18)
         content.addSubview(instruction)
         let close = NSButton(title: "×", target: self, action: #selector(dismissGuide))
         close.isBordered = false
         close.font = .systemFont(ofSize: 20)
         close.setAccessibilityLabel("Close permission guide")
-        close.frame = NSRect(x: 375, y: 108, width: 27, height: 27)
+        close.frame = NSRect(x: 330, y: 75, width: 24, height: 27)
         content.addSubview(close)
-        let description = label("Drag the app below into the list, then turn it on.", color: .secondaryLabelColor)
-        description.frame = NSRect(x: 16, y: 89, width: 382, height: 19)
-        content.addSubview(description)
 
-        let tile = PermissionAppTile(frame: NSRect(x: 16, y: 39, width: 382, height: 44), appURL: appURL)
+        let tile = PermissionAppTile(frame: NSRect(x: 14, y: 31, width: 340, height: 42), appURL: appURL)
         content.addSubview(tile)
         let reveal = NSButton(title: "Show in Finder", target: self, action: #selector(revealApp))
         reveal.bezelStyle = .inline
-        reveal.frame = NSRect(x: 16, y: 11, width: 108, height: 20)
+        reveal.frame = NSRect(x: 246, y: 7, width: 108, height: 20)
         content.addSubview(reveal)
-        let fallback = label("Use + in System Settings to add the app.", size: 11, color: .secondaryLabelColor)
-        fallback.frame = NSRect(x: 137, y: 11, width: 261, height: 18)
-        content.addSubview(fallback)
         self.tile = tile
         panel = guide
     }
@@ -189,7 +174,7 @@ enum CapturePermission: Int, CaseIterable {
         for permission in CapturePermission.allCases {
             let granted = permission.granted
             let status = statuses[permission.rawValue]
-            status.stringValue = granted ? "✓ Enabled" : "Off"
+            status.stringValue = granted ? "✓ On" : "Off"
             status.textColor = granted ? .systemGreen : .secondaryLabelColor
         }
         guard let selected, let panel else { return }
@@ -291,14 +276,20 @@ enum CapturePermission: Int, CaseIterable {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlAccentColor.withAlphaComponent(0.11).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: CornerRadius.control, yRadius: CornerRadius.control).fill()
         icon.draw(in: NSRect(x: 9, y: 7, width: 30, height: 30))
         ("Capture Studio.app" as NSString).draw(at: NSPoint(x: 48, y: 13), withAttributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.labelColor,
         ])
-        ("Drag to add" as NSString).draw(at: NSPoint(x: bounds.width - 80, y: 14), withAttributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
-        ])
+        let grip = NSBezierPath()
+        for column in 0..<2 {
+            for row in 0..<3 {
+                grip.appendOval(in: NSRect(x: bounds.width - 20 + CGFloat(column) * 4,
+                                           y: bounds.midY - 5 + CGFloat(row) * 4, width: 2, height: 2))
+            }
+        }
+        NSColor.secondaryLabelColor.setFill()
+        grip.fill()
     }
 
     override func mouseDown(with event: NSEvent) { dragStart = event }
