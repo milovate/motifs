@@ -265,8 +265,9 @@ enum CapturePermission: Int, CaseIterable {
               let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: bounds.midX, y: bounds.midY)) }) ?? NSScreen.main else { return nil }
         let visible = screen.visibleFrame.insetBy(dx: 10, dy: 10)
         let size = panel.frame.size
+        let overlap: CGFloat = 18
         let x = min(max(bounds.maxX - size.width - 16, visible.minX), visible.maxX - size.width)
-        let y = min(max(bounds.minY - size.height - 10, visible.minY), visible.maxY - size.height)
+        let y = min(max(bounds.minY + overlap - size.height, visible.minY), visible.maxY - size.height)
         return NSRect(origin: NSPoint(x: x, y: y), size: size)
     }
 
