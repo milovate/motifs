@@ -9,11 +9,13 @@ Capture Studio keeps the screenshot and the text of that window. You write a
 note. Then you send the capture to one of these destinations:
 
 - **OpenCode**: a new session with the draft in its input field.
+- **Claude** (Mac): a new draft in Claude Desktop.
+- **Codex** (Mac): a new draft in the selected project.
 - **Clipboard**: a Markdown summary.
 - **Save to folder**: the screenshots, a `README.md` and a `bundle.json`.
 
-Capture Studio does not send a prompt to a model. You must push **Enter** in
-OpenCode to send the draft.
+Review and send the draft in the destination app. Claude and Codex receive the
+note and local capture paths as text. Attach any files you want to send directly.
 
 Capture Studio can also attach screen recordings, browser console errors,
 failed network requests, device data and log files.
