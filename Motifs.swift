@@ -107,6 +107,7 @@ struct Motifs {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MotifComposer.showAccessibilityGuide = { [weak self] in self?.permissionGuide.show(focusing: .accessibility) }
         do {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         } catch { fail(error.localizedDescription) }

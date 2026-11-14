@@ -72,6 +72,7 @@ struct ComposerEndpoint: Decodable {
     // The menu-bar helper records the screen; the composer only asks for a clip.
     static var onRecord: ((MotifComposer) -> Void)?
     static weak var current: MotifComposer?
+    static var showAccessibilityGuide: (() -> Void)?
     var shots: [[String: Any]]
     var selectedShotIndex = 0
     var shot: [String: Any] {
@@ -102,6 +103,7 @@ struct ComposerEndpoint: Decodable {
     let annotateButton = ComposerButton("Annotate", symbol: "pencil.tip", treatment: .chip)
     let closeButton = ComposerButton(symbol: "xmark")
     let status = ComposerStatusField(wrappingLabelWithString: "")
+    let accessibilityButton = ComposerButton("Set up Accessibility", symbol: "accessibility", treatment: .chip)
     let thumbnailStrip = NSStackView()
     let addScreenshotButton = ComposerButton(symbol: "viewfinder", treatment: .chip)
     let addRecordingButton = ComposerButton(symbol: "record.circle", treatment: .chip)
@@ -302,7 +304,11 @@ struct ComposerEndpoint: Decodable {
         shortcut.font = .systemFont(ofSize: 10)
         shortcut.textColor = .secondaryLabelColor
         shortcut.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let footer = NSStackView(views: [status, NSView(), shortcut])
+        accessibilityButton.target = self
+        accessibilityButton.action = #selector(setUpAccessibility)
+        accessibilityButton.toolTip = "Open the Motifs permission guide"
+        accessibilityButton.isHidden = true
+        let footer = NSStackView(views: [status, accessibilityButton, NSView(), shortcut])
         footer.alignment = .centerY
         footer.spacing = 8
         let stack = contentStack
@@ -435,6 +441,7 @@ struct ComposerEndpoint: Decodable {
 
     @objc func destinationChanged() {
         guard let destination = selectedDestination else { return }
+        accessibilityButton.isHidden = true
         projects.selectItem(at: 0)
         populateProjects()
         settings.defaultDestination = destination.id
@@ -1097,6 +1104,13 @@ struct ComposerEndpoint: Decodable {
             return
         }
         guard textView.string.utf16.count <= 16_000 else { status.stringValue = "Keep the description under 16000 characters."; return }
+        // Check before /prepare: the bridge creates the OpenCode session, and a retry must reuse it.
+        if selectedDestination?.id == "opencode", !AXIsProcessTrusted() {
+            status.stringValue = "Motifs needs Accessibility to open the new session in OpenCode. Nothing was created. Set it up, or choose Clipboard."
+            accessibilityButton.isHidden = false
+            return
+        }
+        accessibilityButton.isHidden = true
         let text = textView.string
         let selected = Array(selectedSkills).sorted()
         var body = prepareBody(text: text, skills: selected)
@@ -1118,6 +1132,7 @@ struct ComposerEndpoint: Decodable {
                 try await completeHandoff(preparedSession ?? [:])
             } catch {
                 status.stringValue = error.localizedDescription + " Nothing was run. Your draft is still here."
+                accessibilityButton.isHidden = selectedDestination?.id != "opencode" || AXIsProcessTrusted()
                 if desktopDraft != nil {
                     // Preparing a desktop link has no external side effect. Let the user edit or switch destinations.
                     requestID = UUID().uuidString
@@ -1215,6 +1230,16 @@ struct ComposerEndpoint: Decodable {
         recentsPopover.close()
         mentionCompletion.dismiss()
         sendButton.isEnabled = enabled
+    }
+
+    @objc func setUpAccessibility() {
+        MotifComposer.showAccessibilityGuide?()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard !accessibilityButton.isHidden, AXIsProcessTrusted() else { return }
+        accessibilityButton.isHidden = true
+        status.stringValue = "Accessibility is on. Press ⌘↵ to continue."
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { !sending && !addingScreenshot && !recordingClip && !reviewingClip }
