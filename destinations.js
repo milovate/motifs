@@ -3,6 +3,7 @@ import { copyFile, mkdir, open, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { contextDocument, contextFilePath, draftText, markdownBundle, shareMarkdown, BUNDLE_SCHEMA } from "./bundle.js";
+import { ownerOnly } from "./permissions.js";
 
 // Writes the bundle's full context beside it (owner-only, never through a symlink)
 // and returns the path, or undefined when there is nothing to write.
@@ -12,11 +13,11 @@ export async function writeContextFile(bundle) {
   const file = contextFilePath(bundle);
   const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
   try {
-    await handle.chmod(0o600);
     await handle.writeFile(`# Appshot context\n\n${body}\n`);
   } finally {
     await handle.close();
   }
+  await ownerOnly(file);
   return file;
 }
 
@@ -27,6 +28,7 @@ export async function writeContextFile(bundle) {
  * @typedef {{ id: string, label: string, detail?: string }} Target
  * @typedef {"ready" | "not-installed" | "needs-auth" | "not-running"} DestinationStatus
  * @typedef {{ action: "opencode-draft", sessionID: string, title: string, directory: string, draftText: string }
+ *   | { action: "desktop-draft", app: "claude" | "codex", draftText: string, directory?: string }
  *   | { action: "copy-text", text: string, message: string }
  *   | { action: "reveal-folder", path: string, message: string }} HandoffResult
  * @typedef {{
@@ -41,7 +43,7 @@ export async function writeContextFile(bundle) {
  * }} Destination
  */
 
-export const HANDOFF_ACTIONS = ["opencode-draft", "copy-text", "reveal-folder"];
+export const HANDOFF_ACTIONS = ["opencode-draft", "desktop-draft", "copy-text", "reveal-folder"];
 const STATUSES = ["ready", "not-installed", "needs-auth", "not-running"];
 
 export function validateDestination(destination) {
@@ -61,6 +63,10 @@ export function validateHandoff(result) {
   switch (result?.action) {
     case "opencode-draft":
       if (typeof result.sessionID !== "string" || typeof result.draftText !== "string") break;
+      return result;
+    case "desktop-draft":
+      if (!["claude", "codex"].includes(result.app) || typeof result.draftText !== "string" || !result.draftText.trim()) break;
+      if (result.app === "codex" && (typeof result.directory !== "string" || !path.isAbsolute(result.directory))) break;
       return result;
     case "copy-text":
       if (typeof result.text !== "string" || typeof result.message !== "string") break;
@@ -140,6 +146,29 @@ export function clipboardDestination() {
   };
 }
 
+function desktopDestination(app, directory) {
+  const label = app === "claude" ? "Claude" : "Codex";
+  const target = directory
+    ? { id: directory, label: path.basename(directory) || directory, detail: directory }
+    : { id: "new-chat", label: "New chat" };
+  return {
+    id: app,
+    label,
+    accepts: { image: false, video: false },
+    status: async () => "ready",
+    targets: async () => [target],
+    actionLabel: () => `Review in ${label}`,
+    hint: () => "Opens a draft with local capture paths.",
+    async prepare(bundle, _target, { note }) {
+      const text = draftText(bundle, note, await writeContextFile(bundle), { attachImages: false });
+      if (app === "claude" && text.length > 14_000) {
+        throw new Error("This draft is too long for Claude Desktop. Shorten the note and try again.");
+      }
+      return { action: "desktop-draft", app, draftText: text, ...(directory ? { directory } : {}) };
+    },
+  };
+}
+
 export function folderDestination(exportRoot = path.join(os.homedir(), "Documents", "Appshots")) {
   const target = { id: "exports", label: path.basename(exportRoot) || exportRoot, detail: exportRoot };
   return {
@@ -157,8 +186,13 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
       const slug = request.note.trim().split("\n")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "capture";
       const folder = path.join(exportRoot, `${stamp} ${slug} ${request.requestID.slice(-8)}`);
       await mkdir(folder, { mode: 0o700 });
+      await ownerOnly(folder, { directory: true });
       const names = bundle.media.map((_, index) => `screenshot-${index + 1}.png`);
-      for (const [index, capture] of bundle.media.entries()) await copyFile(capture.screenshot, path.join(folder, names[index]));
+      for (const [index, capture] of bundle.media.entries()) {
+        const destination = path.join(folder, names[index]);
+        await copyFile(capture.screenshot, destination);
+        await ownerOnly(destination);
+      }
       // recording.mp4 for the first clip, recording-2.mp4 and so on for the others.
       const videoName = (video, index) => {
         const clip = bundle.videos.indexOf(video);
@@ -166,10 +200,18 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
         return index < 0 ? `${stem}.mp4` : `${stem}-frame-${index + 1}.png`;
       };
       for (const video of bundle.videos) {
-        await copyFile(video.video, path.join(folder, videoName(video, -1)));
-        for (const [index, frame] of video.frames.entries()) await copyFile(frame.screenshot, path.join(folder, videoName(video, index)));
+        const movie = path.join(folder, videoName(video, -1));
+        await copyFile(video.video, movie);
+        await ownerOnly(movie);
+        for (const [index, frame] of video.frames.entries()) {
+          const image = path.join(folder, videoName(video, index));
+          await copyFile(frame.screenshot, image);
+          await ownerOnly(image);
+        }
       }
-      await writeFile(path.join(folder, "README.md"), markdownBundle(bundle, request.note, (_, index) => names[index], videoName), { mode: 0o600, flag: "wx" });
+      const readme = path.join(folder, "README.md");
+      await writeFile(readme, markdownBundle(bundle, request.note, (_, index) => names[index], videoName), { mode: 0o600, flag: "wx" });
+      await ownerOnly(readme);
       const exported = {
         schema: BUNDLE_SCHEMA,
         id: bundle.id,
@@ -192,7 +234,9 @@ export function folderDestination(exportRoot = path.join(os.homedir(), "Document
         context: exportedContext(bundle),
         include: bundle.include,
       };
-      await writeFile(path.join(folder, "bundle.json"), JSON.stringify(exported, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      const manifest = path.join(folder, "bundle.json");
+      await writeFile(manifest, JSON.stringify(exported, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+      await ownerOnly(manifest);
       return { action: "reveal-folder", path: folder, message: `Saved to ${path.basename(folder)}.` };
     },
   };
@@ -216,6 +260,7 @@ function exportedShot(capture, screenshot, includeText) {
   return shot;
 }
 
-export function builtinDestinations(ctx, options = {}) {
-  return [opencodeDestination(ctx), clipboardDestination(), folderDestination(options.exportDirectory)].map(validateDestination);
+export function builtinDestinations(ctx, options = {}, platform = process.platform) {
+  const desktop = platform === "darwin" ? [desktopDestination("claude"), desktopDestination("codex", ctx.location.directory)] : [];
+  return [opencodeDestination(ctx), ...desktop, clipboardDestination(), folderDestination(options.exportDirectory)].map(validateDestination);
 }

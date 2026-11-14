@@ -1,5 +1,5 @@
 name: Windows
-on: [push, pull_request]
+on: workflow_dispatch
 jobs:
   build-and-test:
     runs-on: windows-latest
@@ -14,4 +14,5 @@ jobs:
           dotnet-version: 8.0.x
       - run: npm ci --ignore-scripts
       - run: npm run build
+      - run: npm run verify:version
       - run: npm test

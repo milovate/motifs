@@ -52,11 +52,11 @@ import Speech
                 SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
             }
             guard generation == current, isRunning else { return }
-            guard authorization == .authorized else { cancel("Enable Capture Studio in System Settings → Privacy & Security → Speech Recognition, then try again."); return }
+            guard authorization == .authorized else { cancel("Enable Motifs in System Settings → Privacy & Security → Speech Recognition, then try again."); return }
             onState?("Allow Microphone access when macOS asks…")
             let microphone = await AVCaptureDevice.requestAccess(for: .audio)
             guard generation == current, isRunning else { return }
-            guard microphone else { cancel("Enable Capture Studio in System Settings → Privacy & Security → Microphone, then try again."); return }
+            guard microphone else { cancel("Enable Motifs in System Settings → Privacy & Security → Microphone, then try again."); return }
             let locale = Locale(identifier: Locale.preferredLanguages.first ?? "en-US")
             guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
                 cancel("On-device speech recognition is unavailable for \(locale.identifier). Enable/download this language in macOS Keyboard → Dictation. No cloud fallback was used.")

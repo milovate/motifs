@@ -219,7 +219,7 @@ func restoredVideo(_ entry: [String: Any], root: URL) -> [String: Any]? {
 func loadCaptureBundle(path: String, output: String) throws -> LoadedBundle {
     let root = URL(fileURLWithPath: output).resolvingSymlinksInPath()
     let file = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-    guard file.deletingLastPathComponent() == root, file.lastPathComponent.hasPrefix("bundle-"), file.pathExtension == "json" else { throw captureError("Bundles must be in the Capture Studio captures folder.") }
+    guard file.deletingLastPathComponent() == root, file.lastPathComponent.hasPrefix("bundle-"), file.pathExtension == "json" else { throw captureError("Bundles must be in the Motifs captures folder.") }
     let data = try Data(contentsOf: file)
     guard data.count <= 2_000_000, let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           raw["schema"] as? String == captureBundleSchema, let allMedia = raw["media"] as? [[String: Any]] else { throw captureError("This capture bundle is invalid or from a newer version.") }
@@ -330,8 +330,8 @@ struct CaptureSettings: Equatable {
         let path = output + "/settings.json"
         let temporary = path + ".tmp"
         let data = try JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys, .prettyPrinted])
-        guard FileManager.default.createFile(atPath: temporary, contents: data, attributes: [.posixPermissions: 0o600]) else { throw captureError("Could not save Capture Studio settings.") }
-        guard rename(temporary, path) == 0 else { throw captureError("Could not save Capture Studio settings.") }
+        guard FileManager.default.createFile(atPath: temporary, contents: data, attributes: [.posixPermissions: 0o600]) else { throw captureError("Could not save Motifs settings.") }
+        guard rename(temporary, path) == 0 else { throw captureError("Could not save Motifs settings.") }
     }
 }
 
@@ -357,6 +357,32 @@ struct ComposerDestination: Equatable {
     let label: String
     let status: String
     var targets: [ComposerTarget]
+}
+
+enum DesktopDraftApp: String {
+    case claude, codex
+
+    var label: String { self == .claude ? "Claude" : "Codex" }
+    var bundleID: String { self == .claude ? "com.anthropic.claudefordesktop" : "com.openai.codex" }
+
+    func draftURL(text: String, directory: String?) -> URL? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var link = URLComponents()
+        link.scheme = rawValue
+        switch self {
+        case .claude:
+            link.host = "claude.ai"
+            link.path = "/new"
+            link.queryItems = [URLQueryItem(name: "q", value: text)]
+        case .codex:
+            guard let directory, directory.hasPrefix("/") else { return nil }
+            link.host = "threads"
+            link.path = "/new"
+            link.queryItems = [URLQueryItem(name: "prompt", value: text), URLQueryItem(name: "path", value: directory)]
+        }
+        link.percentEncodedQuery = link.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return link.url
+    }
 }
 
 // Each loaded OpenCode project serves the same destination list. Targets are

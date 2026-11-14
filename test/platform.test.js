@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { helperCommand, platformConfig } from "../platform.js";
-import { startHotkey, capture } from "../index.js";
+import { capture, startDesktopServices, startHotkey } from "../index.js";
 
 test("Windows uses local app data, with an explicit XDG override", () => {
   assert.equal(platformConfig("win32", { LOCALAPPDATA: "local-data" }, "home").captures, path.join("local-data", "opencode", "capture-studio"));
@@ -37,6 +39,30 @@ test("missing Windows helper explains the build step", async () => {
     mkdir: async () => {},
     spawnHelper: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); },
   }, platformConfig("win32")), /npm run build/);
+});
+
+test("desktop startup opens the composer bridge before the helper", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "appshots-bridge-"));
+  const target = { platform: "win32", captures: directory, shortcut: "Control+Alt+Shift+A" };
+  let launched = false;
+  const stop = await startDesktopServices({
+    location: { directory: path.join(directory, "project") },
+    options: {},
+    skill: { list: async () => ({ data: [] }) },
+    session: { create: async () => { throw new Error("startup must not create a session"); } },
+  }, target, {
+    mkdir: async () => {},
+    run: async () => { throw new Error("the Windows helper is spawned, not awaited"); },
+    spawnHelper: async (executable, args) => {
+      assert.match(executable, /Appshots\.exe$/);
+      assert.deepEqual(args, ["--watch", "--output", directory]);
+      launched = true;
+    },
+  });
+  assert.equal(launched, true);
+  assert.equal((await readdir(path.join(directory, "composers"))).length, 1);
+  await stop();
+  await rm(directory, { recursive: true, force: true });
 });
 
 test("capture rejects invalid delays before launching a helper", async () => {

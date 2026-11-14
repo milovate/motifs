@@ -2,13 +2,23 @@ import path from "node:path";
 import { homedir } from "node:os";
 
 export function platformConfig(platform = process.platform, env = process.env, home = homedir()) {
-  if (!["darwin", "win32"].includes(platform)) throw new Error("Capture Studio requires macOS 14+ or Windows 10/11 (a local desktop session, not WSL).");
+  if (!["darwin", "win32"].includes(platform)) throw new Error("Motifs requires macOS 14+ or Windows 10/11 (a local desktop session, not WSL).");
   const base = env.XDG_DATA_HOME || (platform === "win32" ? env.LOCALAPPDATA || path.join(home, "AppData", "Local") : path.join(home, ".local/share"));
   return {
     platform,
     captures: path.join(base, "opencode", "capture-studio"),
     shortcut: platform === "win32" ? "Control+Alt+Shift+A" : "Option+G",
   };
+}
+
+export function releaseTarget(platform = process.platform, arch = process.arch) {
+  if (platform === "darwin" && arch === "arm64") return "macos-arm64";
+  if (platform === "win32" && arch === "x64") return "windows-x64";
+  return undefined;
+}
+
+export function releaseArchiveName(version, target) {
+  return `motifs-${version}-${target}.zip`;
 }
 
 export function helperCommand(root, config, action, args = []) {

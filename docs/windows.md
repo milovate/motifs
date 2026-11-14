@@ -37,23 +37,149 @@ needed, warn about interrupting active work before `opencode service restart`.
 
 ## Capture and use
 
-1. Run `/capture-studio-start` if the Appshots system tray icon is missing.
-2. Focus a non-sensitive test window and press **Control+Alt+Shift+A**.
-3. Review and annotate the screenshot in the editor (see below). **Cancel** closes
-   it without inserting or sending anything. Escape clears a selection first,
-   then closes the editor. The capture remains saved locally.
-4. **Insert into OpenCode** saves the annotations, then attempts to focus the
-   desktop app's `Prompt` input,
-   append the screenshot and text, and leave the draft unsent. Have exactly one
-   OpenCode conversation window open. Review both the attachment and draft text.
-   Insertion never presses Return or clicks Send, and does not replace the draft.
-   Clipboard restoration is best effort and will not overwrite a newer user copy.
-5. Add your question and send when ready. If insertion fails, use `/capture-studio` in
-   the intended conversation to retrieve the saved screenshot and text instead.
+1. Run `/capture-studio-start` if the Capture Studio system tray icon is missing.
+   The plugin also starts a private loopback bridge, the same one macOS uses, so
+   the helper can list destinations and prepare a draft.
+2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
+   window, or press **Enter** for the whole display. The window under the pointer
+   is named. While you drag, the readout shows the region's width and height.
+   Escape cancels and returns to the app that was in front. Switching to another
+   application cancels the chooser as well. A window
+   capture uses `PrintWindow` and UI Automation for that window. A region or full
+   screen capture is the visible pixels in that rectangle. Pressing the shortcut
+   again while the chooser, composer, or annotation editor is open brings that
+   window forward. **Control+Alt+Shift+R** still starts or stops a recording
+   while the composer is open.
+3. The composer opens centered on the display under the pointer, 80px above the bottom of the screen, or 10% of the screen height when that is smaller. Add a note, click a thumbnail
+   to annotate it, and use **Add** for another capture (up to 8). Adding a
+   screenshot selects it. Thumbnails sit on their own row under the buttons and
+   scroll sideways when they do not all fit. When more than one screenshot is attached, that
+   thumbnail is outlined. Removing one keeps the selection on the screenshot
+   that remains in its place. The **×** appears when the pointer is on that
+   thumbnail and removes it from the draft only. Hovering a screenshot names the app and says to right-click to copy or share. Hovering a recording names the clip and its length, and says the key frames are sent while the video stays on this PC. A play badge on the recording shows that length. Right-click a screenshot or
+   recording for **Copy Image** / **Copy Video**, **Share…**, **Show in File
+   Explorer**, or **Copy Path**. That shares the file and does not send the
+   draft. **Context**
+   reviews window text, device, console, network, steps, and logs as cards. Choosing **Context** again closes that review. Escape closes it before the composer, and clicking the composer closes it too. Console and network show the first 200 cards and say how many are left out. A console card shows the level, where it came from, and the message. A failed request shows the method and status, then the path, time, and host. Steps show the newest 200, newest first, each on its own card. Window text and logs use a titled card, and device details are labeled pairs. A time inside a clip uses that clip's time; any other time is the local clock. Each include checkbox says to send that source with this capture. Hover it to
+   see each source's count, or **off** when that source is switched off, and a
+   rough token estimate. Each source has an include switch, a preview, and
+   Markdown. For a native app, the button says **collecting…** while that app's
+   errors and critical events are read from the Application log for the last 5
+   minutes (up to 200). A browser window, or a region or display capture made
+   while a browser was in front, asks the extension for that window's console
+   and failed requests instead. The composer opens while that read is still
+   going. Reopening a saved capture does not read either source again.
+   The draft is saved when the composer opens, and again when **Recents** opens, so the list includes this capture. **Recents** opens to the left of the composer and leaves the composer open. Choosing **Recents** again closes it, Escape closes it before the composer, and clicking the composer closes it too. It lists up to 30 saved captures, newest first. Each row has a thumbnail, the screenshot and clip counts, and when it was edited. The capture already open is marked and cannot be chosen again. Reopening one says **Reopened a saved capture**, or names files deleted since it was saved. The composer stays up while a screenshot is being added, a recording is in progress, or a clip is being reviewed, and Send stays off until that finishes. Type **@** to pick a skill from the
+   loaded project; Up and Down move through the matches, and Enter or Tab inserts
+   one. The list shows the skill name when it differs from the id, and the hint ↑↓ navigate · ↵ select · esc close. The **@** button opens that list beside the button, with **report** first and the skill name on each row. Choosing **@** again closes it, as does clicking the composer. A note that is only @mentions does not enable Send until a screenshot or
+   recording is attached. Escape closes that list before it closes the composer. Once those skills
+   have loaded, each known **@mention** is drawn in the accent color on a rounded
+   tint. The composer grows with the note. **Prefix** saves a
+   reusable opening, puts it at the start of the note, and removes it when chosen
+   again. Nothing is sent while you edit.
+4. Choose **OpenCode**, **Clipboard**, or **Save to folder**, then a target.
+   The destination menu is hidden when only one is available, and a destination that is not ready cannot stay selected.
+   **Ctrl+Enter** or the action button prepares the bundle through the bridge.
+   The note and the other controls stay locked until that finishes.
+   OpenCode opens a new unsent session and pastes the screenshots and draft.
+   Clipboard copies Markdown and returns to the previous app. Save to folder
+   writes the bundle and reveals it. Closing the composer without one of those
+   handoffs also returns to the previous app. None of these presses Enter or
+   clicks Send.
+5. Review the result and send it yourself. If handoff fails, the bundle remains
+   in the captures folder. `/capture-studio` can still read the latest window capture.
 
-The tray menu can review/reinsert or annotate the latest capture, annotate a
-clipboard image, open the captures folder, or quit the watcher.
-`/capture-studio-insert` and `/capture-studio-annotate` both open the latest capture in the editor.
+**Control+Alt+Shift+R** starts a screen recording. The same chooser appears: drag a
+region, click a window, or press Enter for the display under the pointer. Escape
+cancels before anything is written and returns to the app that was in front.
+There is no audio. A floating bar shows the
+time, **Restart**, **Pause**, and **Stop**. The time turns orange in the last 30
+seconds, and the recording stops at 5 minutes. Pause time is kept out of the clip.
+Restart discards what was recorded and starts again. Stop writes an H.264 MP4 plus
+key-frame PNGs into the captures folder and attaches the clip to the open composer,
+or opens a composer when none is open. A new composer reads the Application log
+for a recorded native window, or for the app in front when a region or display
+recording stops. A browser asks the extension for that tab's console and failed
+requests instead. Nothing is sent. A composer holds 3 clips.
+Six key frames are sent in total: six for one clip, three each for two, and two
+each for three. Adding or removing a clip reads that share from each MP4 again.
+The bar and the dashed area outline set display affinity and are hidden while each
+frame is grabbed. An area recording shows that outline just outside the rectangle. A window
+recording follows that window's rectangle; unlike a still window capture, it is the
+visible pixels there, so overlapping windows can appear. Click a clip in the
+composer to review it. Hovering the timeline explains the handles and keys. Hovering a dot names that event. The buttons say whether they close, cancel, trim, or remove the clip, and dragging the heading moves the review. The filmstrip has yellow handles; drag them, or press
+**I** and **O**, to choose at least half a second. **Space** plays that selection
+and the arrow keys step. **Use trimmed clip** writes a new MP4 and takes key
+frames from the selection. The original file stays in the captures folder.
+**Remove clip** detaches it and leaves the file. Nothing is sent.
+
+**Keep instant replay (last 30 s)** stays off until you turn it on from the tray.
+The choice is saved in `settings.json` and restored the next time the watcher
+starts. While it is on, Capture Studio keeps the last 30 seconds of the display
+under the pointer in memory: about 8 frames a second, long side at most 1280
+pixels, and at most 150 MB. **Ctrl+Alt+Shift+A** copies that buffer before the
+chooser opens. After you confirm a screenshot, it writes an H.264 MP4 plus key
+frames and attaches the clip with the screenshot. Cancelling the chooser leaves
+the buffer in memory. Turning replay off or quitting the watcher discards it.
+The sample is visible pixels. Capture Studio windows set display affinity so capture
+APIs that honor it leave them out. The recording bar and the area outline are also
+hidden for each frame grab. There is no audio. Sampling pauses while the chooser is open and while a
+screen recording is in progress.
+
+**Record recent clicks** stays off until you turn it on from the tray. While it
+is on, the last 10 minutes of clicks and app switches stay in memory (300 at
+most). A screen recording collects steps even when that item is off: clicks,
+scrolls, drags, selected text (up to 200 characters), and which field you typed
+into. The key you pressed is never stored. Password fields keep only their role.
+Clicks on Capture Studio itself are left out. Quitting the watcher, or turning
+the item off while nothing is recording, discards the memory buffer.
+
+**Custom log files** in the tray accepts up to 4 files. A capture reads the last
+64 KB of each regular file at that moment. The paths are saved in `settings.json`.
+What is sent includes the file name and the tail, not a live watch.
+
+**Show composer button while capturing** is on by default. While the capture chooser is open, a
+small button sits above the hint. Hovering it says it skips the capture and opens the composer, with Recents. Clicking it closes the chooser and opens an
+empty composer. Its menu can hide it. The chooser closes before any screenshot
+is taken, so the button is not in the image.
+
+**Dictate** in the composer uses a Windows speech language installed on this PC.
+It does not save audio and it does not send audio to a cloud recognizer. Stop
+leaves the transcript in the note for you to edit. Send stays disabled until
+dictation stops. If no speech language is installed, the button says so.
+
+**Connect browser extension…** writes one native messaging host manifest and
+registers it for each installed copy of Chrome, Chrome Canary, Brave, Edge,
+Chromium, or Arc, then reveals the `browser-extension` folder. Load that folder as an unpacked
+extension, then reload the tabs you want to debug. A capture of that browser
+window asks for the visible tab's console messages and failed requests after
+the composer opens. A screen recording asks the extension to record page steps
+and collects them when the recording stops. Stopping a recording of a browser
+window, or a region or display recording while a browser is in front, also
+asks for that tab's console and failed requests. The helper and the host accept only each other:
+the peer must be this same `Appshots.exe`. Nothing is written to disk on the way.
+
+**Local secret-check model…** saves an `http://127.0.0.1`, `localhost`, or `::1`
+address and an optional model name. Hosted addresses are ignored. Save and test
+asks that address to score one sample value. Known secret formats are still
+redacted without a model, and values that only might be secrets are redacted
+when the model does not answer.
+
+The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. Hovering it says **capture and compose**, or how to stop a recording, or that instant replay is keeping the last 30 seconds. A failed insert says the capture was saved and can be read with `/capture-studio`. The strokes are black on a light taskbar and white on a dark one.
+
+The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture and shows when that capture was created.
+**Default destination** chooses OpenCode, Clipboard, Save to folder, or another
+destination the composer has seen. **Context sources** holds instant replay,
+recent clicks, log files, the browser extension, and the local secret-check model.
+**Capture, annotate, and insert into current draft** captures the focused window,
+opens the editor, and inserts when you choose **Insert into OpenCode**.
+**Capture and insert without annotation** captures that window and inserts it.
+**Insert latest capture into OpenCode** inserts the saved capture and does not
+open the editor. **Annotate latest capture** and **Annotate clipboard image**
+open the editor. The tray can also open an empty composer, start or stop a
+recording, show the composer button, open the captures folder, or quit the watcher.
+`/capture-studio-insert` inserts the latest capture into the current draft.
+`/capture-studio-annotate` opens that capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
 `{ "hotkey": false }` in plugin options disables automatic watcher startup.
 Quitting the watcher does not stop explicitly requested live tool captures.
@@ -68,10 +194,17 @@ without an app captures the foreground window, which may be OpenCode itself.
 
 ## Annotation editing
 
-Choose **Arrow**, **Box**, **Draw**, or **Text**, then drag over the image (click for
-Text). Text opens a multiline dialog; use its OK button to accept. Color and stroke
-width apply to new marks and the selected object. The editor switches to Select
-after creating a mark.
+The editor opens nearly as large as the screen, and the image fills the window.
+A toolbar floats over the bottom of the picture. Drag the **≡** grip to move it.
+**Arrow** is selected when the editor opens. Choose **Arrow**, **Box**, **Draw**,
+or **Text**, then drag over the image (click for Text). Text puts a caret on the
+image. Type there; Enter commits, Shift+Enter adds a line, and Escape cancels.
+Clicking elsewhere commits the text. Color and stroke width apply to new marks
+and the selected object. Stroke widths are Thin (2), Medium (4), and Thick (8)
+image pixels. Arrow, Box, Draw, and Text stay active, so the next gesture draws
+again. Press V to select a mark. **Ctrl+Enter** inserts into OpenCode, or returns
+the image to the composer when you opened the editor from there. **Crop** is
+separate: drag a rectangle, then apply it.
 
 - **Select** an object by clicking its stroke, or the body of a text label. Drag to
   move it. Drag corner handles to resize a box, freehand path, or text label; arrow
@@ -80,19 +213,38 @@ after creating a mark.
 - Double-click text, press Return with text selected, or click **Edit text** to edit.
 - Delete removes the selection. Ctrl+D duplicates it. Arrow keys nudge by one image
   pixel; Shift+arrow moves ten. Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes. History
-  includes creation, movement, resizing, style changes, text edits, and deletion.
-- V selects; A, R, P, and T choose Arrow, Box, Draw, and Text. Escape first clears a
-  selection; with no selection, it closes the editor without saving current edits.
+  includes creation, movement, resizing, style changes, text edits, deletion, crop, and reset.
+- **Crop** (C) drags a rectangle in original image pixels. **Apply Crop** or Enter
+  keeps it. The editor then shows only that rectangle, and the saved PNG contains
+  only those pixels. Marks stay where you drew them; they are not flattened or
+  moved. **Reset Crop** restores the full image. **Cancel Crop**, or Escape, drops
+  the rectangle you are dragging and returns to Select. A pending crop is applied
+  when you save or insert. The long side of a saved image is at most 2560 pixels.
+- A crop omits the original window's accessibility text from delivery and records
+  `Cropped screenshot: original-window accessibility text is omitted so content outside the crop is not shared.`
+  The text remains in the capture file for Reset Crop. Resetting removes that warning
+  and restores the text.
+- **Copy image** (Ctrl+C), or right-clicking an empty part of the image, copies the
+  annotated and cropped PNG. It does not insert a draft. Right-clicking a mark
+  offers edit, duplicate, and delete.
+- V selects; A, R, P, T, and C choose Arrow, Box, Draw, Text, and Crop. Escape first
+   cancels a pending crop, then clears a selection; with neither, it closes the editor
+   without saving current edits. Cancelling the editor opened from the tray or
+   from **Capture, annotate, and insert** returns to the previous app. Cancelling
+   the editor opened from the composer returns to the composer. Save and Insert
+   leave focus with that result.
 - **Save only** saves the annotated image and editable objects without inserting.
   **Insert into OpenCode** saves and then pastes, leaving the draft unsent. Neither
    action sends a message. Cancel discards unsaved changes. If an earlier Insert
    attempt failed, its saved annotations remain available even after Cancel.
 
 Saving creates a new PNG with marks flattened into the pixels and updates
-`latest.json`. It preserves the original PNG, timestamp, and accessibility text;
-the latter describes the original capture, not the drawn labels. Reopening a saved
-capture restores editable Windows objects over the original image with fresh undo
-history. Selection outlines and handles are never exported. Images without editable
+`latest.json`. It preserves the original PNG and timestamp. Accessibility text
+describes the original capture, not the drawn labels. A crop leaves that text
+out of the delivered capture, as described above. Reopening a saved capture
+restores editable Windows objects and the crop over the original image with fresh
+undo history. Selection outlines, handles, and crop shading are never exported.
+Images without editable
 Windows object data are treated as flattened originals. Captures imported from the
 clipboard have no accessibility text. Existing OpenCode attachments must be removed
 and replaced to show new annotations.
@@ -103,8 +255,33 @@ error rather than replacing the saved capture.
 
 ## Privacy, limits, and differences from macOS
 
-- Captures only the selected top-level window using `PrintWindow`. There is no
-  desktop-crop fallback that could include overlapping unrelated windows.
+- A clicked window is captured with `PrintWindow`. That path has no desktop-crop
+  fallback, so overlapping windows stay out of the image. A dragged region or
+  Enter captures the visible pixels in that rectangle, which can include
+  whatever is on screen there. The composer says which kind you took.
+- Screen recording also captures visible pixels, including a clicked window's
+  rectangle, and does not record audio. It stops at 5 minutes. The control bar and
+  the dashed area outline are hidden for each frame grab. Capture Studio windows
+  set display affinity so capture APIs that honor it leave them out.
+- Instant replay is off by default. While the tray item is checked, the last 30
+  seconds of the display under the pointer stay in memory, capped at 150 MB. A
+  confirmed capture writes that buffer. Cancelling the chooser leaves it in
+  memory. The sample is visible pixels and can include Capture Studio's own
+  windows. There is no audio.
+- Record recent clicks is off by default. The buffer is memory only. Screen
+  recordings add scrolls, drags, selections, and the field that received typing.
+  Key codes and typed characters are not recorded. Secure fields keep their role
+  and lose their label, and a selection inside one is dropped. Custom logs are
+  read only for files you chose, and only the last 64 KB when you capture.
+- The browser extension is registered only from **Connect browser extension…**.
+  Console messages, failed requests, and page steps stay in the browser until a
+  capture or the end of a recording asks for them. The named pipe allows the
+  current user and SYSTEM, and the helper refuses any peer that is not
+  `Appshots.exe`.
+- The composer button is on by default and only appears over the capture chooser.
+  Hiding it is saved. Dictate uses the installed Windows speech language, keeps
+  no audio file, and has no cloud fallback. The secret-check model must be an
+  address on this PC; a hosted address in `settings.json` is ignored.
 - Windows UI Automation reads that same window's control tree. Password controls
   and descendants are excluded from text, **not from screenshot pixels**.
   Names, values, selected text, focus, and disabled state are included when exposed.
@@ -122,9 +299,10 @@ error rather than replacing the saved capture.
   A paste request is not proof of attachment success: inspect the draft before
   sending or retrying. Clipboard formats may not all round-trip through Windows.
 
-Storage defaults to `%LOCALAPPDATA%\opencode\appshots`, overridable with
+Storage defaults to `%LOCALAPPDATA%\opencode\capture-studio`, overridable with
 `XDG_DATA_HOME`. The helper restricts the capture directory to the current user and
-SYSTEM. PNG files and `latest.json` persist until you delete them; cancellation
+SYSTEM. The plugin does the same for the composer endpoint file, the context file
+beside a bundle, and a Save to folder export. PNG files and `latest.json` persist until you delete them; cancellation
 does not erase a saved capture. `status.json` records watcher/capture stages without
 including screenshot bytes or accessibility text. `paste_requested` is explicitly
 unverified, not a confirmed insertion. Never commit any capture files.
@@ -148,8 +326,59 @@ from the macOS development environment. Before calling Windows support verified:
   restart it. Inspect `status.json` if the shortcut does not fire.
 - Test Insert with an existing draft, clipboard changes, Settings/dialogs, missing
   Prompt accessibility, and multiple OpenCode windows. Verify **nothing is sent**.
+  **Insert latest capture** pastes without opening the editor. **Capture and insert
+  without annotation** captures the focused window and pastes it. **Capture,
+  annotate, and insert** opens the editor first.
 - Cancel a preview and confirm no draft change; use `/capture-studio` for the saved image.
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
-  confirm exported marks agree with the editor on mixed-DPI monitors. Test Cancel
-  and clipboard-image annotation, and confirm handles are absent from the PNG.
+  confirm exported marks agree with the editor on mixed-DPI monitors. Crop with C,
+  apply, and confirm the PNG is only that rectangle and the window text is omitted
+  from the draft. Reset Crop and confirm the text returns. Copy image, then paste
+  somewhere other than OpenCode. Test Cancel and clipboard-image annotation, and
+  confirm handles are absent from the PNG.
+- Open the composer from the shortcut. Add a second screenshot and confirm the
+  new thumbnail is outlined; remove the first and confirm the outline stays on
+  the remaining one. Hover a recording and confirm it names the clip and says the video stays on this PC. Right-click a thumbnail and copy it, then show it in File
+  Explorer, and confirm the draft was not sent. Escape from the chooser, and close the composer without
+  sending, and confirm the previous app is in front. Copy does the same.
+  OpenCode and Save to folder leave those windows in front. Send the same capture to Clipboard and
+  Save to folder, then to OpenCode, and confirm each one leaves an unsent result.
+  Open Context, compare the preview with the captured window, switch a source off,
+  and confirm the switch sticks after reopening a recent capture. Hover Context
+  and confirm it names each source. Click the composer while Context, Recents, or
+  the skill list is open and confirm that panel closes and the composer stays.
+  Choose Recents again, and press Escape, and confirm the same. Capture a native app and confirm the button
+  says collecting…, then shows that app's Application log errors from the last 5
+  minutes. Capture a browser window and confirm the console stays the extension's.
+  Type `@` and confirm Enter inserts a skill mention instead of sending.
+- Record a short display clip with **Control+Alt+Shift+R**. Pause, restart, and
+  stop. Confirm the MP4 and key frames appear in the composer and the control bar
+  and dashed outline are absent from those frames. Escape on the bar discards the clip. Confirm nothing
+  is sent. Reopen the capture from Recents. Click the clip, trim it with the
+  yellow handles, and choose **Use trimmed clip**. Confirm a second MP4 appears
+  and the original file is still in the captures folder.
+- Turn on **Keep instant replay (last 30 s)**, wait a few seconds, and capture.
+  Confirm the composer shows the screenshot and an instant-replay clip. Cancel
+  the chooser and confirm the captures folder gains no replay MP4. Turn replay
+  off and confirm the tray tooltip returns to the capture shortcut.
+- With **Show composer button while capturing** on, start a capture and click the round button.
+  Confirm the composer opens and the captures folder gains no new screenshot.
+  Hide the button from its menu and confirm the next chooser has none.
+- Click **Dictate**, speak, then **Stop**. Confirm the words are in the note and
+  nothing was sent. With no speech language installed, confirm the button explains
+  that instead of sending audio anywhere.
+- Choose **Connect browser extension…**, load the unpacked extension, reload a
+  tab, and capture that browser window. Confirm Context shows the page and its
+  console errors, and that cancelling the chooser adds nothing. Record a short
+  clip while clicking a button on the page and confirm the step names the button
+  and not a keystroke.
+- Choose **Local secret-check model…**, enter `http://127.0.0.1:8000`, and save.
+  Confirm a hosted address is refused. Turn it off afterward if you were only testing.
+- Turn on **Record recent clicks**, click another app, and capture. Confirm
+  Context shows the click and not a keystroke. Turn it off and confirm a new
+  capture has no leftover steps. Add a log file, capture, and confirm Context
+  shows only the tail of that file. Remove the log file afterward.
+- Record a short clip, click and scroll in another app while it runs, then stop.
+  Confirm Context lists those steps and the clip. Confirm the recording bar's
+  own buttons are not listed.
 - Verify the capture-folder ACL and that the tool rejects an external PNG path.

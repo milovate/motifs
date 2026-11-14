@@ -91,8 +91,8 @@ config entry. Do not add an MCP server for Capture Studio.
 2. If a second copy is in the config, stop. Ask the user which copy to keep.
 3. Reload OpenCode. Close the OpenCode window and open it again.
 4. In OpenCode, type `/capture`. Make sure that these commands are in the list:
-   `/capture-studio`, `/capture-studio-start`, `/capture-studio-insert` and
-   `/capture-studio-annotate`.
+   `/capture-studio`, `/capture-studio-start`, `/capture-studio-insert`,
+   `/capture-studio-annotate` and `/capture-studio-update`.
 5. If the commands are not in the list, tell the user about the caution for
    `opencode service restart`. Then, with the approval of the user, run
    `opencode service restart`. Open OpenCode again.
@@ -174,6 +174,19 @@ key event.
 
 ## 9. Procedure: update the plugin
 
+Run `/capture-studio-update` to see whether a newer stable release exists and
+which ZIP matches this computer.
+
+For a ZIP installation, quit Capture Studio and OpenCode. Extract the new ZIP
+and replace the old plugin folder with the extracted `motifs` folder at the
+same path. Keep the whole folder together so the plugin can locate the helper.
+Move any backup outside OpenCode's plugin discovery folder before you restart
+OpenCode. Leave the capture data directory and your OpenCode configuration in
+place. The helper stores captures and settings in that data directory. On macOS,
+if a local ad hoc build needs permissions again, follow section 6.
+
+For an installation from a Git checkout:
+
 1. Go to the plugin folder.
 2. Run `git status`.
 3. If the folder has local changes, stop. Ask the user. Do not reset the changes.
@@ -181,7 +194,7 @@ key event.
 5. Run `npm ci --ignore-scripts`.
 6. Run `npm test`.
 7. Tell the user about the caution for a new build.
-8. Tell the user to choose **Quit Capture Studio** in the menu bar.
+8. Tell the user to choose **Quit Motifs** in the menu bar.
 9. Run `npm run build`.
 10. Reload OpenCode.
 11. Tell the user to run `/capture-studio-start`.
@@ -190,7 +203,7 @@ key event.
 
 ## 10. Procedure: remove the plugin
 
-1. Tell the user to choose **Quit Capture Studio** in the menu bar.
+1. Tell the user to choose **Quit Motifs** in the menu bar.
 2. If the user added a `plugins` entry for Capture Studio, remove only that entry.
 3. Delete the plugin folder.
 4. Ask the user about the captures folder. It contains screenshots, window text

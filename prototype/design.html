@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Capture Studio: product and design prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html { box-sizing: border-box; --notes-width: 340px; }
+  *, *::before, *::after { box-sizing: inherit; }
+  body {
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+    font-size: 13px; line-height: 1.5; color: #202020; background: #fff;
+    max-width: 920px; margin: 1.5em auto; padding: 0 1em 4em; overflow-wrap: anywhere;
+  }
+  h1, h2, h3, h4 { font-weight: normal; margin: 1.4em 0 0.5em; color: #000; }
+  h1 { font-size: 1.7em; border-bottom: 1px solid #666; padding-bottom: 0.2em; }
+  h2 { font-size: 1.3em; border-bottom: 1px solid #ccc; padding-bottom: 0.15em; margin-top: 2em; }
+  h3 { font-size: 1.05em; font-weight: bold; }
+  p, li { margin: 0.5em 0; }
+  a { color: #0645ad; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: Menlo, Consolas, monospace; font-size: 0.95em; background: #f6f6f6; padding: 0 3px; border-radius: 2px; }
+  pre { font-family: Menlo, Consolas, monospace; background: #f6f6f6; border: 1px solid #ddd; padding: 0.6em 0.9em; overflow-x: auto; font-size: 12px; line-height: 1.45; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; margin: 0.6em 0 1em; font-size: 12px; width: 100%; }
+  th, td { border: 1px solid #aaa; padding: 4px 8px; vertical-align: top; text-align: left; }
+  th { background: #efefef; font-weight: bold; }
+  ul, ol { padding-left: 1.6em; margin: 0.4em 0; }
+  .toc { background: #fafafa; border: 1px solid #ccc; padding: 0.6em 1em; margin: 1em 0 2em; }
+  .toc ol { padding-left: 1.4em; }
+  .toc li { margin: 0.1em 0; }
+  .callout { background: #fff8e1; border-left: 3px solid #f0c040; padding: 0.5em 0.8em; margin: 0.8em 0; font-size: 12px; }
+  .muted { color: #666; font-size: 12px; }
+  .footer { color: #666; font-size: 11px; margin-top: 3em; border-top: 1px solid #ccc; padding-top: 0.6em; }
+
+  /* Reference screenshots */
+  .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 0.8em 0 1.2em; }
+  .shots.three { grid-template-columns: repeat(3, 1fr); }
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border: 1px solid #ccc; background: #f4f4f4; }
+  figcaption { font-size: 11px; color: #555; margin-top: 4px; }
+  figcaption b { color: #000; font-weight: bold; }
+
+  /* Feature status tags */
+  .y, .n, .p, .new { display: inline-block; font-size: 11px; padding: 0 5px; border: 1px solid; border-radius: 2px; white-space: nowrap; }
+  .y { color: #2a5d2a; border-color: #9c9; background: #f1faf0; }
+  .n { color: #888; border-color: #ccc; }
+  .p { color: #8a6100; border-color: #e0c070; background: #fffaeb; }
+  .new { color: #0645ad; border-color: #9bb8e8; background: #f0f5ff; }
+
+  /* Wireframes: grayscale, mid fidelity, never functional */
+  .screen { margin: 1.2em 0 1.8em; }
+  .screen > h3 { margin-bottom: 0.3em; }
+  .stage { background: #e9e9e9; border: 1px solid #bbb; padding: 22px; position: relative; overflow-x: auto; }
+  .stage.dark { background: #3b3f45; }
+  .win { background: #fff; border: 1px solid #999; border-radius: 8px; position: relative; }
+  .win.glass { background: rgba(250,250,250,0.97); }
+  .bar { height: 26px; border-bottom: 1px solid #ccc; display: flex; align-items: center; padding: 0 9px; gap: 5px; font-size: 11px; color: #555; }
+  .bar i { width: 9px; height: 9px; border-radius: 50%; background: #ccc; display: inline-block; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .grow { flex: 1; }
+  .ph { background: repeating-linear-gradient(45deg, #f2f2f2, #f2f2f2 6px, #e8e8e8 6px, #e8e8e8 12px); border: 1px solid #ccc; color: #777; font-size: 11px; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .btn { border: 1px solid #999; border-radius: 6px; padding: 3px 9px; font-size: 11px; background: #fafafa; white-space: nowrap; }
+  .btn.primary { background: #222; color: #fff; border-color: #222; }
+  .btn.round { border-radius: 50%; width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .chip { border: 1px solid #bbb; border-radius: 10px; padding: 1px 8px; font-size: 11px; background: #f6f6f6; white-space: nowrap; }
+  .chip.on { background: #222; color: #fff; border-color: #222; }
+  .field { border: 1px solid #bbb; border-radius: 5px; padding: 6px 8px; font-size: 12px; color: #333; background: #fff; }
+  .field.big { min-height: 54px; }
+  .hint { font-size: 10px; color: #777; }
+  .seg { display: inline-flex; border: 1px solid #999; border-radius: 16px; overflow: hidden; background: #f6f6f6; }
+  .seg span { padding: 4px 11px; font-size: 11px; border-right: 1px solid #ccc; white-space: nowrap; }
+  .seg span:last-child { border-right: none; }
+  .seg span.on { background: #222; color: #fff; }
+  .pill { border-radius: 22px; border: 1px solid #999; background: #fafafa; padding: 6px 8px; display: inline-flex; gap: 8px; align-items: center; }
+  .list { border: 1px solid #ccc; border-radius: 6px; overflow: hidden; font-size: 12px; }
+  .list div { padding: 5px 9px; border-bottom: 1px solid #e3e3e3; display: flex; gap: 8px; align-items: center; }
+  .list div:last-child { border-bottom: none; }
+  .list div.sel { background: #eef3fb; }
+  .list .k { color: #888; font-size: 11px; margin-left: auto; }
+  .tabs { display: flex; gap: 14px; font-size: 11px; border-bottom: 1px solid #ddd; padding: 0 2px 4px; color: #666; }
+  .tabs b { color: #000; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 3px 10px; font-size: 11px; }
+  .kv > span:nth-child(odd) { color: #777; }
+  .mono { font-family: Menlo, Consolas, monospace; font-size: 10.5px; }
+  .err { color: #a02020; }
+  .track { height: 32px; border: 1px solid #aaa; border-radius: 5px; position: relative; background: repeating-linear-gradient(90deg, #ececec, #ececec 38px, #dedede 38px, #dedede 40px); }
+  .track .trim { position: absolute; top: -1px; bottom: -1px; border: 2px solid #222; border-radius: 5px; }
+  .track .mk { position: absolute; top: -9px; width: 9px; height: 9px; border-radius: 50%; border: 1px solid #fff; }
+  .menu { width: 250px; font-size: 12px; background: #fff; border: 1px solid #999; border-radius: 7px; padding: 4px 0; }
+  .menu div { padding: 3px 12px; display: flex; }
+  .menu div .k { margin-left: auto; color: #888; font-size: 11px; }
+  .menu hr { border: none; border-top: 1px solid #ddd; margin: 4px 0; }
+  .menu .hdr { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* Numbered pins: annotation anchors that match the notes list under each screen */
+  .pin { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #d23; color: #fff; font-size: 9px; font-weight: bold; vertical-align: middle; flex: none; font-family: Verdana, sans-serif; }
+  .stage .pin { margin: 0 2px; box-shadow: 0 0 0 2px #fff; }
+  ol.pins { list-style: none; padding-left: 0; font-size: 12px; }
+  ol.pins li { margin: 0.35em 0; padding-left: 24px; position: relative; }
+  ol.pins li .pin { position: absolute; left: 0; top: 1px; }
+
+  /* Highlights and notes pane (from the internals-docs template) */
+  mark.hl { background: #fff2a8; color: inherit; padding: 0; cursor: pointer; }
+  mark.hl[data-color="green"] { background: #c8edc2; }
+  mark.hl[data-color="blue"] { background: #cce5ff; }
+  mark.hl[data-color="pink"] { background: #ffd4e5; }
+  mark.hl.hl-flash { background: #ffd54f; }
+  sup.hl-tag { font-size: 10px; color: #806000; cursor: pointer; margin-left: 1px; }
+  #hl-button, #hl-menu { position: absolute; display: none; z-index: 30; background: #fff; border: 1px solid #ddd; padding: 0 4px; font-size: 11px; line-height: 1.6; }
+  #hl-button button, #hl-menu button { color: #0645ad; cursor: pointer; font-family: inherit; font-size: 11px; background: none; border: none; padding: 0 2px; }
+  #hl-button { white-space: nowrap; }
+  #hl-button button[data-color], #hl-menu button[data-color] { width: 14px; height: 14px; margin: 2px; padding: 0; border: 1px solid #888; border-radius: 50%; vertical-align: middle; }
+  #hl-button button[data-color][aria-pressed="true"] { outline: 2px solid #333; outline-offset: 1px; }
+  #notes-toggle { position: fixed; top: 8px; right: 8px; z-index: 25; padding: 2px; border: none; background: none; color: #666; cursor: pointer; line-height: 0; }
+  #notes-pane { display: none; position: fixed; top: 0; right: 0; bottom: 0; width: var(--notes-width); background: #fff; border-left: 1px solid #ccc; z-index: 20; flex-direction: column; }
+  body.notes-open #notes-pane { display: flex; }
+  body.notes-open { width: calc(100% - var(--notes-width) - 10px); margin-left: max(0px, calc((100% - var(--notes-width) - 10px - 920px) / 2)); margin-right: calc(var(--notes-width) + 10px); }
+  #notes-pane textarea { flex: 1; width: 100%; resize: none; border: none; outline: none; padding: 48px 0.8em 0.8em; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+  #notes-pane .notes-bar { border-top: 1px solid #ddd; padding: 3px 0.8em; text-align: right; font-size: 11px; }
+  #notes-pane .notes-bar button { font-family: inherit; font-size: 11px; background: none; border: none; padding: 0; color: #0645ad; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>Capture Studio: product and design prototype</h1>
+<p class="muted">Branch <code>feature/capture-studio</code> in <code>opencode-appshots-fork</code>. Static UI prototype: nothing on this page is functional. Select any text and press <b>H</b> to highlight it, then open the notes pane (top right) to comment. Refer to a wireframe detail by its pin, for example <code>S4-3</code>.</p>
+
+<h2 id="tldr">TL;DR</h2>
+<ul>
+  <li><b>Idea:</b> one Mac capture app that combines the speed of Appshots (one hotkey, frontmost window, image plus text) with the depth of Jam (recording, logs, device context, AI summary).</li>
+  <li><b>Core model:</b> every capture becomes a local <b>Bundle</b>. A <b>Destination</b> plugin receives the bundle. OpenCode is the first destination. Others plug in later through the same interface.</li>
+  <li><b>Baseline:</b> the current helper already has the composer, region capture, annotation, @skill mentions, dictation and a safe OpenCode handoff. The plan extends it and does not restart it.</li>
+  <li><b>Rule kept from today:</b> capture happens only on user request, and no destination sends or runs anything without a final user action.</li>
+</ul>
+
+<div class="toc"><strong>Contents</strong>
+<ol>
+  <li><a href="#tldr">TL;DR</a></li>
+  <li><a href="#refs">Reference: how Appshots and Jam look</a></li>
+  <li><a href="#jam">Jam feature inventory</a></li>
+  <li><a href="#appshots">Appshots feature inventory</a></li>
+  <li><a href="#matrix">Feature matrix: Appshots vs Jam vs ours</a></li>
+  <li><a href="#model">Product model: Capture, Bundle, Destination</a></li>
+  <li><a href="#screens">UI prototype screens (S1 to S9)</a></li>
+  <li><a href="#contracts">Data and plugin contracts</a></li>
+  <li><a href="#phases">Phases</a></li>
+  <li><a href="#open">Open decisions</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="refs">2. Reference: how Appshots and Jam look</h2>
+
+<h3>Appshots (OpenAI ChatGPT and Codex desktop)</h3>
+<p>OpenAI publishes no UI screenshot of Appshots. The feature has almost no UI: press both Command keys, and the frontmost window goes into a chat as an attachment. The docs mention no preview sheet and no redaction step. The closest picture is our own Appshots-style composer today:</p>
+<div class="shots">
+  <figure><img src="reference/ours-composer-current.png" alt="Current Appshots composer">
+    <figcaption><b>Ours today.</b> Floating composer after <code>Ctrl+Opt+Cmd+A</code>: screenshot thumbnail, <code>@report</code> skill chip, project picker, mic, Continue. Hands off to an unsent OpenCode draft.</figcaption></figure>
+  <figure><div class="ph" style="height:100%; min-height:160px">No official screenshot.<br>Trigger: both Command keys.<br>Result: attachment in a new or recent chat.</div>
+    <figcaption><b>Appshots.</b> Source: <a href="https://learn.chatgpt.com/docs/appshots">learn.chatgpt.com/docs/appshots</a>.</figcaption></figure>
+</div>
+
+<h3>Jam for Mac (launched Oct 27, 2026)</h3>
+<p>Source: <a href="https://x.com/jamdotdev/status/2115096609591898559">launch post</a>, <a href="https://jam.dev/mac">jam.dev/mac</a>, <a href="https://jam.dev/docs">jam.dev/docs</a>. Images are stored locally in <code>prototype/reference/</code> and are git-ignored.</p>
+<div class="shots three">
+  <figure><img src="reference/jam-hotkey.png" alt=""><figcaption><b>Trigger.</b> Global hotkey shown as Option+J.</figcaption></figure>
+  <figure><img src="reference/jam-mode-picker.png" alt=""><figcaption><b>Mode picker.</b> Desktop, window, or area. Camera source next to it.</figcaption></figure>
+  <figure><img src="reference/jam-record-controls.png" alt=""><figcaption><b>Recording controls.</b> Restart, pause, stop.</figcaption></figure>
+</div>
+<div class="shots">
+  <figure><img src="reference/jam-record-bar.webp" alt=""><figcaption><b>Capture bar on the desktop.</b> Close, desktop/window/area, camera toggle, mic source.</figcaption></figure>
+  <figure><img src="reference/jam-review-window.webp" alt=""><figcaption><b>"New Jam" review.</b> Trim strip, AI title and description ("Thinking..."), folder picker, Create Jam.</figcaption></figure>
+  <figure><img src="reference/jam-viewer.png" alt=""><figcaption><b>Jam viewer.</b> Video with error markers, title, activity, <b>Send to app</b>, Copy link, Devtools panel, MCP button.</figcaption></figure>
+  <figure><img src="reference/jam-device-info.png" alt=""><figcaption><b>Devtools: Info.</b> Mac device context: CPU, memory, battery, storage, thermals.</figcaption></figure>
+  <figure><img src="reference/jam-console.png" alt=""><figcaption><b>Devtools: Console.</b> One timeline of clicks, failed requests, and errors, with filters.</figcaption></figure>
+  <figure><img src="reference/jam-timeline-markers.png" alt=""><figcaption><b>Timeline markers.</b> Click, warning and network events on the playback bar.</figcaption></figure>
+  <figure><img src="reference/jam-context-chips.png" alt=""><figcaption><b>Context types.</b> Network errors, console, user events, device, browser/OS, memory, battery, storage, thermals, custom logs.</figcaption></figure>
+  <figure><img src="reference/jam-mcp.png" alt=""><figcaption><b>Agent handoff.</b> "Fix this &lt;jam link&gt;" and the agent calls Jam MCP tools.</figcaption></figure>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="jam">3. Jam feature inventory</h2>
+<p>Grouped from Jam docs and the Mac page. "Mac" marks features specific to Jam for Mac.</p>
+<table>
+<tr><th style="width:18%">Area</th><th>Features</th></tr>
+<tr><td>Capture</td><td>Screenshot; screen recording of desktop, window or area (Mac); up to one hour in 4K (Mac); camera overlay (Mac); microphone narration; Instant Replay (records what already happened); Chrome extension, Mac app, iOS app.</td></tr>
+<tr><td>Trigger</td><td>Global hotkey (Mac); browser extension popup with three options; Recording Links for people without Jam.</td></tr>
+<tr><td>Technical context</td><td>Console logs with level filter; network requests with bodies and timing; GraphQL error detection; user events (clicks, navigation, input); device and OS; network speed; custom logs from <code>jam.metadata()</code> (under 10 KB, read at capture time); Sentry and FullStory backend context.</td></tr>
+<tr><td>Mac context</td><td>Logs from Chrome, Safari and Electron apps (needs the extension in the browser; a native app gives no logs); CPU, thermals, memory, storage, battery.</td></tr>
+<tr><td>AI</td><td>Suggested title, summary, repro steps with timestamps; voice transcript; video chapters; on-device summaries and trimming (Mac).</td></tr>
+<tr><td>Review and edit</td><td>Trim strip; annotation; title and description; folder; timeline markers for events; devtools tabs: Info, Console, Network, Actions, Backend, Transcript.</td></tr>
+<tr><td>Privacy</td><td>Client-side secret filter on headers and JSON bodies (<code>JAM_DOES_NOT_SAVE_SECRETS</code>); auto-blur for Recording Link sessions; binary payload placeholders.</td></tr>
+<tr><td>Routing</td><td>Shareable link; destination picked before "Create"; "Send to app" later; integrations: Linear, Jira, Slack, GitHub, Notion, Asana, GitLab, Zendesk, Intercom and others; webhook <code>jam.created</code>.</td></tr>
+<tr><td>Agents</td><td>MCP server (details, console, network, user events, metadata, screenshots, transcript, chapters, frames, search, comments); CLI that also <b>records</b> (<code>jam record run</code>) and installs agent skills for Claude Code, Cursor, Codex and OpenCode.</td></tr>
+</table>
+<div class="callout">Key point: Jam is cloud-first. The agent gets a <b>link</b> and pulls context through MCP or the CLI. Our product is local-first: the agent gets the <b>bundle itself</b> in an unsent draft.</div>
+
+<!-- ============================================================ -->
+<h2 id="appshots">4. Appshots feature inventory</h2>
+<table>
+<tr><th style="width:18%">Area</th><th>Features</th></tr>
+<tr><td>Trigger</td><td>Both Command keys (macOS) or both Alt keys (Windows); custom hotkey.</td></tr>
+<tr><td>Capture</td><td>Frontmost window only. Image of the visible window plus available accessibility text, including text outside the visible scroll area.</td></tr>
+<tr><td>Destination</td><td>Setting with three values: Automatic, Current chat, New chat. Automatic adds to a chat used in the last 60 seconds, else starts a new chat. Consecutive appshots stack in one chat.</td></tr>
+<tr><td>Storage</td><td>Behaves like an attachment; stored locally in the session file.</td></tr>
+<tr><td>Not included</td><td>No preview step, no redaction, no annotation, no recording, no public API. Weak accessibility apps (Google Docs, canvas apps) give image only.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="matrix">5. Feature matrix: Appshots vs Jam vs ours</h2>
+<p><span class="y">yes</span> exists, <span class="p">partial</span>, <span class="n">no</span>, <span class="new">plan</span> proposed for this fork with its phase.</p>
+<table>
+<tr><th>Capability</th><th>Appshots</th><th>Jam Mac</th><th>Ours today</th><th>Proposal</th></tr>
+<tr><td>Global hotkey</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td>Keep. Add second hotkey for record.</td></tr>
+<tr><td>Frontmost window image</td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td>Keep</td></tr>
+<tr><td>Accessibility text</td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td>Keep. Show it in a context preview (S7).</td></tr>
+<tr><td>Region capture, many shots</td><td><span class="n">no</span></td><td><span class="p">area mode</span></td><td><span class="y">yes, up to 8</span></td><td>Keep</td></tr>
+<tr><td>Annotation</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="y">yes</span></td><td>Keep</td></tr>
+<tr><td>Preview before handoff</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="y">composer</span></td><td>Keep</td></tr>
+<tr><td>Window or area recording</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="new">P2</span></td></tr>
+<tr><td>Trim and timeline</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="new">P2</span></td></tr>
+<tr><td>Voice to text</td><td><span class="n">no</span></td><td><span class="y">transcript</span></td><td><span class="y">dictation</span></td><td><span class="new">P2</span> narration transcript on clips</td></tr>
+<tr><td>AI title / summary / repro</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="p">@report skill</span></td><td>Let the agent do it through skills. No model call in the app.</td></tr>
+<tr><td>Device context</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="n">no</span></td><td><span class="new">P1</span></td></tr>
+<tr><td>Browser / Electron logs</td><td><span class="n">no</span></td><td><span class="y">yes, needs extension</span></td><td><span class="n">no</span></td><td><span class="new">P3</span></td></tr>
+<tr><td>Secret redaction</td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td><span class="p">secure fields skipped</span></td><td><span class="new">P3</span></td></tr>
+<tr><td>Destination choice</td><td><span class="p">chat only</span></td><td><span class="y">many apps</span></td><td><span class="p">OpenCode only</span></td><td><span class="new">P1</span> Destination plugins</td></tr>
+<tr><td>Never auto-sends</td><td><span class="n">no</span></td><td><span class="n">no</span></td><td><span class="y">yes</span></td><td>Keep. Hard rule for every destination.</td></tr>
+<tr><td>Local-only storage</td><td><span class="y">yes</span></td><td><span class="n">cloud</span></td><td><span class="y">yes</span></td><td>Keep</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="model">6. Product model: Capture, Bundle, Destination</h2>
+<pre>
+  Hotkey / menu                    local only                      plugin boundary
+ +--------------+    +-------------------------------+    +---------------------------+
+ | Capture      |    | Bundle                        |    | Destination               |
+ |  - Appshot   |--->|  media: shots, regions, clip  |--->|  OpenCode   (first)       |
+ |  - Region    |    |  context: AX text, device,    |    |  Clipboard / Markdown     |
+ |  - Record    |    |           logs (later)        |    |  Folder                   |
+ +--------------+    |  note, @mentions, redactions  |    |  Claude Code, Cursor, ... |
+        |            +-------------------------------+    |  Linear, GitHub (later)   |
+        v                       ^                         +---------------------------+
+   Composer (S4) ---------------+  user reviews, edits, picks destination, then hands off
+</pre>
+<ul>
+  <li><b>Capture</b> produces media. It does not know the destination.</li>
+  <li><b>Bundle</b> is the one source of truth: a local folder with a manifest. The composer edits it.</li>
+  <li><b>Destination</b> declares what it accepts (images, video, text, size) and how it hands off. The composer hides or converts media that a destination cannot accept.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="screens">7. UI prototype screens</h2>
+<p>Grayscale wireframes. Red pins mark the decisions to review. Each screen lists its pins below the frame.</p>
+
+<!-- S1 -->
+<div class="screen" id="S1">
+<h3>S1. Menu bar menu</h3>
+<div class="stage">
+  <div class="menu">
+    <div><b>Capture Studio</b><span class="k">OpenCode ▾ <span class="pin">1</span></span></div>
+    <hr>
+    <div class="hdr">Capture <span class="pin">2</span></div>
+    <div>Appshot: frontmost window<span class="k">⌃⌥⌘A</span></div>
+    <div>Region…<span class="k">⌃⌥⌘R</span></div>
+    <div>Record window or area…<span class="k">⌃⌥⌘V</span></div>
+    <hr>
+    <div class="hdr">Recent bundles <span class="pin">3</span></div>
+    <div>Chrome · blank PDF invoice<span class="k">2m</span></div>
+    <div>Linear · status filter<span class="k">1h</span></div>
+    <hr>
+    <div>Destinations…</div>
+    <div>Settings…<span class="k">⌘,</span></div>
+    <div>Open captures folder</div>
+    <div>Quit</div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Default destination is visible in the menu header and can change from there.</li>
+  <li><span class="pin">2</span>Three capture modes, three hotkeys. Appshot stays the fastest path.</li>
+  <li><span class="pin">3</span>Recent bundles reopen in the composer. This replaces "Insert latest capture".</li>
+</ol>
+</div>
+
+<!-- S2 -->
+<div class="screen" id="S2">
+<h3>S2. Capture bar (record mode)</h3>
+<div class="stage dark" style="padding:40px 22px">
+  <div class="row" style="justify-content:center">
+    <div class="pill">
+      <span class="btn round">×</span>
+      <span class="pin">1</span><span class="seg"><span>Desktop</span><span class="on">Window</span><span>Area</span></span>
+      <span class="chip">Camera off</span>
+      <span class="chip on">Mic: MacBook</span>
+      <span class="chip">Logs: Chrome ●</span><span class="pin">2</span>
+      <span class="btn primary">Start ⏎</span><span class="pin">3</span>
+    </div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Same three framing modes as Jam. Window mode follows the frontmost window, like Appshots.</li>
+  <li><span class="pin">2</span>Log source shows only when a browser or Electron app can supply logs (phase 3). The dot means connected.</li>
+  <li><span class="pin">3</span>Return starts. Escape cancels. No countdown by default.</li>
+</ol>
+</div>
+
+<!-- S3 -->
+<div class="screen" id="S3">
+<h3>S3. Recording controls</h3>
+<div class="stage dark" style="padding:30px 22px">
+  <div class="row" style="justify-content:center">
+    <div class="pill"><span style="color:#d23">●</span><span class="mono">00:42</span><span class="pin">1</span><span class="btn round">↺</span><span class="btn round">❚❚</span><span class="btn round">✎</span><span class="btn primary">Stop</span><span class="pin">2</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Restart, pause, draw on screen. Controls are excluded from the recording.</li>
+  <li><span class="pin">2</span>Stop opens the composer with the clip attached (S4). Maximum length is an open decision.</li>
+</ol>
+</div>
+
+<!-- S4 -->
+<div class="screen" id="S4">
+<h3>S4. Composer with destination picker (extends today's composer)</h3>
+<div class="stage dark">
+  <div class="win glass" style="width:620px; margin:0 auto; padding:12px">
+    <div class="row">
+      <div class="ph" style="width:74px; height:48px">shot 1</div>
+      <div class="ph" style="width:74px; height:48px">region 2</div>
+      <div class="ph" style="width:96px; height:48px">▶ clip 0:38</div><span class="pin">1</span>
+      <span class="btn">＋</span>
+      <span class="grow"></span>
+      <span class="chip">Context ▸ 4</span><span class="pin">2</span>
+    </div>
+    <div class="field big" style="margin-top:10px">@report Customer sees a blank PDF for invoices older than 90 days. Error starts after clicking Download.</div>
+    <div class="row" style="margin-top:10px">
+      <span class="chip">@report ×</span>
+      <span class="grow"></span>
+      <span class="btn">🎙</span>
+      <span class="btn">To: OpenCode ▾</span><span class="pin">3</span>
+      <span class="btn">milovate ▾</span><span class="pin">4</span>
+      <span class="btn primary">Review in OpenCode ⌘⏎</span>
+    </div>
+    <div class="row" style="margin-top:6px;justify-content:flex-end"><span class="pin">5</span><span class="hint">Opens an unsent draft. You press Enter in OpenCode.</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Shots, regions and clips share one attachment row. A clip shows its duration.</li>
+  <li><span class="pin">2</span>Context chip opens the context preview (S7). The count is the number of context sources.</li>
+  <li><span class="pin">3</span><b>New:</b> destination picker. It opens S6. The default comes from Settings.</li>
+  <li><span class="pin">4</span>The second picker is the destination's own target: project for OpenCode, team for Linear, folder for Folder.</li>
+  <li><span class="pin">5</span>The button label and the hint come from the destination, so the user always knows what happens next.</li>
+</ol>
+</div>
+
+<!-- S5 -->
+<div class="screen" id="S5">
+<h3>S5. Clip review: trim and timeline</h3>
+<div class="stage">
+  <div class="win" style="width:760px; margin:0 auto">
+    <div class="bar"><i></i><i></i><i></i><span style="margin-left:8px">Review clip · Google Chrome · invoices.acme.dev</span></div>
+    <div class="row" style="align-items:stretch; padding:10px; gap:12px">
+      <div class="col grow">
+        <div class="ph" style="height:210px">window recording preview</div>
+        <div class="track">
+          <div class="trim" style="left:12%; right:18%"></div>
+          <span class="mk" style="left:30%; background:#3a6ad8"></span>
+          <span class="mk" style="left:44%; background:#d23"></span>
+          <span class="mk" style="left:47%; background:#d23"></span>
+          <span class="mk" style="left:63%; background:#e08a2a"></span>
+        </div>
+        <div class="row hint"><span class="pin">1</span><span>0:05 in</span><span class="grow"></span><span>0:38 selected of 1:02</span><span class="grow"></span><span>0:51 out</span></div>
+      </div>
+      <div class="col" style="width:230px">
+        <div class="tabs"><b>Transcript</b><span>Events</span><span>Frames</span><span class="pin">2</span></div>
+        <div class="mono" style="color:#444">0:06 "I click download on the March invoice"<br>0:14 "and it opens an empty tab"<br>0:22 "older ones all do this"</div>
+        <div class="tabs" style="margin-top:6px"><b>Key frames</b></div>
+        <div class="row"><div class="ph" style="width:64px;height:40px">0:14</div><div class="ph" style="width:64px;height:40px">0:22</div><div class="ph" style="width:64px;height:40px">0:31</div></div>
+      </div>
+    </div>
+    <div class="row" style="padding:0 10px 10px"><span class="btn">Discard</span><span class="grow"></span><span class="pin">3</span><span class="btn">Send key frames only</span><span class="btn primary">Use clip</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Trim handles plus event markers: blue click, red error, orange warning. Markers need logs (phase 3); without logs the strip shows only frames.</li>
+  <li><span class="pin">2</span>On-device transcript of narration, with timestamps. No cloud fallback, same as today's dictation.</li>
+  <li><span class="pin">3</span>Some destinations accept no video. "Key frames only" converts the clip into a few screenshots plus the transcript.</li>
+</ol>
+</div>
+
+<!-- S6 -->
+<div class="screen" id="S6">
+<h3>S6. Destination picker</h3>
+<div class="stage">
+  <div class="win" style="width:420px; margin:0 auto; padding:10px">
+    <div class="field" style="margin-bottom:8px">Search destinations</div>
+    <div class="list">
+      <div class="sel">● <b>OpenCode</b><span class="hint">unsent draft · images, text</span><span class="k">default <span class="pin">1</span></span></div>
+      <div>● Clipboard as Markdown<span class="hint">text, image paths</span><span class="k"><span class="pin">2</span></span></div>
+      <div>● Save to folder<span class="hint">bundle folder + README.md</span></div>
+      <div style="color:#999">○ Claude Code<span class="hint">not installed</span><span class="k"><span class="pin">3</span></span></div>
+      <div style="color:#999">○ Cursor<span class="hint">plugin available</span></div>
+      <div style="color:#999">○ Linear<span class="hint">connect…</span></div>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="hint">Clip 0:38 is not accepted by OpenCode. It is sent as 4 key frames.</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Each row shows what the destination accepts, so the user sees loss before the handoff.</li>
+  <li><span class="pin">2</span>Built-in fallbacks (Clipboard, Folder) always work, also when no agent app runs.</li>
+  <li><span class="pin">3</span>Unavailable destinations stay visible with the next step (install, connect). The footer explains conversions.</li>
+</ol>
+</div>
+
+<!-- S7 -->
+<div class="screen" id="S7">
+<h3>S7. Context preview (what the agent will see)</h3>
+<div class="stage">
+  <div class="win" style="width:660px; margin:0 auto; padding:10px">
+    <div class="tabs"><b>Window text</b><span>Device</span><span>Console 3</span><span>Network 2</span><span>Redactions 1</span><span class="pin">1</span></div>
+    <div class="row" style="align-items:stretch; gap:12px; margin-top:8px">
+      <div class="col grow mono" style="color:#333; border:1px solid #ddd; padding:6px; height:150px; overflow:hidden">
+        window "Invoices – Acme"<br>&nbsp;&nbsp;table "Invoices"<br>&nbsp;&nbsp;&nbsp;&nbsp;row "INV-0312 · Mar 2 · $1,240"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;button "Download PDF" (focused)<br>&nbsp;&nbsp;text field "Search" = ""<br>&nbsp;&nbsp;text field "API key" = <span class="err">[secure, skipped]</span><br>selected text: "INV-0312"
+      </div>
+      <div class="kv" style="width:250px; grid-template-columns: 70px 1fr"><span><span class="pin">2</span></span><span></span>
+        <span>App</span><span>Google Chrome 141</span>
+        <span>URL</span><span>invoices.acme.dev</span>
+        <span>macOS</span><span>15.2 (arm64)</span>
+        <span>Device</span><span>MacBook Pro M3</span>
+        <span>Memory</span><span>36 GB, 61% used</span>
+        <span>Display</span><span>2 screens, 2x</span>
+        <span>Locale</span><span>en-IN</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px"><label class="hint"><input type="checkbox" checked disabled> include window text</label><label class="hint"><input type="checkbox" checked disabled> include device</label><span class="grow"></span><span class="hint">≈ 2.1k tokens</span><span class="pin">3</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Each context source is a tab, with a count. Console and Network appear only when logs exist.</li>
+  <li><span class="pin">2</span>Device context is new and small, inspired by Jam's Info tab. No location data.</li>
+  <li><span class="pin">3</span>Per-source include toggles and a size estimate. The user decides what leaves the Mac.</li>
+</ol>
+</div>
+
+<!-- S8 -->
+<div class="screen" id="S8">
+<h3>S8. Settings</h3>
+<div class="stage">
+  <div class="win" style="width:640px; margin:0 auto">
+    <div class="bar"><i></i><i></i><i></i><span style="margin-left:8px">Settings</span></div>
+    <div class="row" style="align-items:stretch">
+      <div class="list" style="width:150px; border:none; border-right:1px solid #ddd; border-radius:0">
+        <div class="sel">General</div><div>Destinations</div><div>Privacy</div><div>Recording</div><div>Permissions</div>
+      </div>
+      <div class="col grow" style="padding:12px; font-size:12px">
+        <div class="row"><span style="width:150px">Appshot hotkey</span><span class="field">⌃⌥⌘A</span></div>
+        <div class="row"><span style="width:150px">Default destination</span><span class="btn">OpenCode ▾</span></div>
+        <div class="row"><span style="width:150px">Destination rule</span><span class="seg"><span class="on">Automatic</span><span>Current</span><span>New</span></span><span class="pin">1</span></div>
+        <div class="row"><span style="width:150px">Never capture</span><span class="chip">1Password ×</span><span class="chip">Messages ×</span><span class="btn">＋</span><span class="pin">2</span></div>
+        <div class="row"><span style="width:150px">Keep captures</span><span class="btn">30 days ▾</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>Appshots-style rule: Automatic joins a session used in the last 60 seconds, else creates one. Only for destinations that support sessions.</li>
+  <li><span class="pin">2</span>Excluded apps never capture, also when the hotkey fires while they are frontmost.</li>
+</ol>
+</div>
+
+<!-- S9 -->
+<div class="screen" id="S9">
+<h3>S9. Permissions onboarding</h3>
+<div class="stage">
+  <div class="win" style="width:460px; margin:0 auto; padding:14px">
+    <b>Capture Studio needs 2 permissions</b>
+    <div class="list" style="margin-top:8px">
+      <div>✓ Screen Recording<span class="hint">image of the window</span><span class="k">granted</span></div>
+      <div>✕ Accessibility<span class="hint">window text, paste into drafts</span><span class="k"><span class="btn">Open Settings</span> <span class="pin">1</span></span></div>
+      <div style="color:#999">○ Microphone<span class="hint">optional, narration</span><span class="k">later</span></div>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="hint">After a rebuild macOS can keep the switch on but deny access. Remove the old entry and add the app again.</span></div>
+  </div>
+</div>
+<ol class="pins">
+  <li><span class="pin">1</span>The app checks and explains. It never grants permissions itself (existing rule in <code>docs/macos-permissions.md</code>).</li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="contracts">8. Data and plugin contracts (sketch)</h2>
+<p>A sketch for review, not final code. The destination interface is the plugin boundary that other agent apps can implement later.</p>
+<pre><code>type Media =
+  | { kind: "window"; png: string; app: string; windowTitle: string }
+  | { kind: "region"; png: string; rect: Rect }
+  | { kind: "clip"; mp4: string; durationMs: number; trim?: [number, number];
+      transcript?: string; keyFrames?: string[] };
+
+interface Bundle {
+  id: string;
+  createdAt: string;
+  note: string;                       // canonical text; @mentions derive from it
+  media: Media[];
+  context: {
+    windowText?: string;              // accessibility tree dump
+    selection?: string;
+    device?: DeviceInfo;
+    console?: LogEntry[];             // phase 3
+    network?: NetworkEntry[];         // phase 3
+  };
+  include: Record&lt;keyof Bundle["context"], boolean&gt;;
+}
+
+interface Destination {
+  id: string;                         // "opencode", "clipboard", "folder"
+  label: string;
+  accepts: { image: boolean; video: boolean; maxBytes?: number };
+  status(): Promise&lt;"ready" | "not-installed" | "needs-auth" | "not-running"&gt;;
+  targets(): Promise&lt;Target[]&gt;;      // projects, sessions, teams, folders
+  actionLabel(target: Target): string; // "Review in OpenCode"
+  prepare(bundle: Bundle, target: Target): Promise&lt;HandoffResult&gt;; // must not submit
+}</code></pre>
+<ul>
+  <li><code>prepare</code> places the bundle where the user reviews it. It never submits, sends or runs a model. This keeps today's consent rule for every destination.</li>
+  <li>The composer converts media that a destination does not accept (clip to key frames) before <code>prepare</code>, and shows the conversion in S6.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="phases">9. Phases</h2>
+<table>
+<tr><th style="width:12%">Phase</th><th>Scope</th><th style="width:28%">Screens</th></tr>
+<tr><td>P1</td><td>Bundle manifest as the source of truth. Destination interface with OpenCode, Clipboard and Folder. Destination picker in the composer. Device context. Context preview. Recent bundles in the menu.</td><td>S1, S4, S6, S7, S8 (General, Destinations)</td></tr>
+<tr><td>P2</td><td>Window and area recording. Trim strip. On-device narration transcript. Key-frame conversion.</td><td>S2, S3, S5</td></tr>
+<tr><td>P3</td><td>Browser and Electron logs (extension or debugging protocol). Event markers. Secret redaction. External destinations (Claude Code, Cursor, Linear).</td><td>S2 log chip, S5 markers, S7 Console/Network/Redactions</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="open">10. Open decisions</h2>
+<ol>
+  <li><b>Shell:</b> keep the Swift helper and add UI there, or move the UI to Electron and keep Swift only for capture and accessibility? The current composer, region capture and annotation editor are Swift.</li>
+  <li><b>Destination plugins:</b> in-process JavaScript modules (like the OpenCode plugin today) or separate executables with a small JSON protocol?</li>
+  <li><b>Recording limits:</b> maximum clip length and resolution. Jam allows one hour in 4K; agents mostly need short clips.</li>
+  <li><b>Video to agents:</b> most agent models accept images, not video. Is "key frames plus transcript" the default for all agent destinations?</li>
+  <li><b>Logs source:</b> browser extension (like Jam) or Chrome DevTools Protocol for apps that run with a debug port.</li>
+  <li><b>Product name:</b> "Capture Studio" is a working name for this fork.</li>
+</ol>
+
+<div class="footer">Static prototype for design review. Reference images in <code>prototype/reference/</code> are third-party (Jam, OpenAI) and are not committed. Notes and highlights stay in this browser only; use "Download .md" in the notes pane to share them.</div>
+
+<script>
+(function () {
+  var STORAGE_PREFIX = "pr-doc.";
+  var memoryPrefs = {};
+  function loadPref(key) {
+    try { var v = localStorage.getItem(STORAGE_PREFIX + key); if (v !== null) return v; } catch (e) {}
+    return memoryPrefs[key] || null;
+  }
+  function savePref(key, value) {
+    memoryPrefs[key] = value;
+    try { localStorage.setItem(STORAGE_PREFIX + key, value); } catch (e) {}
+  }
+
+  function initNotes() {
+    var DOC = docName();
+    var KEY = "notes:" + DOC;
+    var CONTEXT = 32;
+    var state = readState();
+    var highlightHistory = [];
+    var undoFromNotes = false;
+    var colors = { yellow: "#fff2a8", green: "#c8edc2", blue: "#cce5ff", pink: "#ffd4e5" };
+    var highlightColor = loadPref("highlightColor");
+    if (!Object.prototype.hasOwnProperty.call(colors, highlightColor)) highlightColor = "yellow";
+
+    var toggle = el("button", { id: "notes-toggle", type: "button" });
+    toggle.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><line x1="9.5" y1="4.5" x2="9.5" y2="19.5"/></svg>';
+    var hlButton = el("div", { id: "hl-button", role: "toolbar", "aria-label": "Highlight selection" });
+    addColorButtons(hlButton);
+    var pane = el("aside", { id: "notes-pane" });
+    pane.innerHTML = '<textarea spellcheck="false"></textarea><div class="notes-bar"><button type="button" data-act="download">Download .md</button></div>';
+    var area = pane.querySelector("textarea");
+    area.placeholder = "Markdown notes for " + DOC + ".md\n\nSelect text and press H to highlight it.\nRefer to a highlight as @h1, a wireframe pin as S4-3.\nDouble-click h1 here to go to it.\nClick a highlight to add it to the notes or delete it.";
+    area.value = state.text;
+    document.body.appendChild(toggle);
+    document.body.appendChild(pane);
+    document.body.appendChild(hlButton);
+    var menu = el("div", { id: "hl-menu" });
+    menu.innerHTML = '<button type="button" data-act="add">add to notes</button><button type="button" data-act="delete" title="Delete highlight">×</button>';
+    document.body.appendChild(menu);
+    var menuN = null;
+    addColorButtons(menu);
+
+    state.highlights.forEach(function (h) { h.missing = !anchor(h); });
+    if (loadPref("notesOpen") === "1") document.body.classList.add("notes-open");
+    updateToggle();
+
+    toggle.addEventListener("click", function () { setOpen(!document.body.classList.contains("notes-open")); });
+    pane.querySelector('[data-act="download"]').addEventListener("click", download);
+    var lastCaret = area.value.length;
+    ["input", "keyup", "click", "blur"].forEach(function (type) {
+      area.addEventListener(type, function () { lastCaret = area.selectionStart; });
+    });
+    area.addEventListener("input", function () { undoFromNotes = false; state.text = area.value; saveState(); });
+    area.addEventListener("dblclick", function () {
+      var word = area.value.slice(area.selectionStart, area.selectionEnd).replace(/^@/, "");
+      if (/^h\d+$/.test(word)) goTo(Number(word.slice(1)));
+      var pin = /^(S\d+)(?:-\d+)?$/.exec(word);
+      if (pin && document.getElementById(pin[1])) document.getElementById(pin[1]).scrollIntoView({ block: "start" });
+    });
+    hlButton.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (e.target.hasAttribute("data-color")) setHighlightColor(e.target.getAttribute("data-color"));
+      highlightSelection();
+    });
+    document.addEventListener("mouseup", function (e) {
+      if (hlButton.contains(e.target) || menu.contains(e.target)) return;
+      setTimeout(function () { placeButton(e); }, 0);
+    });
+    document.addEventListener("keyup", function (e) {
+      if (e.key === "Shift" || e.key.indexOf("Arrow") === 0) placeButton();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.defaultPrevented || e.isComposing) return;
+      if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && highlightHistory.length) {
+        if (!isEditable(e.target) || (e.target === area && undoFromNotes)) { e.preventDefault(); undoHighlight(); }
+        return;
+      }
+      if ((e.key === "h" || e.key === "H") && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditable(e.target) && selectedRange()) {
+        e.preventDefault();
+        highlightSelection();
+      }
+      if (e.key === "Escape") hideMenu();
+    });
+    document.addEventListener("click", function (e) {
+      if (menu.contains(e.target)) return;
+      var target = e.target.closest ? e.target.closest("mark.hl, sup.hl-tag") : null;
+      if (!target || !window.getSelection().isCollapsed) { hideMenu(); return; }
+      showMenu(Number(target.getAttribute("data-hl")), target);
+    });
+    menu.addEventListener("mousedown", function (e) {
+      var color = e.target.getAttribute("data-color");
+      if (color && menuN !== null) {
+        e.preventDefault();
+        rememberHighlights();
+        var n = menuN;
+        state.highlights = state.highlights.map(function (h) { return h.n === n ? Object.assign({}, h, { color: color }) : h; });
+        document.querySelectorAll('mark.hl[data-hl="' + n + '"]').forEach(function (node) { node.setAttribute("data-color", color); });
+        setHighlightColor(color);
+        undoFromNotes = false;
+        hideMenu();
+        saveState();
+        return;
+      }
+      var act = e.target.getAttribute("data-act");
+      if (!act || menuN === null) return;
+      e.preventDefault();
+      var n2 = menuN;
+      hideMenu();
+      if (act === "add") insertRef(n2, false);
+      if (act === "delete") removeHighlight(n2);
+    });
+
+    function showMenu(n, target) {
+      var rect = target.getBoundingClientRect();
+      menuN = n;
+      menu.querySelector('[data-act="add"]').textContent = "add @h" + n + " to notes";
+      menu.style.top = (window.scrollY + rect.bottom + 4) + "px";
+      menu.style.left = (window.scrollX + rect.left) + "px";
+      menu.style.display = "block";
+    }
+    function hideMenu() { menu.style.display = "none"; menuN = null; }
+    function addColorButtons(toolbar) {
+      Object.keys(colors).forEach(function (color) {
+        var button = el("button", { type: "button", "data-color": color, title: "Highlight " + color, "aria-label": "Highlight " + color });
+        button.style.backgroundColor = colors[color];
+        if (toolbar === hlButton) button.setAttribute("aria-pressed", String(color === highlightColor));
+        toolbar.appendChild(button);
+      });
+    }
+    function setHighlightColor(color) {
+      highlightColor = color;
+      savePref("highlightColor", color);
+      hlButton.querySelectorAll("[data-color]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-color") === color)); });
+    }
+    function el(tag, attrs, text) {
+      var node = document.createElement(tag);
+      Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+      if (text) node.textContent = text;
+      return node;
+    }
+    function docName() {
+      var path = location.protocol === "data:" ? "" : location.pathname;
+      var file = path.split("/").pop().replace(/\.html?$/, "");
+      return file || "design";
+    }
+    function readState() {
+      try {
+        var saved = JSON.parse(loadPref(KEY) || "null");
+        if (saved && Array.isArray(saved.highlights)) return { text: saved.text || "", highlights: saved.highlights };
+      } catch (e) {}
+      return { text: "", highlights: [] };
+    }
+    function saveState() {
+      savePref(KEY, JSON.stringify({
+        text: state.text,
+        highlights: state.highlights.map(function (h) { return { n: h.n, text: h.text, prefix: h.prefix, suffix: h.suffix, start: h.start, color: h.color || "yellow" }; }),
+      }));
+      updateToggle();
+    }
+    function updateToggle() {
+      var count = state.highlights.length;
+      var label = "Notes (" + count + (count === 1 ? " highlight)" : " highlights)");
+      toggle.title = label;
+      toggle.setAttribute("aria-label", label);
+    }
+    function setOpen(open) { document.body.classList.toggle("notes-open", open); savePref("notesOpen", open ? "1" : "0"); }
+    function isEditable(node) { return node && (node.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName)); }
+    function isExcluded(node) {
+      var parent = node.nodeType === 3 ? node.parentNode : node;
+      return !parent || !!parent.closest("#notes-pane, #notes-toggle, #hl-button, #hl-menu, script, style, sup.hl-tag");
+    }
+    function textNodes() {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) { return isExcluded(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; },
+      });
+      var nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      return nodes;
+    }
+    function fullText(nodes) { return nodes.map(function (n) { return n.nodeValue; }).join(""); }
+    function pointToOffset(nodes, container, offset) {
+      var point = document.createRange();
+      point.setStart(container, offset);
+      var base = 0;
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i] === container) return base + offset;
+        if (point.comparePoint(nodes[i], 0) >= 0) return base;
+        base += nodes[i].nodeValue.length;
+      }
+      return base;
+    }
+    function selectedRange() {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+      var range = sel.getRangeAt(0);
+      if (!range.toString().trim()) return null;
+      if (isExcluded(range.startContainer) || isExcluded(range.endContainer)) return null;
+      return range;
+    }
+    function placeButton(pointer) {
+      var range = selectedRange();
+      if (!range) { hlButton.style.display = "none"; return; }
+      hlButton.style.display = "block";
+      var selection = window.getSelection();
+      var caret = document.createRange();
+      caret.setStart(selection.focusNode, selection.focusOffset);
+      caret.collapse(true);
+      var rect = caret.getBoundingClientRect();
+      if (!rect.height) {
+        var rects = range.getClientRects();
+        rect = rects[rects.length - 1] || range.getBoundingClientRect();
+      }
+      var x = pointer ? pointer.clientX : rect.left;
+      var y = pointer ? pointer.clientY : rect.bottom;
+      var width = hlButton.offsetWidth, height = hlButton.offsetHeight;
+      x = Math.max(4, Math.min(x, document.documentElement.clientWidth - width - 4));
+      y = y + height + 10 > window.innerHeight ? y - height - 6 : y + 6;
+      hlButton.style.top = (window.scrollY + Math.max(4, y)) + "px";
+      hlButton.style.left = (window.scrollX + x) + "px";
+    }
+    function highlightSelection() {
+      var range = selectedRange();
+      hlButton.style.display = "none";
+      if (!range) return;
+      var nodes = textNodes();
+      var text = fullText(nodes);
+      var start = pointToOffset(nodes, range.startContainer, range.startOffset);
+      var end = pointToOffset(nodes, range.endContainer, range.endOffset);
+      if (end <= start) return;
+      var change = rememberHighlights();
+      var h = {
+        n: state.highlights.reduce(function (max, x) { return Math.max(max, x.n); }, 0) + 1,
+        text: text.slice(start, end),
+        prefix: text.slice(Math.max(0, start - CONTEXT), start),
+        suffix: text.slice(end, end + CONTEXT),
+        start: start,
+        color: highlightColor,
+      };
+      window.getSelection().removeAllRanges();
+      wrap(h, start, end);
+      state.highlights.push(h);
+      saveState();
+      insertRef(h.n, true);
+      change.notesAfter = state.text;
+      undoFromNotes = true;
+    }
+    function rememberHighlights() {
+      var change = { highlights: state.highlights.slice(), notesBefore: state.text, notesAfter: state.text };
+      highlightHistory.push(change);
+      if (highlightHistory.length > 100) highlightHistory.shift();
+      return change;
+    }
+    function undoHighlight() {
+      var change = highlightHistory.pop();
+      hideMenu();
+      hlButton.style.display = "none";
+      window.getSelection().removeAllRanges();
+      document.querySelectorAll("sup.hl-tag").forEach(function (node) { node.remove(); });
+      document.querySelectorAll("mark.hl").forEach(function (node) {
+        var parent = node.parentNode;
+        while (node.firstChild) parent.insertBefore(node.firstChild, node);
+        node.remove();
+        parent.normalize();
+      });
+      state.highlights = change.highlights;
+      state.highlights.forEach(function (h) { h.missing = !anchor(h); });
+      if (state.text === change.notesAfter && change.notesBefore !== change.notesAfter) {
+        state.text = area.value = change.notesBefore;
+        area.selectionStart = area.selectionEnd = lastCaret = area.value.length;
+      }
+      undoFromNotes = undoFromNotes && highlightHistory.length > 0 && state.text === highlightHistory[highlightHistory.length - 1].notesAfter;
+      saveState();
+    }
+    function anchor(h) {
+      var text = fullText(textNodes());
+      var start = -1;
+      var exact = text.indexOf(h.prefix + h.text + h.suffix);
+      if (exact >= 0) {
+        start = exact + h.prefix.length;
+      } else {
+        var at = text.indexOf(h.text);
+        while (at >= 0) {
+          if (start < 0 || Math.abs(at - h.start) < Math.abs(start - h.start)) start = at;
+          at = text.indexOf(h.text, at + 1);
+        }
+      }
+      if (start < 0 || !h.text) return false;
+      wrap(h, start, start + h.text.length);
+      return true;
+    }
+    function wrap(h, start, end) {
+      var parts = [];
+      var base = 0;
+      textNodes().forEach(function (node) {
+        var len = node.nodeValue.length;
+        var s = Math.max(start, base) - base;
+        var e = Math.min(end, base + len) - base;
+        if (s < e && node.nodeValue.slice(s, e).trim()) parts.push({ node: node, s: s, e: e });
+        base += len;
+      });
+      var last = null;
+      parts.forEach(function (part, i) {
+        var node = part.node;
+        if (part.e < node.nodeValue.length) node.splitText(part.e);
+        if (part.s > 0) node = node.splitText(part.s);
+        var color = Object.prototype.hasOwnProperty.call(colors, h.color) ? h.color : "yellow";
+        var mark = el("mark", { "class": "hl", "data-hl": String(h.n), "data-color": color, title: DOC + "-h" + h.n });
+        if (i === 0) mark.id = DOC + "-h" + h.n;
+        node.parentNode.insertBefore(mark, node);
+        mark.appendChild(node);
+        last = mark;
+      });
+      if (last) {
+        var tag = el("sup", { "class": "hl-tag", "data-hl": String(h.n), title: DOC + "-h" + h.n }, "h" + h.n);
+        last.parentNode.insertBefore(tag, last.nextSibling);
+      }
+    }
+    function removeHighlight(n) {
+      if (!state.highlights.some(function (h) { return h.n === n; })) return;
+      rememberHighlights();
+      undoFromNotes = false;
+      document.querySelectorAll('[data-hl="' + n + '"]').forEach(function (node) {
+        if (node.tagName === "SUP") { node.remove(); return; }
+        var parent = node.parentNode;
+        while (node.firstChild) parent.insertBefore(node.firstChild, node);
+        node.remove();
+        parent.normalize();
+      });
+      state.highlights = state.highlights.filter(function (h) { return h.n !== n; });
+      saveState();
+    }
+    function insertRef(n, atEnd) {
+      setOpen(true);
+      var at = atEnd ? area.value.length : Math.min(lastCaret, area.value.length);
+      var before = area.value.slice(0, at);
+      var ref = "@h" + n + " ";
+      if (atEnd && before && !before.endsWith("\n")) ref = "\n" + ref;
+      else if (before && !/\s$/.test(before)) ref = " " + ref;
+      area.value = before + ref + area.value.slice(at);
+      area.focus();
+      area.selectionStart = area.selectionEnd = lastCaret = at + ref.length;
+      state.text = area.value;
+      saveState();
+    }
+    function goTo(n) {
+      var marks = document.querySelectorAll('mark.hl[data-hl="' + n + '"]');
+      if (!marks.length) return;
+      marks[0].scrollIntoView({ block: "center" });
+      marks.forEach(function (m) { m.classList.add("hl-flash"); });
+      setTimeout(function () { marks.forEach(function (m) { m.classList.remove("hl-flash"); }); }, 1200);
+    }
+    function download() {
+      var refs = state.highlights.slice().sort(function (a, b) { return a.n - b.n; }).map(function (h) {
+        var quote = h.text.replace(/\s+/g, " ").trim();
+        return "- @h" + h.n + " = `" + DOC + "-h" + h.n + "`" + (h.missing ? " (not found in this version)" : "") + ": \"" + quote + "\"";
+      });
+      var md = state.text.replace(/\s*$/, "\n");
+      if (refs.length) md += "\n---\n\nHighlights in " + DOC + ":\n\n" + refs.join("\n") + "\n";
+      var link = el("a", { download: DOC + "-notes.md" });
+      link.href = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { URL.revokeObjectURL(link.href); link.remove(); }, 0);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", initNotes);
+})();
+</script>
+</body>
+</html>

@@ -9,13 +9,14 @@ On top of Appshots it adds destinations, bundles, context preview and recent cap
 
 A plugin for OpenCode V2. Captures one app window and the accessibility
 text from that same window, then returns both as native model-visible tool content.
-Supports macOS 14+ and an initial Windows 10/11 implementation. Requires a model
-that accepts images. The macOS implementation was verified against OpenCode 2.0.24;
-native Windows behavior still needs validation on a Windows desktop.
+Supports macOS 14+ and Windows 10/11. Requires a model that accepts images. The
+macOS implementation was verified against OpenCode 2.0.24; native Windows desktop
+behavior still needs validation on a Windows desktop.
 
 **Windows:** see [Windows setup and validation](windows.md). The instructions
-below describe macOS unless noted. Windows supports capture, UI Automation text,
-a tray shortcut, annotation editing, and best-effort draft insertion.
+below describe macOS unless noted. Windows has the capture picker, composer,
+destinations, context review, skill mentions, recent captures, annotation editing,
+screen recording, instant replay, clip trim, recent clicks, custom logs, and best-effort draft handoff.
 
 ## Installation
 
@@ -56,7 +57,7 @@ installation without planning that permission step.
    Each region stays a separate screenshot; up to eight can be attached. Each image
    must be under 15 MB and the collection under 30 MB. Region capture does not read
    accessibility text from outside the selected rectangle or save a whole-display image.
-3. Choose where to send: **OpenCode**, **Clipboard**, or **Save to folder** (see
+3. Choose **OpenCode**, **Claude**, **Codex**, **Clipboard**, or **Save to folder** (see
    [Destinations](#destinations)), then a target. For OpenCode the target is a connected
    project: a location with this plugin loaded in the local OpenCode service, not
    every folder on disk. The footer and send button show the destination's action,
@@ -109,18 +110,23 @@ helpers cannot auto-run prompts.
 
 ### Destinations
 
-A destination is where a prepared capture goes. Each one only places the bundle
-somewhere you then act on; none sends, submits, pastes, or runs anything for you.
+A destination prepares a capture for review. You submit the draft from the destination app.
 
 | Destination | Target | What happens |
 | --- | --- | --- |
 | OpenCode | A loaded project | Creates an empty session and fills its unsent input |
+| Claude (Mac) | A new chat | Prefills a draft in Claude Desktop |
+| Codex (Mac) | A loaded project | Prefills a new Codex draft in the selected project |
 | Clipboard | Markdown | Copies a short summary: the note, screenshot and recording paths, console errors, failed requests, device, and the path of the full-context file. Nothing is pasted |
 | Save to folder | `~/Documents/Appshots` | Writes `screenshot-N.png`, `README.md` and `bundle.json` to a new owner-only folder, then reveals it in Finder |
 
 Change the export folder with the plugin option `{ "exportDirectory": "/absolute/path" }`.
 A relative path makes Save to folder unavailable.
 Exports contain only the included context and never paths into the private captures folder.
+
+Claude and Codex need their desktop apps installed. Their drafts contain the
+full note and paths to local capture and context files. Attach any files you
+want to include directly in the chat.
 
 Destinations are JavaScript modules loaded by the OpenCode plugin process
 (`destinations.js`). Each is a plain object, checked once by `validateDestination`:
@@ -137,6 +143,7 @@ interface Destination {
   // Must never submit. Returns one of the handoff actions below.
   prepare(bundle, target, { note, requestID }): Promise<
     | { action: "opencode-draft"; sessionID; title; directory; draftText }
+    | { action: "desktop-draft"; app: "claude" | "codex"; draftText; directory? }
     | { action: "copy-text"; text; message }
     | { action: "reveal-folder"; path; message }
   >;
@@ -148,7 +155,7 @@ label and hint. `POST /prepare` accepts optional `destination` and `target` fiel
 without them it prepares an OpenCode draft as before. The helper performs the
 returned action: it opens the draft, writes the clipboard, or reveals the folder.
 The helper refuses any other action. Because destinations run inside the plugin,
-Clipboard and Save to folder are also only available while OpenCode has the
+all destinations are available only while OpenCode has the
 plugin loaded.
 
 ### Bundles and recent captures
@@ -355,9 +362,33 @@ under the local captures folder's `composers/` directory. Do not share these fil
 Plugin cleanup closes the endpoint and removes its descriptor. Stale descriptors
 left after a crash are ignored when they cannot authenticate/connect.
 
-This composer is **macOS-only**. Windows retains its existing insertion workflow.
+Windows uses the same bridge and a WinForms composer: capture picker, destinations,
+context review that shows console messages, failed requests, and steps as cards, closes when Context is chosen again or the composer is clicked, and keeps the first 200 console and network rows and the newest steps, prefixes, skill mentions, recent captures listed to the left of the composer (choosing Recents again, Escape, or a click on the composer closes the list) with a thumbnail that leaves the open bundle alone, a selected-screenshot
+outline when more than one image is attached, a right-click menu to copy, share, or show a screenshot or recording without sending the draft, thumbnail hover text that names the app or clip, a composer that opens centered above the bottom of the screen, highlighted known @mentions, a Context hover list, Application log errors and faults for a native app from the last 5 minutes, browser console and failed requests collected after the composer opens, annotation editing with
+a floating toolbar, inline text, crop, and copy, screen recording, instant replay, clip trim with hover text for the handles, events, and buttons, and best-effort draft
+handoff. Cancelling the chooser, composer, or a standalone annotation returns to the previous app. Copy does too. OpenCode and Save to folder keep those windows in front. The tray icon is the capture frame and speech bubble, with a recording dot, replay ring, success dot, or warning mark. Hovering it names capture, recording, or instant replay, and a failed insert says the capture was saved. The tray's **Context sources**
+menu can keep the last 10 minutes of clicks and app switches, and can tail up to
+4 log files (64 KB each) when you capture. Both are off until you choose them.
+**Recent bundles** reopens a saved capture, and **Default destination** is the
+destination the composer selects next. **Insert latest capture** pastes the saved
+capture. **Capture, annotate, and insert** and **Capture and insert without
+annotation** capture the focused window. A screen recording also
+records scrolls, drags, selected text, and which field was typed into; the key
+itself is never stored. Instant replay is off by default.
+It samples the display under the pointer at 8 frames per second into memory (30
+seconds, 150 MB) and writes an MP4 only after a capture is confirmed. Capture Studio
+windows set display affinity so capture APIs that honor it leave them out. The
+recording bar and area outline are also hidden for each frame grab. Click a clip to review it:
+yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
+clip** writes a new MP4 beside the original and takes key frames from the selection.
+**Connect browser extension…** registers the same extension with Chrome, Chrome
+Canary, Brave, Edge, Arc and Chromium. The host and the helper use a named pipe and accept only
+this `Appshots.exe`. **Dictate** uses a Windows speech language installed on this PC. It does not save
+audio and it does not call a cloud recognizer. The capture chooser closes when another application comes forward. **Show composer button while capturing** skips the
+chooser and opens an empty composer. Recent bundles in the tray are listed by when they were created. **Local secret-check model…** accepts only
+`http://127.0.0.1`, `localhost`, or `::1`. The frosted macOS composer stays on macOS.
 The composer and microphone still require a live desktop acceptance test; passing
-contract tests or Swift type-checking does not verify native interaction.
+contract tests or a successful build does not verify native interaction.
 
 ### Existing draft-insertion workflow
 
@@ -441,7 +472,7 @@ Add **Capture Studio.app** (inside this plugin folder) to these macOS settings:
 macOS may attribute a command-line capture to **OpenCode** or the terminal used
 to launch it; grant the responsible app shown by macOS. Restart OpenCode after
 granting access. The helper checks access; it never grants permissions itself.
-To restart this helper after a permission change, choose **Quit Capture Studio** and
+To restart this helper after a permission change, choose **Quit Motifs** and
 run `/capture-studio-start`. You can also open the bundled .app directly.
 The helper is ad-hoc signed with the hardened runtime, so other processes cannot
 inject libraries into it to borrow these grants.
@@ -507,7 +538,7 @@ are forwarded to that helper when it is running, so closing an editor does not
 leave a second helper instance or block the next capture. Disable its automatic start
 by configuring this plugin with `{ "hotkey": false }` in its OpenCode options;
 named-app capture remains available. The menu-bar helper stays available across
-plugin reloads until you choose **Quit Capture Studio**. This avoids losing the global
+plugin reloads until you choose **Quit Motifs**. This avoids losing the global
 shortcut when multiple OpenCode projects load the plugin at once. If you quit it
 from the menu, run `/capture-studio-start` to restart it. Reopening the OpenCode window
 alone may reuse its existing server and does not necessarily reload the plugin.

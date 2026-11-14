@@ -378,7 +378,12 @@ struct ComposerEndpoint: Decodable {
                 projects.lastItem?.toolTip = target.detail ?? target.label
             }
             if destination.targets.isEmpty { projects.addItem(withTitle: destination.status == "ready" ? "No targets" : "Unavailable") }
-            projects.symbol = destination.id == "opencode" ? "folder" : destination.id == "clipboard" ? "doc.on.clipboard" : "tray.and.arrow.down"
+            switch destination.id {
+            case "opencode", "codex": projects.symbol = "folder"
+            case "claude": projects.symbol = "bubble"
+            case "clipboard": projects.symbol = "doc.on.clipboard"
+            default: projects.symbol = "tray.and.arrow.down"
+            }
             if destination.targets.indices.contains(selected) { projects.selectItem(at: selected) }
         } else {
             for endpoint in endpoints {
@@ -394,6 +399,11 @@ struct ComposerEndpoint: Decodable {
     }
 
     func applyDestinations(_ merged: [ComposerDestination]) {
+        let merged = merged.map { destination in
+            guard let app = DesktopDraftApp(rawValue: destination.id),
+                  NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleID) == nil else { return destination }
+            return ComposerDestination(id: destination.id, label: destination.label, status: "not-installed", targets: [])
+        }
         destinations = merged
         destinationButton.removeAllItems()
         for destination in merged {
@@ -986,7 +996,7 @@ struct ComposerEndpoint: Decodable {
 
     func loadSkills() {
         guard let endpoint = selectedEndpoint else {
-            status.stringValue = endpoints.isEmpty ? "Open a project in OpenCode with the Capture Studio plugin loaded." : "\(selectedDestination?.label ?? "This destination") is not available right now."
+            status.stringValue = endpoints.isEmpty ? "Open a project in OpenCode with the Motifs plugin loaded." : "\(selectedDestination?.label ?? "This destination") is not available right now."
             refreshSendAvailability()
             return
         }
@@ -1092,7 +1102,8 @@ struct ComposerEndpoint: Decodable {
         var body = prepareBody(text: text, skills: selected)
         sending = true
         setEditingEnabled(false)
-        status.stringValue = "Preparing \(selectedTarget?.actionLabel.lowercased() ?? "a new OpenCode draft")…"
+        status.stringValue = "Preparing draft…"
+        let desktopDraft = selectedDestination.flatMap { DesktopDraftApp(rawValue: $0.id) }
         Task { @MainActor in
             defer { sending = false }
             do {
@@ -1107,8 +1118,15 @@ struct ComposerEndpoint: Decodable {
                 try await completeHandoff(preparedSession ?? [:])
             } catch {
                 status.stringValue = error.localizedDescription + " Nothing was run. Your draft is still here."
-                // Same request ID for an unchanged retry; the bridge never resubmits it.
-                sendButton.isEnabled = true
+                if desktopDraft != nil {
+                    // Preparing a desktop link has no external side effect. Let the user edit or switch destinations.
+                    requestID = UUID().uuidString
+                    preparedSession = nil
+                    setEditingEnabled(true)
+                } else {
+                    // Same request ID for an unchanged retry; the bridge never resubmits it.
+                    sendButton.isEnabled = true
+                }
                 window?.makeKeyAndOrderFront(nil)
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
@@ -1124,8 +1142,7 @@ struct ComposerEndpoint: Decodable {
         return body
     }
 
-    // Every action stops short of sending: OpenCode gets an unsent draft, the
-    // clipboard is filled without pasting, and folders are only revealed.
+    // Each handoff leaves the user in control of the draft.
     func completeHandoff(_ result: [String: Any]) async throws {
         let action = result["action"] as? String ?? (result["sessionID"] == nil ? "" : "opencode-draft")
         switch action {
@@ -1140,6 +1157,28 @@ struct ComposerEndpoint: Decodable {
                 saveStatus(output: output, phase: "composer_draft_unconfirmed", details: ["sessionID": id])
             }
             submitted = true
+        case "desktop-draft":
+            guard let id = result["app"] as? String, let app = DesktopDraftApp(rawValue: id),
+                  app.rawValue == selectedDestination?.id,
+                  let text = result["draftText"] as? String,
+                  let link = app.draftURL(text: text, directory: result["directory"] as? String) else {
+                throw captureError("The desktop destination returned an invalid draft.")
+            }
+            guard let application = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleID) else {
+                throw captureError("Install \(app.label) on this Mac to open the draft.")
+            }
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    NSWorkspace.shared.open([link], withApplicationAt: application, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                        if let error { continuation.resume(throwing: error) }
+                        else { continuation.resume() }
+                    }
+                }
+            } catch {
+                throw captureError("Could not open \(app.label). Try again or use Clipboard.")
+            }
+            submitted = true
+            saveStatus(output: output, phase: "composer_desktop_opened", details: ["destination": id])
         case "copy-text":
             guard let text = result["text"] as? String else { throw captureError("The clipboard destination returned no text.") }
             NSPasteboard.general.clearContents()

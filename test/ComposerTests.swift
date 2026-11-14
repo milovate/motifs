@@ -540,6 +540,18 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let legacy = mergeDestinations([(endpoint: 0, destinations: [legacyOpenCodeDestination(ComposerEndpoint(directory: "/fixture/old", port: 1, token: ""))])])
         precondition(legacy.first?.targets.first?.actionLabel == "Review in OpenCode", "older plugins still offer OpenCode drafts")
 
+        let draft = "A + B & λ? #draft\nLocal file: /tmp/a b.png"
+        let directory = "/tmp/Work + Code"
+        guard let claude = DesktopDraftApp.claude.draftURL(text: draft, directory: nil),
+              let codex = DesktopDraftApp.codex.draftURL(text: draft, directory: directory) else {
+            preconditionFailure("Claude and Codex accept a valid draft")
+        }
+        precondition(claude.absoluteString.hasPrefix("claude://claude.ai/new?q=") && !claude.absoluteString.contains("+"), "Claude link opens a new draft and encodes literal plus signs")
+        precondition(codex.absoluteString.hasPrefix("codex://threads/new?prompt=") && !codex.absoluteString.contains("+"), "Codex link opens a new draft and encodes literal plus signs")
+        precondition(URLComponents(url: claude, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "q", value: draft)], "Claude gets the exact note")
+        precondition(URLComponents(url: codex, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "prompt", value: draft), URLQueryItem(name: "path", value: directory)], "Codex gets the exact note and selected project")
+        precondition(DesktopDraftApp.codex.draftURL(text: draft, directory: "relative") == nil, "Codex needs an absolute workspace")
+
         let composer = try AppshotComposer(shots: shots, note: "@report Reopened note", context: loaded.context, include: BundleInclude(windowText: false, device: true), output: output, returnTo: nil)
         precondition(composer.textView.string == "@report Reopened note", "reopened bundles restore the note")
         composer.applyAvailableSkills([("report", "Report")])
