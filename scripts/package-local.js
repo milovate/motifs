@@ -14,7 +14,7 @@ const mac = target === "macos-arm64";
 
 const files = execFileSync("git", [
   "ls-files", "-z", "--", ":(top,glob)*.js", "package.json", "package-lock.json",
-  "README.md", "INSTALL.md", "AGENTS.md", "assets/AppIcon.png", "docs/", "browser-extension/",
+  "LICENSE", "README.md", "INSTALL.md", "AGENTS.md", "assets/AppIcon.png", "docs/", "browser-extension/",
 ], { cwd: root, encoding: "utf8" }).split("\0").filter(file => file && file !== "build.js");
 const output = path.join(root, "dist");
 const filename = releaseArchiveName(version, target);

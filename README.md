@@ -85,3 +85,7 @@ The JavaScript plugin has no runtime npm dependencies. See
 [AGENTS.md](AGENTS.md) for contributor instructions.
 
 See [local release checks and signing](docs/releasing.md) for packaging.
+
+## License
+
+Motifs is licensed under the [Apache License 2.0](LICENSE).
