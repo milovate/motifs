@@ -233,8 +233,8 @@ import AppKit
 
     static func emptyText(_ source: String, collecting: Bool) -> String {
         switch source {
-        case "console": return collecting ? "Collecting console messages…" : "No console errors. Native apps: errors and faults from the last 5 minutes. Browsers: install the Capture Studio extension from the menu bar."
-        case "network": return collecting ? "Collecting failed requests…" : "No failed network requests. Browser captures need the Capture Studio extension."
+        case "console": return collecting ? "Collecting console messages…" : "No console errors. Native apps: errors and faults from the last 5 minutes. Browsers: install the Motifs extension from the menu bar."
+        case "network": return collecting ? "Collecting failed requests…" : "No failed network requests. Browser captures need the Motifs extension."
         case "events": return "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the menu bar."
         case "customLogs": return "No log files. Add up to 4 under “Custom log files” in the menu bar."
         case "windowText": return "No window text was read from the captured app."

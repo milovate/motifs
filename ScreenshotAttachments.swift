@@ -20,7 +20,7 @@ func loadScreenshotAttachments(_ manifest: [String: Any], output: String) throws
     return try parts.map { shot in
         guard let path = shot["screenshot"] as? String else { throw captureError("The capture has no screenshot.") }
         let file = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        guard file.deletingLastPathComponent() == root, file.pathExtension == "png" else { throw captureError("Screenshots must be PNGs in the Capture Studio capture folder.") }
+        guard file.deletingLastPathComponent() == root, file.pathExtension == "png" else { throw captureError("Screenshots must be PNGs in the Motifs capture folder.") }
         let size = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? Int.max
         guard size <= 15_000_000, total + size <= 30_000_000 else { throw captureError("Screenshots must be under 15 MB each and 30 MB combined.") }
         let png = try Data(contentsOf: file)

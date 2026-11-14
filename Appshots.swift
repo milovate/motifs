@@ -75,6 +75,7 @@ struct Appshots {
     let contextMenu = NSMenu(title: "Context sources")
     let events = UserEventRecorder()
     let replay = ReplayRecorder()
+    let permissionGuide = PermissionGuide()
     var recordItem: NSMenuItem?
     var item: NSStatusItem?
     var hotkey: EventHotKeyRef?
@@ -108,7 +109,7 @@ struct Appshots {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon()
         let menu = NSMenu()
-        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording… (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Capture Studio", #selector(quit))] {
+        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording… (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Motifs", #selector(quit))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
             entry.target = self
             menu.addItem(entry)
@@ -137,7 +138,7 @@ struct Appshots {
         AppshotComposer.onRecord = { [weak self] composer in self?.beginRecording(for: composer) }
         if settings.instantReplay {
             Task { @MainActor in
-                do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Capture Studio — instant replay could not start: " + error.localizedDescription }
+                do { try await replay.setReplay(true) } catch { item?.button?.toolTip = "Motifs — instant replay could not start: " + error.localizedDescription }
             }
         }
         lastExternalApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == helperBundleID ? nil : $0 }
@@ -168,7 +169,7 @@ struct Appshots {
         }, 1, &event, Unmanaged.passUnretained(self).toOpaque(), &handler)
         let status = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey), EventHotKeyID(signature: 0x43535444, id: 1), eventTarget, 0, &hotkey) : handlerStatus
         let recordStatus = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey | shiftKey), EventHotKeyID(signature: 0x43535444, id: 2), eventTarget, 0, &recordHotkey) : handlerStatus
-        if status != noErr { updateStatusIcon(.warning); item?.button?.toolTip = "Capture Studio — shortcut unavailable. Use the capture menu." }
+        if status != noErr { updateStatusIcon(.warning); item?.button?.toolTip = "Motifs — shortcut unavailable. Use the capture menu." }
         saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "recordHotkeyStatus": recordStatus, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Option + G"])
     }
 
@@ -181,11 +182,11 @@ struct Appshots {
         item?.button?.image = appshotStatusImage(shown)
         item?.button?.imagePosition = .imageOnly
         switch shown {
-        case .recording: item?.button?.toolTip = "Capture Studio — recording the screen. Press ⌥⇧G or use the menu to stop."
-        case .replay: item?.button?.toolTip = "Capture Studio — instant replay keeps the last 30 seconds in memory. ⌥G attaches it."
-        case .ready, .success, .warning: item?.button?.toolTip = "Capture Studio — capture and compose (⌥G)"
+        case .recording: item?.button?.toolTip = "Motifs — recording the screen. Press ⌥⇧G or use the menu to stop."
+        case .replay: item?.button?.toolTip = "Motifs — instant replay keeps the last 30 seconds in memory. ⌥G attaches it."
+        case .ready, .success, .warning: item?.button?.toolTip = "Motifs — capture and compose (⌥G)"
         }
-        item?.button?.setAccessibilityLabel(shown == .recording ? "Capture Studio, recording" : "Capture Studio")
+        item?.button?.setAccessibilityLabel(shown == .recording ? "Motifs, recording" : "Motifs")
     }
 
     func refreshRecordingState() {
@@ -206,6 +207,7 @@ struct Appshots {
 
     func beginRecording(for composer: AppshotComposer?) {
         guard !replay.recording, !choosingRecording else { composer?.recordingFinished(nil); return }
+        guard requireScreenRecording() else { composer?.recordingFinished(nil); return }
         choosingRecording = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -232,7 +234,7 @@ struct Appshots {
             } catch {
                 composer?.recordingFinished(nil)
                 let alert = NSAlert()
-                alert.messageText = "Capture Studio could not start recording"
+                alert.messageText = "Motifs could not start recording"
                 alert.informativeText = error.localizedDescription + "\nScreen recording uses the same Screen Recording permission as screenshots."
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 alert.runModal()
@@ -315,7 +317,7 @@ struct Appshots {
                 refreshRecordingState()
                 composer?.recordingFinished(nil)
                 let alert = NSAlert()
-                alert.messageText = "Capture Studio could not save the recording"
+                alert.messageText = "Motifs could not save the recording"
                 alert.informativeText = error.localizedDescription
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 alert.runModal()
@@ -325,6 +327,7 @@ struct Appshots {
 
     @objc func toggleInstantReplay() {
         let enabled = !CaptureSettings.load(output: output).instantReplay
+        if enabled && !requireScreenRecording() { return }
         updateSettings { $0.instantReplay = enabled }
         Task { @MainActor in
             do { try await replay.setReplay(enabled) } catch {
@@ -356,6 +359,7 @@ struct Appshots {
 
     @objc func composeShot() {
         guard !busy else { raiseEditor(); return }
+        guard requireScreenRecording() else { return }
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -363,7 +367,6 @@ struct Appshots {
         Task { @MainActor in
             defer { busy = false }
             do {
-                guard CGPreflightScreenCaptureAccess() else { throw captureError(screenRecordingRequired) }
                 saveStatus(output: output, phase: "choosing")
                 choosingCapture = true
                 let chosen = await chooseScreenTarget(hint: screenshotHint)
@@ -425,7 +428,7 @@ struct Appshots {
             menu.addItem(clicks)
             let replayToggle = NSMenuItem(title: "Keep instant replay (last 30 s)", action: #selector(toggleInstantReplay), keyEquivalent: "")
             replayToggle.state = settings.instantReplay ? .on : .off
-            replayToggle.toolTip = "Keeps the last 30 seconds of the display in memory only; ⌥G attaches it to the capture. Capture Studio's own windows are not recorded."
+            replayToggle.toolTip = "Keeps the last 30 seconds of the display in memory only; ⌥G attaches it to the capture. Windows from Motifs are excluded."
             menu.addItem(replayToggle)
             menu.addItem(.separator())
             menu.addItem(NSMenuItem(title: "Custom log files", action: nil, keyEquivalent: ""))
@@ -460,12 +463,12 @@ struct Appshots {
         let enabled = !CaptureSettings.load(output: output).recordClicks
         updateSettings { $0.recordClicks = enabled }
         if enabled { events.start() } else if !events.isRecording { events.stop() }
-        if enabled && !AXIsProcessTrusted() { permissions() }
+        if enabled && !AXIsProcessTrusted() { permissionGuide.show(focusing: .accessibility) }
     }
 
     @objc func addCustomLog() {
         let panel = NSOpenPanel()
-        panel.message = "Choose a log file. Capture Studio reads its last 64 KB only when you capture."
+        panel.message = "Choose a log file. Motifs reads its last 64 KB only when you capture."
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -484,7 +487,7 @@ struct Appshots {
         let alert = NSAlert()
         let folder = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("browser-extension")
         do {
-            guard let executable = Bundle.main.executablePath else { throw captureError("Could not locate the Capture Studio executable.") }
+            guard let executable = Bundle.main.executablePath else { throw captureError("Could not locate the Motifs executable.") }
             let support = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
             let installed = try BrowserBridge.installHostManifests(executable: executable, supportDirectory: support)
             alert.messageText = installed.isEmpty ? "No supported browser found" : "Browser connection installed"
@@ -503,7 +506,7 @@ struct Appshots {
         var settings = CaptureSettings.load(output: output)
         let alert = NSAlert()
         alert.messageText = "Local secret-check model"
-        alert.informativeText = "Known secret formats are always redacted. For values that only might be secrets (random-looking URL parts, tokens in logs), Capture Studio can ask a decision model running on this Mac, such as Laya through laya-serve or Unsloth. Only addresses on this Mac are accepted. Without a model, those values are redacted."
+        alert.informativeText = "Known secret formats are always redacted. For values that only might be secrets (random-looking URL parts, tokens in logs), Motifs can ask a decision model running on this Mac, such as Laya through laya-serve or Unsloth. Only addresses on this Mac are accepted. Without a model, those values are redacted."
         let address = NSTextField(string: settings.redactionJudge)
         address.placeholderString = "http://127.0.0.1:8000"
         let model = NSTextField(string: settings.redactionModel)
@@ -616,6 +619,7 @@ struct Appshots {
 
     func captureAndInsert(annotate: Bool) {
         guard !busy else { raiseEditor(); return }
+        guard requireScreenRecording() else { return }
         busy = true
         let foreground = NSWorkspace.shared.frontmostApplication
         let target = foreground?.bundleIdentifier == helperBundleID ? lastExternalApp : foreground
@@ -710,12 +714,13 @@ struct Appshots {
 
     @objc func openFolder() { NSWorkspace.shared.open(URL(fileURLWithPath: output)) }
 
-    @objc func permissions() {
-        let alert = NSAlert()
-        alert.messageText = "Capture Studio permissions"
-        alert.informativeText = "In System Settings → Privacy & Security, add Capture Studio to Screen & System Audio Recording and Accessibility. The app is in the Capture Studio plugin folder. After granting permissions, choose Quit Capture Studio, then run /capture-studio-start in OpenCode."
-        alert.runModal()
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+    @objc func permissions() { permissionGuide.show() }
+
+    private func requireScreenRecording() -> Bool {
+        guard !CapturePermission.screenRecording.granted else { return true }
+        saveStatus(output: output, phase: "permission_required", details: ["permission": "screenRecording"])
+        permissionGuide.show(focusing: .screenRecording)
+        return false
     }
 
     @objc func quit() {
@@ -745,7 +750,7 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
 
 @MainActor func insertIntoOpenCode(_ shot: [String: Any], output: String, draftText: String? = nil, expectedSessionTitle: String? = nil) async throws {
     guard AXIsProcessTrusted() else {
-        throw captureError("Accessibility permission is required to focus OpenCode and paste into its input. Enable Capture Studio in System Settings → Privacy & Security → Accessibility.")
+        throw captureError("Accessibility permission is required to focus OpenCode and paste into its input. Enable Motifs in System Settings → Privacy & Security → Accessibility.")
     }
     let attachments = try loadScreenshotAttachments(shot, output: output)
     guard let opencode = NSRunningApplication.runningApplications(withBundleIdentifier: "ai.opencode.desktop").first else {
@@ -822,7 +827,7 @@ func routeToWatcher(_ args: [String], output: String) -> Bool {
             text = attachments.map { attachment in
                 var shot = attachment.snapshot
                 shot["text"] = ""
-                shot["warnings"] = (shot["warnings"] as? [String] ?? []) + ["Window text was left out: secret redaction needs the Capture Studio plugin loaded in OpenCode."]
+                shot["warnings"] = (shot["warnings"] as? [String] ?? []) + ["Window text was left out: secret redaction needs the Motifs plugin loaded in OpenCode."]
                 return draftContext(shot)
             }.joined(separator: "\n")
         }
@@ -1006,7 +1011,7 @@ func draftContext(_ shot: [String: Any]) -> String {
             warnings.append("Accessibility window could not be matched; screenshot only.")
         }
     } else {
-        warnings.append("Accessibility permission is missing; screenshot only. Add Capture Studio.app to System Settings → Privacy & Security → Accessibility.")
+        warnings.append("Accessibility permission is missing; screenshot only. Add Motifs to System Settings → Privacy & Security → Accessibility.")
     }
     let result: [String: Any] = ["app": app.localizedName ?? "Unknown", "bundleID": app.bundleIdentifier ?? "", "title": title, "capturedAt": ISO8601DateFormatter().string(from: Date()), "screenshot": file.path, "text": text, "warnings": warnings, "readerVersion": 4, "readerNodes": readerNodes]
     try saveCaptureManifest(result, output: output)
@@ -1028,7 +1033,7 @@ func draftContext(_ shot: [String: Any]) -> String {
     return try await capture(choice, output: output)
 }
 
-let screenRecordingRequired = "Screen Recording permission is required. Open System Settings → Privacy & Security → Screen & System Audio Recording and add Capture Studio.app. Restart OpenCode after granting access."
+let screenRecordingRequired = "Screen Recording permission is required. Choose Permission setup in the Motifs menu bar, or add Motifs in System Settings → Privacy & Security → Screen & System Audio Recording. Follow any macOS prompt to quit and reopen the helper."
 let screenshotHint = "Drag an area or click a window · ↩ full screen · esc to cancel"
 
 func isWindowSharingOverlay(_ window: AXUIElement) -> Bool {

@@ -41,7 +41,8 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>local.opencode.capturestudio</string>
-<key>CFBundleName</key><string>Capture Studio</string>
+<key>CFBundleName</key><string>Motifs</string>
+<key>CFBundleDisplayName</key><string>Motifs</string>
 <key>CFBundleExecutable</key><string>CaptureStudio</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -53,7 +54,7 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <key>NSMicrophoneUsageDescription</key><string>Transcribe your description when you click Dictate. Nothing is sent until you click Send.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>Convert your spoken description into an editable draft using on-device recognition.</string>
 </dict></plist>`);
-execFileSync("/usr/bin/xcrun", ["swiftc", "-parse-as-library", "-O", "-module-cache-path", "/tmp/opencode-capture-studio-swift-cache", "-target", "arm64-apple-macosx14.0", ...["Appshots.swift", "AccessibilityReader.swift", "AnnotationEditor.swift", "Composer.swift", "ComposerUI.swift", "CaptureBundle.swift", "ComposerMentions.swift", "ComposerSpeech.swift", "SessionHandoff.swift", "HandoffFocus.swift", "StatusBarIcon.swift", "RegionCapture.swift", "ScreenshotAttachments.swift", "SystemContext.swift", "UserEvents.swift", "BrowserBridge.swift", "ReplayRecorder.swift", "RecordingUI.swift", "ClipReview.swift", "ContextPicker.swift", "Recents.swift"].map(file => path.join(root, file)), "-o", path.join(app, "Contents/MacOS/CaptureStudio")], { stdio: "inherit" });
+execFileSync("/usr/bin/xcrun", ["swiftc", "-parse-as-library", "-O", "-module-cache-path", "/tmp/opencode-capture-studio-swift-cache", "-target", "arm64-apple-macosx14.0", ...["Appshots.swift", "AccessibilityReader.swift", "AnnotationEditor.swift", "Composer.swift", "ComposerUI.swift", "CaptureBundle.swift", "ComposerMentions.swift", "ComposerSpeech.swift", "SessionHandoff.swift", "HandoffFocus.swift", "StatusBarIcon.swift", "RegionCapture.swift", "ScreenshotAttachments.swift", "SystemContext.swift", "UserEvents.swift", "BrowserBridge.swift", "ReplayRecorder.swift", "RecordingUI.swift", "ClipReview.swift", "ContextPicker.swift", "Recents.swift", "PermissionGuide.swift"].map(file => path.join(root, file)), "-o", path.join(app, "Contents/MacOS/CaptureStudio")], { stdio: "inherit" });
 // The hardened runtime stops other processes from injecting code that would inherit
 // this app's Screen Recording and Accessibility grants. Dictation needs audio input;
 // no entitlement may relax library validation or allow DYLD environment variables.

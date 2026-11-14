@@ -126,7 +126,7 @@ import AppKit
         panel.sharingType = .none
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.title = "Capture Studio composer button"
+        panel.title = "Motifs composer button"
         let surface = ComposerSurface(frame: button.frame, radius: Self.diameter / 2)
         button.autoresizingMask = [.width, .height]
         surface.addSubview(button)

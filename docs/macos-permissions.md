@@ -1,6 +1,6 @@
 # macOS permissions
 
-Appshots needs Screen Recording and optionally Accessibility. Dictation adds two
+Motifs needs Screen Recording and optionally Accessibility. Dictation adds two
 optional permissions. Only the user can approve them.
 OpenCode's tool approval is separate and does not grant macOS access.
 
@@ -34,14 +34,21 @@ Complete the [installation](../INSTALL.md) first. For the default path:
 open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
 ```
 
-Finder reveals **Capture Studio.app**. Keep it at the path where it was built:
-the plugin expects the helper inside its own directory.
+Finder reveals **Capture Studio.app**. The app's display name is **Motifs**.
+Keep it inside the plugin directory.
+
+From the Motifs menu bar, choose **Permission setup**. Select **Set up** next to
+the permission you want. Drag the Motifs app tile into the permission list, then
+turn it on. If it is already listed, use its switch.
+You can also choose **Show in Finder** and add the app with **+** in System
+Settings. Follow any macOS prompt to quit and reopen the helper. The guide
+refreshes the status as macOS makes the grant available.
 
 ## 2. Enable screen capture
 
 1. Open Apple menu → **System Settings** → **Privacy & Security**.
 2. Select **Screen Recording** or **Screen & System Audio Recording**.
-3. Enable **Capture Studio** if listed. Otherwise use **+** to add it.
+3. Enable **Motifs** if listed. Otherwise use **+** to add it.
 4. In the file picker press **Command+Shift+G**, enter
    `~/.config/opencode/plugins/capture-studio/`, and select **Capture Studio.app**.
 5. Approve the change, authenticating if macOS requests it. Follow any quit/reopen prompt.
@@ -61,20 +68,20 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
 
 ## 4. Restart and verify
 
-1. Choose **Appshot → Quit Capture Studio** if the helper is already running.
+1. Choose **Motifs → Quit Motifs** if the helper is already running.
 2. In an OpenCode conversation, run `/capture-studio-start`. Alternatively:
 
    ```sh
    open "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
    ```
 
-3. Confirm **Appshot** appears in the menu bar.
+3. Confirm **Motifs** appears in the menu bar.
 4. Press **Option+G** and click a non-sensitive test window in the dimmed overlay.
 5. Confirm the floating composer opens with a screenshot, a **Context** chip, the
    destination and target selectors, and an empty note (no skill is added automatically). Close it
    without sending to verify cancellation. Optionally choose **Clipboard** and send to
    confirm Markdown is copied and nothing is pasted.
-6. To test legacy insertion without a model call, choose **Appshot → Capture,
+6. To test legacy insertion without a model call, choose **Motifs → Capture,
    annotate, and insert into current draft**, then click **Insert**. Confirm the
    screenshot and window text appear in the unsent OpenCode draft.
 7. Test Dictate only if desired. Stop and review the transcript before continuing.
@@ -96,20 +103,20 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
 ## Troubleshooting
 
 - **Switches enabled but still denied after rebuilding:** the local code signature
-  changed. Quit Capture Studio, remove its old entry from both permission lists, add the
+  changed. Quit Motifs, remove its old entry from both permission lists, add the
   newly built `.app`, enable it again, and restart the helper. Restarting only
   OpenCode does not restart an existing helper.
 - **No slash commands:** check the plugin path and build, then reload OpenCode or
   restart its shared service with `opencode service restart`. Do not use V1.
 - **No menu-bar helper:** run `/capture-studio-start`; verify the built helper exists.
 - **Shortcut does nothing:** check for shortcut conflicts. Try the capture action
-  in the Appshot menu. Inspect `shortcutCount` rather than assuming registration
+  in the Motifs menu. Inspect `shortcutCount` rather than assuming registration
   proves delivery.
 - **Screenshot but little/no text:** confirm Accessibility permission. Some apps
   expose limited accessibility trees even with permission. Secure fields are
   omitted from the text dump, but anything visible can still appear in the image.
 - **Draft insertion fails:** open a conversation in the OpenCode desktop app, not
-  Settings or a modal dialog. Use **Appshot → Insert latest capture into OpenCode**
+  Settings or a modal dialog. Use **Motifs → Insert latest capture into OpenCode**
   or `/capture-studio-insert`. The terminal UI is not the automatic insertion target.
 - **Managed Mac prevents approval:** ask your organization's administrator; do not
   edit the TCC database, disable SIP, or try to bypass system policy.
@@ -118,7 +125,7 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
 
 Captures are stored locally under `$XDG_DATA_HOME/opencode/capture-studio`, or
 `~/.local/share/opencode/capture-studio`. Earlier PNGs remain after a new capture;
-review/remove them through **Appshot → Open captures folder**. Captures pasted
+review/remove them through **Motifs → Open captures folder**. Captures pasted
 into OpenCode also enter its attachment store. The composer only prepares a handoff:
 an unsent OpenCode draft, Markdown on the clipboard, or an owner-only export folder.
 Dictation never sends. The composer keeps an owner-only `bundle-*.json` for each
@@ -162,7 +169,7 @@ the original window's accessibility text, but the clean original image and origi
 context remain in the private local capture history for non-destructive re-editing.
 Removing a thumbnail detaches it from the draft; it does not erase saved capture files.
 
-To revoke access, quit Appshots and turn off/remove its entries in Screen Recording,
+To revoke access, quit Motifs and turn off/remove its entries in Screen Recording,
 Accessibility, Microphone, and Speech Recognition as applicable. Turn off
 **Keep instant replay** and **Record recent clicks**, remove custom log files from the menu, and remove the
 browser extension plus the `local.opencode.capturestudio.json` native messaging
