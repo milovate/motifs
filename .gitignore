@@ -1,5 +1,6 @@
 node_modules/
 OpenCode Appshots.app/
+Capture Studio.app/
 .DS_Store
 .idea/
 *.disabled
@@ -15,4 +16,4 @@ windows/dist/
 /dist/
 
 prototype/reference/
-Capture Studio.app/
+Motifs.app/

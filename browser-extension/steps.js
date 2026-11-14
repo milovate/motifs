@@ -1,10 +1,10 @@
-// Records page steps only while Capture Studio is recording the screen. Runs in the
+// Records page steps only while Motifs is recording the screen. Runs in the
 // extension's isolated world. Typed text and field values are never read: typing is
 // reported once per field, and selections inside editable fields are ignored.
 (() => {
-  if (globalThis.__captureStudioSteps) return;
-  globalThis.__captureStudioSteps = true;
-  const { describe, isEditable, target } = globalThis.CaptureStudioSteps;
+  if (globalThis.__motifsSteps) return;
+  globalThis.__motifsSteps = true;
+  const { describe, isEditable, target } = globalThis.MotifsSteps;
   let active = false;
   let typed = new WeakSet();
   let lastSelection = "";

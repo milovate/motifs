@@ -15,7 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal sealed class BridgeException : Exception
 {
@@ -227,7 +227,7 @@ internal sealed class ComposerForm : Form
         }
         foreach (var shot in initial) shots.Add(ComposerFiles.Media(shot));
         if (clips != null) videos.AddRange(clips.Take(ReplayMath.MaxClips));
-        Text = "Capture Studio";
+        Text = "Motifs";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -1262,7 +1262,7 @@ internal sealed class ComposerForm : Form
         {
             submitted = true;
             Program.Save(output, "status.json", new { phase = "composer_draft_unconfirmed" });
-            MessageBox.Show(this, error.Message, "Capture Studio");
+            MessageBox.Show(this, error.Message, "Motifs");
             Close();
         }
         catch (Exception error)

@@ -11,7 +11,7 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const MP4 = Buffer.from("000000186674797069736f6d0000020069736f6d69736f32", "hex");
 
 async function videoBundle(t, video = {}, extra = {}) {
-  const directory = await mkdtemp(path.join(tmpdir(), "capture-studio-video-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "motifs-video-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const screenshot = path.join(directory, "shot.png");
   await writeFile(screenshot, PNG);
@@ -49,7 +49,7 @@ test("video media entries are validated, capped and kept apart from screenshots"
 
 test("videos outside the captures folder or with the wrong type are refused", async (t) => {
   const { directory } = await videoBundle(t);
-  const outside = await mkdtemp(path.join(tmpdir(), "capture-studio-outside-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "motifs-outside-"));
   t.after(() => rm(outside, { recursive: true, force: true }));
   const foreign = path.join(outside, "x.mp4");
   await writeFile(foreign, MP4);
@@ -69,7 +69,7 @@ test("the draft describes the recording, numbers its frames after the screenshot
   const { bundle } = await videoBundle(t);
   const draft = contextDocument(bundle);
   assert.match(draft, /Instant replay: 30\.0 s of the display, starting 2026-10-29T10:00:00Z/);
-  assert.match(draft, process.platform === "win32" ? /Visible pixels can include Capture Studio's own windows/ : /Capture Studio's own windows are not recorded/);
+  assert.match(draft, process.platform === "win32" ? /Visible pixels can include Motifs' own windows/ : /Motifs' own windows are not recorded/);
   assert.match(draft, /Key frames attached as images 2–7, at \+0\.0 s, \+5\.0 s, \+10\.0 s, \+15\.0 s, \+20\.0 s, \+25\.0 s\./);
   assert.match(draft, /The full MP4 stays on the user's Mac and is not attached/);
   assert.match(draft, /Clicked button "Pay" in Chrome \(\+12\.4 s in instant replay\)/);
@@ -87,9 +87,9 @@ test("Markdown links the recording and the folder export copies it with its fram
   const { directory, bundle } = await videoBundle(t);
   const copied = await clipboardDestination().prepare(bundle, { id: "markdown" }, { note: "note", requestID: randomUUID() });
   const linked = copied.text.match(/^- Instant replay: 30\.0 s of the display · `([^`]+)`$/m);
-  assert.ok(linked && path.isAbsolute(linked[1]) && path.basename(linked[1]) === "replay.mp4" && linked[1].includes(`${path.sep}capture-studio-video-`), "markdown links the absolute recording");
+  assert.ok(linked && path.isAbsolute(linked[1]) && path.basename(linked[1]) === "replay.mp4" && linked[1].includes(`${path.sep}motifs-video-`), "markdown links the absolute recording");
   assert.match(copied.text, /^Full context: `[^`]+-context\.md`$/m);
-  assert.ok(!copied.text.includes("<appshot"), "clipboard summary leaves the full context in the file");
+  assert.ok(!copied.text.includes("<motif"), "clipboard summary leaves the full context in the file");
   assert.equal(copied.message, "Copied Markdown with 1 screenshot path and the recording path.");
   const exportRoot = path.join(directory, "exports");
   const result = await folderDestination(exportRoot).prepare(bundle, { id: "exports" }, { note: "note", requestID: randomUUID() });
@@ -136,7 +136,7 @@ test("several clips share six key frames, describe what they recorded and skip p
   assert.deepEqual(bundle.videos.map((video) => video.frames.length), [4, 2, 0], "at most six frames across all clips");
   assert.deepEqual(bundle.videos.map((video) => video.area), ["window", "area", "display"]);
   const draft = contextDocument(bundle);
-  assert.match(draft, /Screen recording 1: 20\.0 s of the "Safari" window, starting 2026-10-29T10:00:00Z\. Capture Studio's own windows are not recorded\. Paused 1 time; paused time is not in the clip\.\nKey frames attached as images 1–4/);
+  assert.match(draft, /Screen recording 1: 20\.0 s of the "Safari" window, starting 2026-10-29T10:00:00Z\. Motifs' own windows are not recorded\. Paused 1 time; paused time is not in the clip\.\nKey frames attached as images 1–4/);
   assert.match(draft, /Screen recording 2: 10\.0 s of a 400 × 300 area of the screen[\s\S]*Key frames attached as images 5–6/);
   assert.match(draft, /Screen recording 3: 5\.0 s of the display[\s\S]*No key frames were extracted/);
   assert.match(draft, /"Before pause" in Safari \(\+3\.0 s in screen recording 1\)/);

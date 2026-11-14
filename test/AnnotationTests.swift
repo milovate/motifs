@@ -51,7 +51,7 @@ struct AnnotationTests {
         editor.moveToolbar(by: .zero)
         expect(content.bounds.contains(editor.tray.frame), "toolbar stays inside a resized window")
         expect(editor.tray.layer?.borderWidth == 0, "toolbar has no outline")
-        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("appshots-annotation-\(UUID().uuidString)"))
+        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("motifs-annotation-\(UUID().uuidString)"))
         defer { testPasteboard.releaseGlobally() }
         editor.pasteboard = testPasteboard
         editor.canvas.document = AnnotationDocument(marks: [AnnotationMark(tool: .box, points: [CGPoint(x: 10, y: 10), CGPoint(x: 90, y: 90)], color: .red, width: 4)])

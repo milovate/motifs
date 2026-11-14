@@ -8,7 +8,7 @@ import { startComposerBridge, submitComposer } from "../composer-bridge.js";
 import { assertOwnerOnly } from "./owner-only.js";
 
 async function fixture(t) {
-  const directory = await mkdtemp(path.join(tmpdir(), "appshots-composer-test-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "motifs-composer-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII=", "base64");
   const screenshot = path.join(directory, "capture.png");
@@ -54,7 +54,7 @@ test("validates the draft, skills and exact capture before creating any session"
   }
   assert.equal(f.created.length, 0);
   const noteless = await submitComposer(f.ctx, f.directory, { ...f.input, text: " " });
-  assert.match(noteless.title, /^Appshot: Capture \[/, "a screenshot can be sent without a note");
+  assert.match(noteless.title, /^Motif: Capture \[/, "a screenshot can be sent without a note");
   f.created.length = 0;
   await writeFile(f.manifest, JSON.stringify({ screenshot: path.join(f.directory, "../outside.png") }));
   await assert.rejects(submitComposer(f.ctx, f.directory, f.input));

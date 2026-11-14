@@ -1,6 +1,6 @@
 import AppKit
 
-@MainActor func installAppshotsEditMenu() {
+@MainActor func installMotifsEditMenu() {
     // Accessory apps do not receive a template Edit menu automatically. The menu
     // also supplies standard shortcuts to native search fields and annotation dialogs.
     guard NSApp.mainMenu == nil else { return }

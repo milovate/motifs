@@ -32,7 +32,7 @@ try {
   }
 
   if (mac) {
-    const app = "Capture Studio.app";
+    const app = "Motifs.app";
     execFileSync("/usr/bin/ditto", [path.join(root, app), path.join(plugin, app)], { stdio: "inherit" });
     execFileSync("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", plugin, archive], { stdio: "inherit" });
     // Install Motifs.txt refers to /Volumes/Motifs, so the volume name must stay "Motifs".

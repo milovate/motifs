@@ -1,4 +1,4 @@
-// Describes page elements for Capture Studio steps: a role and accessible name for
+// Describes page elements for Motifs steps: a role and accessible name for
 // Playwright's getByRole, plus a CSS selector fallback. Field values and typed
 // text are never read. Loaded as a classic content script and by the Node tests.
 (function (root) {
@@ -100,5 +100,5 @@
     return Object.fromEntries(Object.entries(result).filter(([, value]) => value));
   }
 
-  root.CaptureStudioSteps = { accessibleName, describe, isEditable, role, selector, target };
+  root.MotifsSteps = { accessibleName, describe, isEditable, role, selector, target };
 })(globalThis);

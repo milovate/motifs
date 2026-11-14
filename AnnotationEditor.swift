@@ -1,6 +1,6 @@
 import AppKit
 
-let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestudio"
+let helperBundleID = Bundle.main.bundleIdentifier ?? "local.motifs"
 
 @MainActor func annotateScreenshot(_ shot: [String: Any], output: String, returnTo: NSRunningApplication? = nil, confirmationTitle: String = "Insert") async throws -> [String: Any]? {
     let savedMarks = try (shot["annotations"] as? [[String: Any]]).map {
@@ -83,7 +83,7 @@ let helperBundleID = Bundle.main.bundleIdentifier ?? "local.opencode.capturestud
         window.minSize = NSSize(width: 720, height: 480)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.identifier = NSUserInterfaceItemIdentifier("appshot-annotation")
+        window.identifier = NSUserInterfaceItemIdentifier("motifs-annotation")
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self

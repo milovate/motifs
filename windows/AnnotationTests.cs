@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Forms = System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // Uses only synthetic pixels and objects. Never captures a real window or inserts a draft.
 internal static class AnnotationTests

@@ -31,10 +31,10 @@ section). Screenshots and recordings are not redacted.
 Complete the [installation](../INSTALL.md) first. For the default path:
 
 ```sh
-open -R "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
+open -R "$HOME/.config/opencode/plugins/motifs/Motifs.app"
 ```
 
-Finder reveals **Capture Studio.app**. The app's display name is **Motifs**.
+Finder reveals **Motifs.app**. The app's display name is **Motifs**.
 Keep it inside the plugin directory.
 
 From the Motifs menu bar, choose **Permission setup**. Select **Set up** next to
@@ -50,7 +50,7 @@ refreshes the status as macOS makes the grant available.
 2. Select **Screen Recording** or **Screen & System Audio Recording**.
 3. Enable **Motifs** if listed. Otherwise use **+** to add it.
 4. In the file picker press **Command+Shift+G**, enter
-   `~/.config/opencode/plugins/capture-studio/`, and select **Capture Studio.app**.
+   `~/.config/opencode/plugins/motifs/`, and select **Motifs.app**.
 5. Approve the change, authenticating if macOS requests it. Follow any quit/reopen prompt.
 
 If macOS attributes a direct command-line capture to **OpenCode** or the terminal
@@ -60,7 +60,7 @@ permissions indiscriminately to every terminal or executable.
 ## 3. Enable Accessibility
 
 1. Return to **Privacy & Security** → **Accessibility**.
-2. Add the same **Capture Studio.app** with **+**, then enable its switch.
+2. Add the same **Motifs.app** with **+**, then enable its switch.
 3. Authenticate if prompted.
 
 Accessibility is powerful: it allows the helper to inspect UI and send paste
@@ -69,10 +69,10 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
 ## 4. Restart and verify
 
 1. Choose **Motifs → Quit Motifs** if the helper is already running.
-2. In an OpenCode conversation, run `/capture-studio-start`. Alternatively:
+2. In an OpenCode conversation, run `/motifs-start`. Alternatively:
 
    ```sh
-   open "$HOME/.config/opencode/plugins/capture-studio/Capture Studio.app"
+   open "$HOME/.config/opencode/plugins/motifs/Motifs.app"
    ```
 
 3. Confirm **Motifs** appears in the menu bar.
@@ -91,7 +91,7 @@ keystrokes to OpenCode. Grant it only after reviewing and trusting this code.
 For helper-side diagnostics, inspect the local file:
 
 ```sh
-cat "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/capture-studio/status.json"
+cat "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/motifs/status.json"
 ```
 
 `screenRecording` and `accessibility` reflect permission checks. Both
@@ -108,7 +108,7 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
   OpenCode does not restart an existing helper.
 - **No slash commands:** check the plugin path and build, then reload OpenCode or
   restart its shared service with `opencode service restart`. Do not use V1.
-- **No menu-bar helper:** run `/capture-studio-start`; verify the built helper exists.
+- **No menu-bar helper:** run `/motifs-start`; verify the built helper exists.
 - **Shortcut does nothing:** check for shortcut conflicts. Try the capture action
   in the Motifs menu. Inspect `shortcutCount` rather than assuming registration
   proves delivery.
@@ -117,14 +117,14 @@ Do not publish capture manifests, screenshots, or UI text as diagnostics.
   omitted from the text dump, but anything visible can still appear in the image.
 - **Draft insertion fails:** open a conversation in the OpenCode desktop app, not
   Settings or a modal dialog. Use **Motifs → Insert latest capture into OpenCode**
-  or `/capture-studio-insert`. The terminal UI is not the automatic insertion target.
+  or `/motifs-insert`. The terminal UI is not the automatic insertion target.
 - **Managed Mac prevents approval:** ask your organization's administrator; do not
   edit the TCC database, disable SIP, or try to bypass system policy.
 
 ## Privacy and revocation
 
-Captures are stored locally under `$XDG_DATA_HOME/opencode/capture-studio`, or
-`~/.local/share/opencode/capture-studio`. Earlier PNGs remain after a new capture;
+Captures are stored locally under `$XDG_DATA_HOME/opencode/motifs`, or
+`~/.local/share/opencode/motifs`. Earlier PNGs remain after a new capture;
 review/remove them through **Motifs → Open captures folder**. Captures pasted
 into OpenCode also enter its attachment store. The composer only prepares a handoff:
 an unsent OpenCode draft, Markdown on the clipboard, or an owner-only export folder.
@@ -138,8 +138,8 @@ live only in the helper's memory until a capture copies them into the composer;
 recording-only steps are dropped when the recording ends. The browser extension's
 buffers and page steps live only in the browser's session memory, and it records page
 steps only between the start and stop of a screen recording. Browser context travels only over an owner-only socket in
-`~/Library/Application Support/Capture Studio/browser/` between two copies of the
-same signed Capture Studio binary; each side refuses any other process.
+`~/Library/Application Support/Motifs/browser/` between two copies of the
+same signed Motifs binary; each side refuses any other process.
 
 Nothing is recorded unless you turn on **Keep instant replay** or start a screen
 recording and pick what to record; macOS shows its screen-recording indicator whenever either
@@ -149,7 +149,7 @@ captures only what you picked in the overlay (one window, a dragged area, or the
 paused time out, and stops after 5 minutes. MP4s, trimmed copies and key frames are
 saved owner-only in the captures folder; OpenCode receives up to six key frames as
 images plus the file paths, and only when you send. Once you submit, the agent can open
-the MP4 and the context file from those paths. Capture Studio's own windows are excluded, but everything
+the MP4 and the context file from those paths. Motifs' own windows are excluded, but everything
 else in the recorded display or area, including notifications and other apps'
 content, can appear in the video. Turn replay off before showing sensitive content.
 
@@ -172,7 +172,7 @@ Removing a thumbnail detaches it from the draft; it does not erase saved capture
 To revoke access, quit Motifs and turn off/remove its entries in Screen Recording,
 Accessibility, Microphone, and Speech Recognition as applicable. Turn off
 **Keep instant replay** and **Record recent clicks**, remove custom log files from the menu, and remove the
-browser extension plus the `local.opencode.capturestudio.json` native messaging
+browser extension plus the `local.motifs.json` native messaging
 manifests to stop the other context sources. Remove or disable
 the plugin separately to stop future helper launches and its local composer bridge.
 

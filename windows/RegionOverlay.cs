@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal enum CaptureKind { Window, Region, Display }
 
@@ -91,7 +91,7 @@ internal sealed class RegionOverlay : Form
         Cursor = Cursors.Cross;
         KeyPreview = true;
         DoubleBuffered = true;
-        Text = "Capture Studio";
+        Text = "Motifs";
         otherApps.Tick += (_, _) => CancelIfAnotherApp();
     }
 
@@ -372,7 +372,7 @@ internal sealed class ComposerBubble : Form
         menu.Items.Add("Hide floating button", null, (_, _) => hideFromMenu());
         button.ContextMenuStrip = menu;
         Controls.Add(button);
-        Text = "Capture Studio composer button";
+        Text = "Motifs composer button";
     }
 
     protected override void OnHandleCreated(EventArgs e)

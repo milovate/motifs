@@ -1,8 +1,8 @@
 import AppKit
 
-enum AppshotStatusIcon { case ready, success, warning, replay, recording }
+enum MotifStatusIcon { case ready, success, warning, replay, recording }
 
-@MainActor func appshotStatusImage(_ status: AppshotStatusIcon = .ready) -> NSImage {
+@MainActor func motifStatusImage(_ status: MotifStatusIcon = .ready) -> NSImage {
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
         NSColor.black.setStroke()
         NSColor.black.setFill()

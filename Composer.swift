@@ -41,23 +41,23 @@ struct ComposerEndpoint: Decodable {
 }
 
 @MainActor func composeCapture(shots: [[String: Any]], videos: [[String: Any]], context: [String: Any], pending: Task<[String: Any], Never>?, output: String, returnTo: NSRunningApplication?) async throws {
-    let composer = try AppshotComposer(shots: shots, videos: videos, note: "", context: context, include: CaptureSettings.load(output: output).include, output: output, returnTo: returnTo)
+    let composer = try MotifComposer(shots: shots, videos: videos, note: "", context: context, include: CaptureSettings.load(output: output).include, output: output, returnTo: returnTo)
     if let pending { composer.collect(pending) }
     await presentComposer(composer)
 }
 
 @MainActor func composeBundle(path: String, output: String, returnTo: NSRunningApplication?) async throws {
     let bundle = try loadCaptureBundle(path: path, output: output)
-    let composer = try AppshotComposer(shots: bundle.shots, videos: bundle.videos, note: bundle.note, context: bundle.context, include: bundle.include, output: output, returnTo: returnTo)
+    let composer = try MotifComposer(shots: bundle.shots, videos: bundle.videos, note: bundle.note, context: bundle.context, include: bundle.include, output: output, returnTo: returnTo)
     composer.adopt(bundle)
     if bundle.missingScreenshots > 0 { composer.status.stringValue = "\(bundle.missingScreenshots) screenshot\(bundle.missingScreenshots == 1 ? " was" : "s were") deleted since this bundle was saved." }
     await presentComposer(composer)
 }
 
-@MainActor func presentComposer(_ composer: AppshotComposer) async {
+@MainActor func presentComposer(_ composer: MotifComposer) async {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
         composer.completion = { continuation.resume() }
-        AppshotComposer.current = composer
+        MotifComposer.current = composer
         composer.autosave()
         composer.positionNearBottom()
         composer.window?.present { composer.window?.makeKeyAndOrderFront(nil) }
@@ -68,10 +68,10 @@ struct ComposerEndpoint: Decodable {
     withExtendedLifetime(composer) {}
 }
 
-@MainActor final class AppshotComposer: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
+@MainActor final class MotifComposer: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
     // The menu-bar helper records the screen; the composer only asks for a clip.
-    static var onRecord: ((AppshotComposer) -> Void)?
-    static weak var current: AppshotComposer?
+    static var onRecord: ((MotifComposer) -> Void)?
+    static weak var current: MotifComposer?
     var shots: [[String: Any]]
     var selectedShotIndex = 0
     var shot: [String: Any] {
@@ -142,8 +142,8 @@ struct ComposerEndpoint: Decodable {
         settings = CaptureSettings.load(output: output)
         endpoints = ComposerEndpoint.load(output: output)
         let panel = ComposerPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 214), styleMask: [.borderless], backing: .buffered, defer: false)
-        panel.title = "Appshot composer"
-        panel.identifier = NSUserInterfaceItemIdentifier("appshot-composer")
+        panel.title = "Motif composer"
+        panel.identifier = NSUserInterfaceItemIdentifier("motifs-composer")
         panel.isReleasedWhenClosed = false
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -842,11 +842,11 @@ struct ComposerEndpoint: Decodable {
             : "Record the display, a window or an area; the clip is added here (⌥⇧G)" + (videos.isEmpty ? "" : " · \(videos.count) of \(ReplayWriter.maxClips) used")
     }
 
-    var canAddRecording: Bool { AppshotComposer.onRecord != nil && videos.count < ReplayWriter.maxClips }
+    var canAddRecording: Bool { MotifComposer.onRecord != nil && videos.count < ReplayWriter.maxClips }
     var canEditAttachments: Bool { textView.isEditable && !sending && !addingScreenshot && !recordingClip && !reviewingClip && preparedSession == nil }
 
     @objc func addRecording() {
-        guard canEditAttachments, canAddRecording, let record = AppshotComposer.onRecord else { return }
+        guard canEditAttachments, canAddRecording, let record = MotifComposer.onRecord else { return }
         recordingClip = true
         speech.cancel()
         skillPopover.close()
@@ -1221,7 +1221,7 @@ struct ComposerEndpoint: Decodable {
 
     func windowWillClose(_ notification: Notification) {
         if autosaveTimer != nil { autosave() }
-        if AppshotComposer.current === self { AppshotComposer.current = nil }
+        if MotifComposer.current === self { MotifComposer.current = nil }
         skillPopover.close()
         contextPopover.close()
         recentsPopover.close()

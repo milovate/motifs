@@ -51,6 +51,6 @@ The command repeats `release:verify`, refuses a commit that is not on
 then uses `gh release create` to tag `v<version>` and upload the DMG, both ZIPs,
 and a combined `SHA256SUMS`. Without `--signed`, the release is a pre-release
 titled "preview" with notes on approving unsigned helpers.
-`/capture-studio-update` only offers stable releases, so it ignores previews.
+`/motifs-update` only offers stable releases, so it ignores previews.
 Pass `--signed` before the directories to publish signed checks as a stable
 release.

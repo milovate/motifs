@@ -1,11 +1,11 @@
-# Capture Studio reference
+# Motifs reference
 
-This fork installs as **Capture Studio**, a separate plugin that can run alongside
-OpenCode Appshots. It has its own helper app (`Capture Studio.app`, bundle ID
-`local.opencode.capturestudio`) and therefore its own macOS permission entries. It
-also has its own captures folder (`opencode/capture-studio`), shortcut
-(**Option+G**; while the helper runs, Option+G no longer types © in other apps), `capture_studio` tool, and `/capture-studio*` commands.
-On top of Appshots it adds destinations, bundles, context preview and recent captures.
+Motifs installs as one plugin with a helper app (`Motifs.app`, bundle ID
+`local.motifs`) that has its own macOS permission entries. It uses the captures
+folder `opencode/motifs`, the shortcut **Option+G** (while the helper runs,
+Option+G no longer types © in other apps), the `motifs` tool, and the
+`/motifs*` commands. The `capture_studio` tool and `/capture-studio*` commands
+remain as deprecated aliases for one release.
 
 A plugin for OpenCode V2. Captures one app window and the accessibility
 text from that same window, then returns both as native model-visible tool content.
@@ -118,7 +118,7 @@ A destination prepares a capture for review. You submit the draft from the desti
 | Claude (Mac) | A new chat | Prefills a draft in Claude Desktop |
 | Codex (Mac) | A loaded project | Prefills a new Codex draft in the selected project |
 | Clipboard | Markdown | Copies a short summary: the note, screenshot and recording paths, console errors, failed requests, device, and the path of the full-context file. Nothing is pasted |
-| Save to folder | `~/Documents/Appshots` | Writes `screenshot-N.png`, `README.md` and `bundle.json` to a new owner-only folder, then reveals it in Finder |
+| Save to folder | `~/Documents/Motifs` | Writes `screenshot-N.png`, `README.md` and `bundle.json` to a new owner-only folder, then reveals it in Finder |
 
 Change the export folder with the plugin option `{ "exportDirectory": "/absolute/path" }`.
 A relative path makes Save to folder unavailable.
@@ -170,7 +170,7 @@ always to the same file. Nothing leaves your Mac until you send.
 The **clock** button in the composer opens **Recents** beside it: the last 30 bundles,
 most recently edited first, with a thumbnail. Click one to reopen it in exactly that
 state, for example to keep annotating or to send it to a different destination; the
-capture you were on stays saved. **Appshot → Recent bundles** in the menu bar lists
+capture you were on stays saved. **Motifs → Recent bundles** in the menu bar lists
 the latest eight. Screenshots deleted since then are reported and left out.
 
 To get there without capturing, press ⌥G and click the **composer button**, a small
@@ -179,8 +179,8 @@ an empty composer with Recents beside it; pick a bundle, or write a note and add
 screenshots or recordings from the composer. No context is collected for an empty
 composer. The circle sits at the bottom center, just above the overlay's hint. Like the recording
 controls, it never appears in screenshots or recordings. Right-click it, or use
-**Appshot → Show composer button while capturing**, to turn it off.
-**Appshot → Default destination** sets which destination the composer preselects.
+**Motifs → Show composer button while capturing**, to turn it off.
+**Motifs → Default destination** sets which destination the composer preselects.
 This is stored in an owner-only `settings.json` in the captures folder.
 
 Device context covers the macOS version, architecture, Mac model, CPU, memory,
@@ -211,14 +211,14 @@ with it, not a fresh collection.
 | Logs | The last 64 KB of up to 4 files chosen under **Context sources → Custom log files**. Paths are stored in the owner-only `settings.json`; exports include only the file name | At capture |
 
 Logs, console messages, page content and click labels are untrusted app content. The
-draft wraps them in `<appshot_context>` blocks with a warning not to follow
+draft wraps them in `<motif_context>` blocks with a warning not to follow
 instructions inside them. Logs and events share one 60,000-character budget; the
 oldest entries are dropped first, with a note.
 
 #### Secret redaction
 
 Before anything leaves your Mac (OpenCode drafts, the context file, **Copy Markdown**,
-**Save to folder**, the `capture_studio` tool and the menu bar's insert commands),
+**Save to folder**, the `motifs` tool and the menu bar's insert commands),
 the plugin replaces values that look like secrets with `[redacted]` in window text,
 window titles, page URLs, console messages, failed requests, steps and log files.
 Your saved capture keeps the originals, your own note is sent as you wrote it, and
@@ -239,7 +239,7 @@ the image.
 - **Values that only might be secrets** are random-looking URL path segments and
   parameter values (`/api/keys/abc123`, `?id=Zx81Qp0L…`) and long random tokens.
   By default they are replaced too. Ordinary IDs, UUIDs, numbers and words are kept.
-- **Optional local check:** **Appshot → Context sources → Local secret-check model…**
+- **Optional local check:** **Motifs → Context sources → Local secret-check model…**
   takes the address of a [Jev-compatible](https://github.com/NandhaKishorM/laya)
   decision model running on this Mac, such as Laya through `laya-serve` or Unsloth's
   Decision API, or Clef-flash if you run it locally. For each such value it sends the
@@ -262,11 +262,11 @@ clicks, which field was typed into (never field values or typed text), select an
 checkbox changes, form submits, scroll positions, highlighted text outside editable
 fields, navigations and tab switches, up to 500 steps. Stopping the recording
 collects and clears them; steps expire after 6 minutes if the helper never asks.
-Nothing is sent anywhere else. After updating Capture Studio, reload the extension
+Nothing is sent anywhere else. After updating Motifs, reload the extension
 on `chrome://extensions` so page steps are available.
 
-1. Choose **Appshot → Context sources → Connect browser extension…**. This writes a
-   native messaging host manifest named `local.opencode.capturestudio.json` into each
+1. Choose **Motifs → Context sources → Connect browser extension…**. This writes a
+   native messaging host manifest named `local.motifs.json` into each
    installed browser's `NativeMessagingHosts` folder. It allows only the pinned
    extension ID `ffjgcjgbehaoabcniapiljdcpeehoocd`, and it is written only when you
    choose this menu item.
@@ -275,29 +275,29 @@ on `chrome://extensions` so page steps are available.
    revealed in Finder.
 3. Reload the tabs you want to debug. Console messages are recorded from page load.
 
-The browser starts Capture Studio's executable as the native host. The host and
+The browser starts Motifs' executable as the native host. The host and
 the menu-bar helper talk over an owner-only Unix socket in
-`~/Library/Application Support/Capture Studio/browser/`. Each side checks the other's
+`~/Library/Application Support/Motifs/browser/`. Each side checks the other's
 code signature through the socket's audit token and refuses any process that is not
-the same signed Capture Studio binary. Other apps therefore cannot request or read
+the same signed Motifs binary. Other apps therefore cannot request or read
 browser context, and nothing is written to disk on the way. To disconnect, remove
 the extension and delete those manifest files.
 
 ### Instant replay and screen recording
 
 Both record at about 10 frames per second, scaled to at most 1920 pixels on the long
-side, as H.264 video without audio. Capture Studio's own windows, including the
+side, as H.264 video without audio. Motifs' own windows, including the
 composer and the recording controls, are excluded. Both use the existing Screen
 Recording permission, and macOS shows its own screen-recording indicator while either runs.
 
-- **Instant replay** is off by default. **Appshot → Context sources → Keep instant
+- **Instant replay** is off by default. **Motifs → Context sources → Keep instant
   replay (last 30 s)** keeps the most recent 30 seconds of the main display in memory
   (capped at 150 MB); older video is discarded continuously, and nothing is written to
   disk. The menu-bar icon shows a ring while it is on. Pressing **Option+G** writes those
   30 seconds to an MP4 and attaches it to the composer with the screenshot. Turning it
   off or quitting the helper discards the buffer. The setting is stored in the
   owner-only `settings.json`.
-- **Screen recording** starts from **Appshot → Start screen recording…**,
+- **Screen recording** starts from **Motifs → Start screen recording…**,
   **Option+Shift+G**, or the composer's **record** button (it shows "1/3" once clips are attached). The same
   picker asks what to record: **click a window** (only that window, even when others
   overlap it), **drag** an area, or click the desktop or press **Return** for the whole
@@ -341,7 +341,7 @@ on-device language support are shown explicitly. `--permissions` includes non-pr
 dictation diagnostics; `status.json` records stages/permissions/errors, never transcripts.
 
 The menu bar uses a monochrome capture-frame/speech-bubble template icon rather
-than a text label. Its tooltip and accessibility label still identify Appshots.
+than a text label. Its tooltip and accessibility label still identify Motifs.
 
 Handoff lookup verification re-reads the live search input after OpenCode replaces
 the Home control with its floating search panel. Empty-draft checks recognize the
@@ -376,14 +376,14 @@ annotation** capture the focused window. A screen recording also
 records scrolls, drags, selected text, and which field was typed into; the key
 itself is never stored. Instant replay is off by default.
 It samples the display under the pointer at 8 frames per second into memory (30
-seconds, 150 MB) and writes an MP4 only after a capture is confirmed. Capture Studio
+seconds, 150 MB) and writes an MP4 only after a capture is confirmed. Motifs
 windows set display affinity so capture APIs that honor it leave them out. The
 recording bar and area outline are also hidden for each frame grab. Click a clip to review it:
 yellow handles, **I** and **O**, and **Space** match the macOS review. **Use trimmed
 clip** writes a new MP4 beside the original and takes key frames from the selection.
 **Connect browser extension…** registers the same extension with Chrome, Chrome
 Canary, Brave, Edge, Arc and Chromium. The host and the helper use a named pipe and accept only
-this `Appshots.exe`. **Dictate** uses a Windows speech language installed on this PC. It does not save
+this `Motifs.exe`. **Dictate** uses a Windows speech language installed on this PC. It does not save
 audio and it does not call a cloud recognizer. The capture chooser closes when another application comes forward. **Show composer button while capturing** skips the
 chooser and opens an empty composer. Recent bundles in the tray are listed by when they were created. **Local secret-check model…** accepts only
 `http://127.0.0.1`, `localhost`, or `::1`. The frosted macOS composer stays on macOS.
@@ -392,10 +392,10 @@ contract tests or a successful build does not verify native interaction.
 
 ### Existing draft-insertion workflow
 
-On macOS, choose **Appshot → Capture, annotate, and insert into current draft**
+On macOS, choose **Motifs → Capture, annotate, and insert into current draft**
 instead of the shortcut to use the original flow below. Windows keeps its shortcut.
 
-1. Check for **Appshot** in the menu bar. If it is missing, run `/capture-studio-start`
+1. Check for **Motifs** in the menu bar. If it is missing, run `/motifs-start`
    in an OpenCode conversation. This starts the shortcut helper without a model call.
 2. Focus the window to share and choose the capture-and-insert menu action.
 3. The annotation editor opens nearly as large as your screen, with the image filling
@@ -418,15 +418,15 @@ instead of the shortcut to use the original flow below. Windows keeps its shortc
 
 An existing draft is preserved. The helper restores your clipboard after pasting,
 unless you copy something else during insertion. If OpenCode is in Settings or a
-dialog, open a conversation and choose **Appshot → Insert latest capture into OpenCode**.
+dialog, open a conversation and choose **Motifs → Insert latest capture into OpenCode**.
 That menu action also lets you insert the previous capture without taking another.
-The `/capture-studio-insert` command provides the same replay action from OpenCode.
+The `/motifs-insert` command provides the same replay action from OpenCode.
 
-Choose **Appshot → Annotate latest capture** to edit a saved image, or
+Choose **Motifs → Annotate latest capture** to edit a saved image, or
 **Annotate clipboard image** for an image you copied. The editor saves a new PNG
 with the marks included and preserves the original capture and accessibility text.
 You can insert without drawing anything. **Capture and insert without annotation**
-keeps the immediate-paste workflow available in the menu. The `/capture-studio-annotate`
+keeps the immediate-paste workflow available in the menu. The `/motifs-annotate`
 command opens the latest capture in the editor after OpenCode reloads the plugin.
 Images already attached inside OpenCode need to be removed and replaced with the
 annotated image. The inserted PNG contains the marks, while the capture manifest
@@ -451,20 +451,20 @@ omitted from cropped-image delivery to avoid sharing content outside the crop.
 Reset Crop restores that original context when exporting the full image again.
 Selection outlines, handles, crop shading, and the editing caret are never exported.
 
-You can also ask: “Use appshot to capture Google Chrome and explain this error.”
-The agent calls `capture_studio` with `app: "Google Chrome"`. An app bundle ID also works.
+You can also ask: “Use motif to capture Google Chrome and explain this error.”
+The agent calls `motifs` with `app: "Google Chrome"`. An app bundle ID also works.
 Live capture without an app name uses the foreground app, so requesting it while
 OpenCode is frontmost captures OpenCode itself. The shortcut avoids that problem.
 
 The insertion menu uses the frontmost OpenCode window's conversation and leaves
-the message unsent. `/capture-studio` also remains available to retrieve the saved image
+the message unsent. `/motifs` also remains available to retrieve the saved image
 and text through the agent tool. The macOS shortcut opens the composer.
 
 ## Permissions
 
 See [macOS permissions: step-by-step setup and troubleshooting](macos-permissions.md).
 
-Add **Capture Studio.app** (inside this plugin folder) to these macOS settings:
+Add **Motifs.app** (inside this plugin folder) to these macOS settings:
 
 - System Settings → Privacy & Security → **Screen & System Audio Recording**
 - System Settings → Privacy & Security → **Accessibility**
@@ -473,13 +473,13 @@ macOS may attribute a command-line capture to **OpenCode** or the terminal used
 to launch it; grant the responsible app shown by macOS. Restart OpenCode after
 granting access. The helper checks access; it never grants permissions itself.
 To restart this helper after a permission change, choose **Quit Motifs** and
-run `/capture-studio-start`. You can also open the bundled .app directly.
+run `/motifs-start`. You can also open the bundled .app directly.
 The helper is ad-hoc signed with the hardened runtime, so other processes cannot
 inject libraries into it to borrow these grants.
 Rebuilding this locally signed helper changes its code signature. If its permission
 checks remain denied while the switches appear enabled, remove its old entries
 from both permission lists, add the current .app again, and enable the switches.
-Then restart Appshots. Reopening only OpenCode does not restart an existing helper.
+Then restart Motifs. Reopening only OpenCode does not restart an existing helper.
 Without Accessibility, capture returns a screenshot-only result and automatic
 input insertion explains that Accessibility access is required. Recording recent
 clicks also needs Accessibility (to observe clicks and read the clicked element's
@@ -488,12 +488,12 @@ Without Screen Recording, it fails with setup instructions.
 
 ## Storage and scope
 
-Captures are saved to `$XDG_DATA_HOME/opencode/capture-studio`, or by default
-`~/.local/share/opencode/capture-studio` on macOS and `%LOCALAPPDATA%\opencode\appshots`
+Captures are saved to `$XDG_DATA_HOME/opencode/motifs`, or by default
+`~/.local/share/opencode/motifs` on macOS and `%LOCALAPPDATA%\opencode\motifs`
 on Windows. macOS uses owner-only permissions; the Windows helper protects its
 capture directory with an ACL for the current user and SYSTEM. A new capture
 replaces the latest pointer but keeps earlier PNGs.
-Use **Appshot → Open captures folder** to review or remove saved captures.
+Use **Motifs → Open captures folder** to review or remove saved captures.
 
 The macOS reader follows the selected window's accessibility tree in UI order and emits
 an indented hierarchy with readable roles, link/page URLs, values, placeholders,
@@ -540,7 +540,7 @@ by configuring this plugin with `{ "hotkey": false }` in its OpenCode options;
 named-app capture remains available. The menu-bar helper stays available across
 plugin reloads until you choose **Quit Motifs**. This avoids losing the global
 shortcut when multiple OpenCode projects load the plugin at once. If you quit it
-from the menu, run `/capture-studio-start` to restart it. Reopening the OpenCode window
+from the menu, run `/motifs-start` to restart it. Reopening the OpenCode window
 alone may reuse its existing server and does not necessarily reload the plugin.
 
 The private `status.json` file in the captures folder records shortcut registration,
@@ -562,4 +562,4 @@ renewing macOS permission grants. The included build targets Apple Silicon.
 
 Plugin API reference: https://opencode.ai/v2/docs/build/plugins/
 Plugin loading reference: https://opencode.ai/v2/docs/plugins/
-Appshots reference: https://learn.chatgpt.com/docs/appshots
+OpenAI Appshots reference: https://learn.chatgpt.com/docs/appshots

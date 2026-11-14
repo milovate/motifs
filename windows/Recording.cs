@@ -12,7 +12,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // Presentation-time helpers shared with the macOS recorder. Paused spans are removed
 // from the clip, and six key frames are split across at most three clips.

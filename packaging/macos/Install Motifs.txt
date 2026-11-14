@@ -4,31 +4,33 @@ Install Motifs
 Motifs needs a Mac with Apple Silicon, macOS 14 or later, and OpenCode V2.
 The current build runs as an OpenCode plugin, so it is not installed in
 Applications. Keep the "motifs" folder together: the plugin finds
-Capture Studio.app inside it.
+Motifs.app inside it.
 
 1. Quit OpenCode.
 
-2. If you already have Motifs, choose Quit Motifs in the menu bar. Then move
-   ~/.config/opencode/plugins/capture-studio out of ~/.config/opencode/plugins.
+2. If you already have Motifs or Capture Studio, choose Quit in its menu bar
+   icon. Then move the old plugin folder (~/.config/opencode/plugins/motifs or
+   ~/.config/opencode/plugins/capture-studio) out of ~/.config/opencode/plugins.
    Your captures and settings are stored elsewhere and stay in place.
 
 3. Copy the plugin. In Terminal, run:
 
      mkdir -p ~/.config/opencode/plugins
-     ditto /Volumes/Motifs/motifs ~/.config/opencode/plugins/capture-studio
+     ditto /Volumes/Motifs/motifs ~/.config/opencode/plugins/motifs
 
 4. Open the helper once so macOS can check it:
 
-     open ~/.config/opencode/plugins/capture-studio/"Capture Studio.app"
+     open ~/.config/opencode/plugins/motifs/Motifs.app
 
    Preview builds are not notarized by Apple. If macOS says it cannot verify
    the app, click Done, open System Settings > Privacy & Security, and click
-   Open Anyway next to "Capture Studio.app". Then run the open command again.
+   Open Anyway next to "Motifs.app". Then run the open command again.
 
-5. Grant Screen & System Audio Recording and Accessibility to
-   Capture Studio.app in System Settings > Privacy & Security.
+5. Grant Screen & System Audio Recording and Accessibility to Motifs.app in
+   System Settings > Privacy & Security. If you used Capture Studio before,
+   macOS asks again because the app has a new name.
 
-6. Open OpenCode. Type /capture and check that /capture-studio-start is listed.
+6. Open OpenCode. Type /motifs and check that /motifs-start is listed.
    Run it, then press Option+G to capture.
 
 Full guide: https://github.com/milovate/motifs/blob/main/INSTALL.md

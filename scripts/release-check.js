@@ -43,7 +43,7 @@ function checkDiskImage({ diskImage, mountpoint, checkout, verifier, signer, sig
   try {
     statSync(path.join(mountpoint, "Install Motifs.txt"));
     const packageRoot = path.join(mountpoint, "motifs");
-    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", path.join(packageRoot, "Capture Studio.app")], { stdio: "inherit" });
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", path.join(packageRoot, "Motifs.app")], { stdio: "inherit" });
     execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
     if (sign) execFileSync(process.execPath, [signer, packageRoot], { cwd: checkout, stdio: "inherit" });
   } finally {
@@ -96,7 +96,7 @@ function main() {
     mkdirSync(unpacked);
     if (mac) {
       execFileSync("/usr/bin/ditto", ["-x", "-k", archive, unpacked], { stdio: "inherit" });
-      const bundle = path.join(packageRoot, "Capture Studio.app");
+      const bundle = path.join(packageRoot, "Motifs.app");
       execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle], { stdio: "inherit" });
     } else {
       execFileSync("tar.exe", ["-xf", archive, "-C", unpacked], { stdio: "inherit" });

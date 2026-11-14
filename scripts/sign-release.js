@@ -39,10 +39,10 @@ if (diskImage) {
   run("/usr/bin/xcrun", ["stapler", "validate", diskImage]);
   run("/usr/sbin/spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", diskImage]);
 } else if (process.platform === "darwin") {
-  const bundle = path.join(root, "Capture Studio.app");
+  const bundle = path.join(root, "Motifs.app");
   const team = setting("MOTIFS_MACOS_TEAM_ID");
   if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error("Expected a 10-character Apple Team ID.");
-  const requirement = `identifier "local.opencode.capturestudio" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`;
+  const requirement = `identifier "local.motifs" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`;
   const verify = () => run("/usr/bin/codesign", ["--verify", "--deep", "--strict", `-R=${requirement}`, bundle]);
 
   if (!packaged) {
@@ -52,13 +52,13 @@ if (diskImage) {
     run("/usr/bin/xcrun", ["--find", "stapler"]);
     run("/usr/bin/codesign", [
       "--force", "--sign", identity, "--options", "runtime", "--timestamp",
-      "--entitlements", path.join(source, "CaptureStudio.entitlements"), bundle,
+      "--entitlements", path.join(source, "Motifs.entitlements"), bundle,
     ]);
     verify();
 
     const temp = mkdtempSync(path.join(tmpdir(), "motifs-notarize-"));
     try {
-      const archive = path.join(temp, "Capture Studio.zip");
+      const archive = path.join(temp, "Motifs.zip");
       run("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", bundle, archive]);
       notarize(archive, profile);
       run("/usr/bin/xcrun", ["stapler", "staple", bundle]);
@@ -74,7 +74,7 @@ if (diskImage) {
   const timestamp = packaged ? undefined : new URL(setting("MOTIFS_WINDOWS_TIMESTAMP_URL"));
   if (timestamp && !["http:", "https:"].includes(timestamp.protocol)) throw new Error("Use an HTTP or HTTPS RFC 3161 timestamp URL.");
 
-  for (const name of ["Appshots.exe", "Appshots.dll"]) {
+  for (const name of ["Motifs.exe", "Motifs.dll"]) {
     const file = path.join(root, "windows", "dist", name);
     if (!packaged) {
       run("signtool.exe", ["sign", "/sha1", thumbprint, "/fd", "SHA256", "/tr", timestamp.href, "/td", "SHA256", file]);

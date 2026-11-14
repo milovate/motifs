@@ -14,7 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // Chrome launches this executable as a native messaging host. The tray helper asks
 // that host for the extension's buffer only when a browser window is captured, and
@@ -23,7 +23,7 @@ namespace OpenCode.Appshots;
 internal static class BrowserHost
 {
     internal const string ExtensionId = "ffjgcjgbehaoabcniapiljdcpeehoocd";
-    internal const string HostName = "local.opencode.capturestudio";
+    internal const string HostName = "local.motifs";
 
     internal readonly record struct BrowserTarget(string Name, string ProcessName, string PathMarker, string RegistryKey);
 
@@ -62,12 +62,12 @@ internal static class BrowserHost
         return found;
     }
 
-    internal static string PipeName(int browser, int pid) => "OpenCode.CaptureStudio." + browser + "." + pid;
+    internal static string PipeName(int browser, int pid) => "Motifs." + browser + "." + pid;
 
     internal static JsonObject Manifest(string executable) => new()
     {
         ["name"] = HostName,
-        ["description"] = "Capture Studio browser context",
+        ["description"] = "Motifs browser context",
         ["path"] = executable,
         ["type"] = "stdio",
         ["allowed_origins"] = new JsonArray("chrome-extension://" + ExtensionId + "/"),
@@ -174,7 +174,7 @@ internal static class BrowserHost
 
     internal static List<string> Install(string executable)
     {
-        string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Capture Studio", "NativeMessagingHosts");
+        string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Motifs", "NativeMessagingHosts");
         Directory.CreateDirectory(folder);
         Program.PrivateDirectory(folder);
         string manifestPath = Path.Combine(folder, HostName + ".json");
@@ -281,7 +281,7 @@ internal static class BrowserHost
         Check(IndexForImage(@"C:\Program Files\Google\Chrome\Application\chrome.exe") == 0 && IndexForImage(@"C:\Google\Chrome SxS\Application\chrome.exe") == 1 && IndexForImage(@"C:\BraveSoftware\Brave-Browser\Application\brave.exe") == 2 && IndexForImage(@"C:\Windows\notepad.exe") < 0, "Chromium browsers are recognised from the executable");
         var framed = EncodeMessage(new JsonObject { ["type"] = "snapshot", ["requestID"] = "r" });
         Check(DecodeLength(framed.AsSpan(0, 4)) == framed.Length - 4 && DecodeLength(new byte[] { 1, 2 }) == null, "native messages are length-prefixed");
-        Check(PipeName(2, 4321) == "OpenCode.CaptureStudio.2.4321", "one pipe per host");
+        Check(PipeName(2, 4321) == "Motifs.2.4321", "one pipe per host");
         string own = ImageOf((uint)Environment.ProcessId) ?? "";
         Check(SameExecutable(own, own) && !SameExecutable(@"C:\Windows\System32\cmd.exe", own), "only this executable is accepted");
         var windows = new JsonArray
@@ -320,7 +320,7 @@ internal static class BrowserHost
         var tagged = TagSteps(many, "Brave");
         Check(tagged.Count == 500 && tagged[0]["n"]?.GetValue<int>() == 20 && tagged[499]["app"]?.GetValue<string>() == "Brave" && tagged[499]["source"]?.GetValue<string>() == "browser", "page steps keep the latest 500 and name their browser");
         Check(InstalledBrowsers(key => key == @"Software\Google\Chrome").SequenceEqual(new[] { "Google Chrome" }) && InstalledBrowsers(_ => false).Count == 0, "manifests are written only for installed browsers");
-        var manifest = Manifest(@"C:\Capture Studio\Appshots.exe");
+        var manifest = Manifest(@"C:\Motifs\Motifs.exe");
         Check(manifest["allowed_origins"]?[0]?.GetValue<string>() == "chrome-extension://" + ExtensionId + "/" && manifest["type"]?.GetValue<string>() == "stdio" && manifest["name"]?.GetValue<string>() == HostName, "the host allows only the pinned extension");
         ExercisePipe();
     }
@@ -423,7 +423,7 @@ internal static class BrowserHost
     static void RefuseOtherProcess()
     {
         string name = PipeName(1, Environment.ProcessId);
-        string script = Path.Combine(Path.GetTempPath(), "capture-studio-impostor-" + Environment.ProcessId + ".ps1");
+        string script = Path.Combine(Path.GetTempPath(), "motifs-impostor-" + Environment.ProcessId + ".ps1");
         File.WriteAllText(script, "$c = New-Object System.IO.Pipes.NamedPipeClientStream('.', '" + name + "', 'InOut')\n$c.Connect(20000)\n$b = [Text.Encoding]::UTF8.GetBytes('{\"type\":\"snapshot\"}')\n$c.Write($b, 0, $b.Length)\nStart-Sleep -Seconds 2\n");
         try
         {
@@ -473,7 +473,7 @@ internal static class BrowserHost
         foreach (string full in names)
         {
             string name = Path.GetFileName(full);
-            const string prefix = "OpenCode.CaptureStudio.";
+            const string prefix = "Motifs.";
             if (!name.StartsWith(prefix, StringComparison.Ordinal)) continue;
             string[] parts = name.Split('.');
             if (parts.Length != 4 || !int.TryParse(parts[2], out int index) || index < 0 || index >= Browsers.Length) continue;

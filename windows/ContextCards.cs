@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // Scrollable cards for the context preview. Markdown stays in the text box.
 sealed class ContextCardPane : Panel

@@ -10,12 +10,12 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         let output = CommandLine.arguments[1]
-        let icon = appshotStatusImage()
+        let icon = motifStatusImage()
         precondition(icon.isTemplate && icon.size == NSSize(width: 18, height: 18), "compact template icon adapts to menu-bar appearance")
         precondition(NSBitmapImageRep(data: icon.tiffRepresentation!) != nil, "status icon renders without external assets")
-        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+        if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"] {
             let bitmap = NSBitmapImageRep(data: icon.tiffRepresentation!)!
-            try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("appshots-menu-icon.png"))
+            try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("motifs-menu-icon.png"))
         }
         let screenshot = URL(fileURLWithPath: output).appendingPathComponent("fixture.png")
         let image = NSImage(size: NSSize(width: 640, height: 400), flipped: false) { bounds in
@@ -31,7 +31,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         }
         let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: screenshot)
-        let composer = try AppshotComposer(shots: [["app": "Google Chrome", "title": "Sample page", "screenshot": screenshot.path]], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let composer = try MotifComposer(shots: [["app": "Google Chrome", "title": "Sample page", "screenshot": screenshot.path]], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
         composer.endpoints = [ComposerEndpoint(directory: "/fixture/GooeyAI", port: 1, token: String(repeating: "a", count: 64))]
         composer.populateProjects()
         composer.projects.isEnabled = true
@@ -81,7 +81,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
             composer.window!.appearance = NSAppearance(named: appearance)
             composer.window!.contentView!.layoutSubtreeIfNeeded()
-            if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+            if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"] {
                 let content = composer.window!.contentView!
                 let representation = content.bitmapImageRepForCachingDisplay(in: content.bounds)!
                 content.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: representation) }
@@ -116,7 +116,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         mentionRows.first?.layoutSubtreeIfNeeded()
         let mentionLabel = mentionRows.first?.subviews.first?.subviews.first
         precondition(mentionRows.first?.skillID == "report" && mentionRows.first?.selected == true && (mentionLabel?.frame.minX ?? 99) <= 10 && composer.mentionCompletion.panel.frame.width == ComposerMentionCompletion.width, "suggestions are compact and left-aligned")
-        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"], let surface = composer.mentionCompletion.panel.contentView {
+        if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"], let surface = composer.mentionCompletion.panel.contentView {
             let detached = surface
             composer.mentionCompletion.panel.contentView = nil
             detached.appearance = NSAppearance(named: .darkAqua)
@@ -158,14 +158,14 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(tiles.count == 2, "each screenshot has direct annotate/remove controls")
         precondition(tiles.allSatisfy { $0.removeButton.alphaValue == 0 && !$0.removeButton.isHidden }, "remove appears on hover but stays reachable for keyboard and VoiceOver")
         precondition(tiles[0].imageButton.menu?.items.map(\.title) == ["Copy Image", "Share…", "Show in Finder", "Copy Path"], "right-click offers copy and share")
-        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("appshots-test-\(UUID().uuidString)"))
+        let testPasteboard = NSPasteboard(name: NSPasteboard.Name("motifs-test-\(UUID().uuidString)"))
         tiles[0].pasteboard = testPasteboard
         tiles[0].copyFile()
         precondition(testPasteboard.data(forType: .png) != nil, "Copy Image puts the PNG on the clipboard")
         tiles[0].copyPath()
         precondition(testPasteboard.string(forType: .string) == tiles[0].file?.path, "Copy Path copies the file path")
         testPasteboard.releaseGlobally()
-        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+        if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"] {
             composer.window!.appearance = NSAppearance(named: .aqua)
             composer.textView.string = "@report The second screenshot shows the issue."
             composer.updateInputSize()
@@ -193,10 +193,10 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         composer.removeScreenshot(at: 0)
         precondition(composer.shots.isEmpty && (composer.screenshotBundle["screenshots"] as! [[String: Any]]).isEmpty, "removing the last screenshot leaves an intentional text-only draft")
         print("Composer compact layout, adaptive sizing, skill chips, search and consent checks passed")
-        try captureStudioChecks(output: output, screenshot: screenshot.path)
+        try motifsChecks(output: output, screenshot: screenshot.path)
     }
 
-    @MainActor static func captureStudioChecks(output: String, screenshot: String) throws {
+    @MainActor static func motifsChecks(output: String, screenshot: String) throws {
         let device = DeviceContext.collect(screens: [], locale: Locale(identifier: "en_IN"))
         precondition((device["os"] as? String)?.hasPrefix("macOS ") == true, "device context names the macOS version")
         precondition(["arm64", "x86_64"].contains(device["arch"] as? String ?? ""), "device context names the architecture")
@@ -254,7 +254,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(recents.map { URL(fileURLWithPath: $0.path).lastPathComponent } == [path, missingPath].map { URL(fileURLWithPath: $0).lastPathComponent }, "recent bundles are newest first")
         precondition(recents[0].title == "Checkout overlaps" && recents[1].title == "Gone" && recents[0].screenshots == 1, "recent titles use the note, then the app")
 
-        let saving = try AppshotComposer(shots: shots, note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let saving = try MotifComposer(shots: shots, note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
         saving.autosave()
         let saved = output + "/bundle-\(saving.bundleID.uuidString.lowercased()).json"
         precondition(saving.manifest == saved && FileManager.default.fileExists(atPath: saved), "a capture is saved as a bundle as soon as it opens")
@@ -336,7 +336,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(withoutMovie.videos.isEmpty && withoutMovie.missingScreenshots == 3, "deleted recordings are reported")
         FileManager.default.createFile(atPath: movie, contents: Data([0, 0, 0, 24]))
 
-        let withVideo = try AppshotComposer(shots: shots, videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let withVideo = try MotifComposer(shots: shots, videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
         let handoff = withVideo.screenshotBundle["screenshots"] as? [[String: Any]] ?? []
         precondition(handoff.count == 5 && handoff[0]["screenshot"] as? String == screenshot && handoff[1]["title"] as? String == "Frame 1 of 4", "recording frames follow the screenshots in the OpenCode handoff")
         precondition(handoff.dropFirst().allSatisfy { $0["capturedAt"] == nil && $0["app"] as? String == "Instant replay" }, "frames never become the insertion marker")
@@ -345,20 +345,20 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         withVideo.preparingFrames = false
         withVideo.removeVideo(at: 0)
         precondition(withVideo.videos.isEmpty && !withVideo.thumbnailStrip.arrangedSubviews.contains { $0 is VideoThumbnailView } && (withVideo.screenshotBundle["screenshots"] as? [[String: Any]])?.count == 1, "removing the recording drops it and its frames")
-        let videoOnly = try AppshotComposer(shots: [], videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let videoOnly = try MotifComposer(shots: [], videos: [video], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
         precondition(!videoOnly.thumbnailStrip.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue.hasPrefix("No attachments") == true }, "a recording alone is a valid capture")
 
         func clip(_ frames: Int, source: String = "recording") -> [String: Any] {
             ["video": movie, "source": source, "startedAt": "2026-10-29T10:00:00Z", "durationSeconds": 20, "frames": Array(frameFiles.prefix(frames)).enumerated().map { ["screenshot": $1, "offsetSeconds": Double($0)] }]
         }
-        let three = try AppshotComposer(shots: shots, videos: [clip(2), clip(2), clip(2), clip(2)], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
+        let three = try MotifComposer(shots: shots, videos: [clip(2), clip(2), clip(2), clip(2)], note: "", context: [:], include: BundleInclude(), output: output, returnTo: nil)
         let threeHandoff = three.screenshotBundle["screenshots"] as? [[String: Any]] ?? []
         precondition(three.videos.count == 3 && !three.preparingFrames && three.thumbnailStrip.arrangedSubviews.filter { $0 is VideoThumbnailView }.count == 3, "up to three clips, two frames each")
         precondition(threeHandoff.count == 7 && threeHandoff[3]["app"] as? String == "Screen recording 2" && threeHandoff[6]["title"] as? String == "Frame 2 of 2", "several clips are numbered in the handoff")
-        AppshotComposer.onRecord = nil
+        MotifComposer.onRecord = nil
         precondition(!three.canAddRecording, "recording needs the menu-bar helper")
-        var asked: AppshotComposer?
-        AppshotComposer.onRecord = { asked = $0 }
+        var asked: MotifComposer?
+        MotifComposer.onRecord = { asked = $0 }
         precondition(!three.canAddRecording, "no fourth clip")
         three.removeVideo(at: 1)
         precondition(three.videos.count == 2 && three.preparingFrames && !three.sendButton.isEnabled, "removing a clip re-splits the frames before sending")
@@ -373,7 +373,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let freshEvents: [[String: Any]] = [["time": "2026-10-29T10:00:04Z", "kind": "click", "app": "Safari", "role": "AXButton", "title": "Buy"]]
         three.recordingFinished(clip(3), events: freshEvents)
         precondition(three.videos.count == 3 && ContextText.entries(three.context, "events").count == 1 && three.status.stringValue.hasPrefix("Recording added"), "a finished recording is added with the clicks made while recording")
-        AppshotComposer.onRecord = nil
+        MotifComposer.onRecord = nil
 
         let markerContext: [String: Any] = [
             "events": ["entries": freshEvents + [["time": "2026-10-29T09:00:00Z", "kind": "click", "app": "Old"]]],
@@ -435,7 +435,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(controls.time.stringValue == "00:12" && controls.time.textColor == .labelColor, "the timer stays neutral until the last 30 s")
         controls.update(seconds: 280, paused: false, limit: 300)
         precondition(controls.time.textColor == .systemOrange, "the timer turns orange near the limit")
-        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+        if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"] {
             func render(_ view: NSView, _ name: String, dark: Bool) throws {
                 view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 view.layoutSubtreeIfNeeded()
@@ -522,7 +522,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         let visible = clickPicker.detailScroll.contentView.bounds
         precondition(clickPicker.detail.frame.width <= visible.width + 0.5 && visible.minX == 0, "window text fits the pane instead of scrolling sideways (\(clickPicker.detail.frame.width) vs \(visible))")
         clickWindow.close()
-        precondition(appshotStatusImage(.recording).isTemplate && appshotStatusImage(.replay).tiffRepresentation != appshotStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
+        precondition(motifStatusImage(.recording).isTemplate && motifStatusImage(.replay).tiffRepresentation != motifStatusImage(.ready).tiffRepresentation, "replay and recording have distinct menu-bar states")
         let settingsMode = try mode(output + "/settings.json")
         precondition(settingsMode == 0o600, "settings are owner-only")
 
@@ -552,13 +552,13 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         precondition(URLComponents(url: codex, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "prompt", value: draft), URLQueryItem(name: "path", value: directory)], "Codex gets the exact note and selected project")
         precondition(DesktopDraftApp.codex.draftURL(text: draft, directory: "relative") == nil, "Codex needs an absolute workspace")
 
-        let composer = try AppshotComposer(shots: shots, note: "@report Reopened note", context: loaded.context, include: BundleInclude(windowText: false, device: true), output: output, returnTo: nil)
+        let composer = try MotifComposer(shots: shots, note: "@report Reopened note", context: loaded.context, include: BundleInclude(windowText: false, device: true), output: output, returnTo: nil)
         precondition(composer.textView.string == "@report Reopened note", "reopened bundles restore the note")
         composer.applyAvailableSkills([("report", "Report")])
         precondition(composer.textView.string == "@report Reopened note", "loading skills leaves a reopened note unchanged")
         precondition(composer.contextButton.toolTip?.contains("Window off") == true && composer.contextButton.toolTip?.contains("Network 1") == true, "reopened bundles keep include flags and stored context")
 
-        let live = try AppshotComposer(shots: shots, note: "", context: deviceOnly, include: BundleInclude(), output: output, returnTo: nil)
+        let live = try MotifComposer(shots: shots, note: "", context: deviceOnly, include: BundleInclude(), output: output, returnTo: nil)
         let slow = Task { @MainActor () -> [String: Any] in
             try? await Task.sleep(nanoseconds: 50_000_000)
             return ["console": ["entries": [["time": "t", "level": "fault", "message": "late", "source": "app"]]]]
@@ -600,7 +600,7 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
         composer.include = BundleInclude()
         composer.refreshContextSummary()
         precondition(composer.contextButton.title == "Context" && Int(composer.contextButton.detail) ?? 0 > 0 && composer.contextButton.toolTip?.contains("tokens") == true, "context chip counts included sources and keeps the estimate in its tooltip")
-        if let directory = ProcessInfo.processInfo.environment["APPSHOTS_COMPOSER_PREVIEW_DIR"] {
+        if let directory = ProcessInfo.processInfo.environment["MOTIFS_COMPOSER_PREVIEW_DIR"] {
             let content = composer.window!.contentView!
             composer.window!.appearance = NSAppearance(named: .darkAqua)
             content.layoutSubtreeIfNeeded()
@@ -619,6 +619,6 @@ func captureError(_ message: String) -> NSError { NSError(domain: "ComposerTests
             while !finished { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
             precondition(thrown && !composer.submitted, "unknown handoff actions are refused and nothing is marked sent")
         }
-        print("Capture Studio device context, bundle manifest, recents, settings and destination wiring checks passed")
+        print("Motifs device context, bundle manifest, recents, settings and destination wiring checks passed")
     }
 }
