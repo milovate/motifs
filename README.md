@@ -34,8 +34,8 @@ approve the helper once. Check downloads against the release's `SHA256SUMS`.
 
 | Platform | Download | Setup |
 | --- | --- | --- |
-| macOS (Apple Silicon, macOS 14 or later) | [DMG](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-macos-arm64.dmg) · [ZIP](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-macos-arm64.zip) | Drag Motifs to Applications, open it, and choose **Connect** so OpenCode loads it. Then [grant capture permissions](docs/macos-permissions.md). |
-| Windows x64 (Windows 10 or 11) | [ZIP](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-windows-x64.zip) | Extract the `motifs` folder and follow [Windows setup](docs/windows.md). Needs the .NET 8 Desktop Runtime. |
+| macOS (Apple Silicon, macOS 14 or later) | [DMG](https://github.com/milovate/motifs/releases/download/v0.5.0/motifs-0.5.0-macos-arm64.dmg) · [ZIP](https://github.com/milovate/motifs/releases/download/v0.5.0/motifs-0.5.0-macos-arm64.zip) | Drag Motifs to Applications, open it, and choose **Connect** so OpenCode loads it. Then [grant capture permissions](docs/macos-permissions.md). |
+| Windows x64 (Windows 10 or 11) | [ZIP](https://github.com/milovate/motifs/releases/download/v0.5.0/motifs-0.5.0-windows-x64.zip) | Extract the `motifs` folder and follow [Windows setup](docs/windows.md). Needs the .NET 8 Desktop Runtime. |
 
 Or build from source: [macOS](INSTALL.md) · [Windows](docs/windows.md).
 
