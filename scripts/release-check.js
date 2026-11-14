@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { releaseArchiveName, releaseTarget } from "../platform.js";
+import { releaseArchiveName, releaseDiskImageName, releaseTarget } from "../platform.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 export function tapSummary(tap) {
@@ -18,7 +18,7 @@ export function checksumLine(sha256, filename) {
   return `${sha256}  ${filename}\n`;
 }
 
-export function releaseReport({ version, target, commit, archive, sha256, bytes, tests, signed = false, createdAt = new Date(), node = process.version }) {
+export function releaseReport({ version, target, commit, archive, sha256, bytes, diskImage, tests, signed = false, createdAt = new Date(), node = process.version }) {
   return {
     version,
     target,
@@ -26,11 +26,29 @@ export function releaseReport({ version, target, commit, archive, sha256, bytes,
     archive,
     sha256,
     bytes,
+    ...(diskImage ? { diskImage } : {}),
     tests,
     signed,
     node,
     createdAt: createdAt.toISOString(),
   };
+}
+
+function fileDigest(file) {
+  return { sha256: createHash("sha256").update(readFileSync(file)).digest("hex"), bytes: statSync(file).size };
+}
+
+function checkDiskImage({ diskImage, mountpoint, checkout, verifier, signer, sign }) {
+  execFileSync("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-noautoopen", "-readonly", "-mountpoint", mountpoint, diskImage], { stdio: "inherit" });
+  try {
+    statSync(path.join(mountpoint, "Install Motifs.txt"));
+    const packageRoot = path.join(mountpoint, "motifs");
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", path.join(packageRoot, "Motifs.app")], { stdio: "inherit" });
+    execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
+    if (sign) execFileSync(process.execPath, [signer, packageRoot], { cwd: checkout, stdio: "inherit" });
+  } finally {
+    execFileSync("/usr/bin/hdiutil", ["detach", "-quiet", mountpoint], { stdio: "inherit" });
+  }
 }
 
 function main() {
@@ -86,15 +104,32 @@ function main() {
     const verifier = path.join(checkout, "scripts", "check-build-version.js");
     execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
     if (sign) execFileSync(process.execPath, [signer, packageRoot], { cwd: checkout, env, stdio: "inherit" });
-    const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
+
+    let diskImage;
+    if (mac) {
+      const name = releaseDiskImageName(version);
+      const file = path.join(checkout, "dist", name);
+      if (sign) execFileSync(process.execPath, [signer, "--disk-image", file], { cwd: checkout, env, stdio: "inherit" });
+      const mountpoint = path.join(scratch, "volume");
+      mkdirSync(mountpoint);
+      checkDiskImage({ diskImage: file, mountpoint, checkout, verifier, signer, sign });
+      diskImage = { file, name, ...fileDigest(file) };
+    }
+
+    const { sha256, bytes } = fileDigest(archive);
     const dist = path.join(root, "dist");
     mkdirSync(dist, { recursive: true });
     reportDirectory = mkdtempSync(path.join(dist, `check-${commit.slice(0, 12)}-${target}-`));
     copyFileSync(archive, path.join(reportDirectory, filename));
-    const report = releaseReport({
-      version, target, commit, archive: filename, sha256, bytes: statSync(archive).size, tests, signed: sign,
-    });
     writeFileSync(path.join(reportDirectory, `${filename}.sha256`), checksumLine(sha256, filename));
+    if (diskImage) {
+      copyFileSync(diskImage.file, path.join(reportDirectory, diskImage.name));
+      writeFileSync(path.join(reportDirectory, `${diskImage.name}.sha256`), checksumLine(diskImage.sha256, diskImage.name));
+    }
+    const report = releaseReport({
+      version, target, commit, archive: filename, sha256, bytes, tests, signed: sign,
+      ...(diskImage ? { diskImage: { name: diskImage.name, sha256: diskImage.sha256, bytes: diskImage.bytes } } : {}),
+    });
     writeFileSync(path.join(reportDirectory, "release-check.json"), JSON.stringify(report, null, 2) + "\n");
   } catch (error) {
     if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true });
@@ -106,7 +141,7 @@ function main() {
     rmSync(scratch, { recursive: true, force: true });
   }
 
-  console.log(`Local release check passed. ZIP and report: ${reportDirectory}`);
+  console.log(`Local release check passed. Packages and report: ${reportDirectory}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

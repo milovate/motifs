@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { releaseArchiveName } from "../platform.js";
+import { releaseArchiveName, releaseDiskImageName } from "../platform.js";
 
 const args = process.argv.slice(2);
 const requireSigned = args[0] === "--signed";
@@ -34,9 +34,16 @@ for (const directory of inputs) {
   if (requireSigned && report.signed !== true) throw new Error(`${report.target} has no signed release report.`);
   const expectedArchive = releaseArchiveName(version, report.target);
   if (report.archive !== expectedArchive) throw new Error(`Expected archive ${expectedArchive}.`);
-  const archive = path.join(directory, expectedArchive);
-  const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
-  if (sha256 !== report.sha256) throw new Error(`${expectedArchive} does not match its recorded SHA-256 checksum.`);
+  const packages = [[expectedArchive, report.sha256]];
+  if (report.target === "macos-arm64") {
+    const expectedDiskImage = releaseDiskImageName(version);
+    if (report.diskImage?.name !== expectedDiskImage) throw new Error(`Expected disk image ${expectedDiskImage}.`);
+    packages.push([expectedDiskImage, report.diskImage.sha256]);
+  }
+  for (const [name, recorded] of packages) {
+    const sha256 = createHash("sha256").update(readFileSync(path.join(directory, name))).digest("hex");
+    if (sha256 !== recorded) throw new Error(`${name} does not match its recorded SHA-256 checksum.`);
+  }
   verified.add(report.target);
 }
 

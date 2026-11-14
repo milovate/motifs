@@ -8,7 +8,14 @@
   The current build is framework-dependent, for the architecture of the installed SDK.
 - An image-capable model. Draft insertion requires the OpenCode desktop app.
 
-Clone this repository into an unused directory. Do not overwrite an existing
+To use a release instead of building, download `motifs-<version>-windows-x64.zip`
+from [Releases](https://github.com/milovate/motifs/releases), extract it, and use
+the extracted `motifs` folder as the plugin directory. It already contains
+`windows/dist/Motifs.exe`. It needs the .NET 8 Desktop Runtime, not the SDK.
+Preview releases are not code-signed, so SmartScreen may ask before the helper
+first runs. Then continue with the OpenCode configuration below.
+
+To build it yourself, clone this repository into an unused directory. Do not overwrite an existing
 plugin or unrelated OpenCode settings. In PowerShell, from the cloned directory:
 
 ```powershell

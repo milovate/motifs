@@ -43,6 +43,10 @@ export function releaseArchiveName(version, target) {
   return `motifs-${version}-${target}.zip`;
 }
 
+export function releaseDiskImageName(version) {
+  return `motifs-${version}-macos-arm64.dmg`;
+}
+
 export function helperCommand(root, config, action, args = []) {
   const flags = [`--${action}`, "--output", config.captures, ...args];
   if (config.platform === "win32") {

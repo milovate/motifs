@@ -76,8 +76,26 @@ remote OpenCode server or with Linux.
 10. Make sure that `Motifs.app` is in the plugin folder.
 
 `npm ci` installs only test dependencies. The runtime code has no npm
-dependencies. The build signs the helper ad hoc on this Mac. This repository
-does not supply a prebuilt helper.
+dependencies. The build signs the helper ad hoc on this Mac. For a prebuilt
+helper, use section 4.1.
+
+### 4.1 Install from a release package
+
+Use this procedure instead of section 4 if the user downloaded a release.
+
+1. Do steps 1 and 2 of section 4.
+2. Tell the user to open `motifs-<version>-macos-arm64.dmg`. The disk name is
+   `Motifs`.
+3. Make the plugins directory. Run `mkdir -p ~/.config/opencode/plugins`.
+4. Copy the plugin. Run
+   `ditto /Volumes/Motifs/motifs ~/.config/opencode/plugins/motifs`.
+5. Make sure that `Motifs.app` is in the plugin folder.
+6. Tell the user to open `Motifs.app` in the plugin folder one time.
+7. If macOS cannot verify the app, the user must click **Open Anyway** in
+   **System Settings → Privacy & Security**. A preview release is not notarized.
+   An agent must not remove the quarantine attribute.
+
+For a ZIP, extract it. Then copy the `motifs` folder in the same way.
 
 ## 5. Procedure: connect the plugin to OpenCode
 

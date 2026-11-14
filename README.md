@@ -4,6 +4,7 @@
 <h1 align="center">Motifs</h1>
 <p align="center">Desktop capture and bug reports for OpenCode, Claude, and Codex.</p>
 <p align="center">
+  <a href="#downloads">Download</a> ·
   <a href="INSTALL.md">macOS setup</a> ·
   <a href="docs/windows.md">Windows setup</a> ·
   <a href="docs/reference.md">Reference</a> ·
@@ -25,19 +26,26 @@ Claude, or Codex, or export the capture for another tool.
 - **Choose where it goes.** Open an unsent draft in OpenCode, Claude, or Codex,
   copy a Markdown summary, or save a folder with the capture and context.
 
+## Downloads
+
+The current release is a preview. Its packages are not signed with an Apple
+Developer ID or a Windows code-signing certificate, so each platform asks you to
+approve the helper once. Check downloads against the release's `SHA256SUMS`.
+
+| Platform | Download | Setup |
+| --- | --- | --- |
+| macOS (Apple Silicon, macOS 14 or later) | [DMG](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-macos-arm64.dmg) · [ZIP](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-macos-arm64.zip) | Open the DMG and follow `Install Motifs.txt`, then [grant capture permissions](docs/macos-permissions.md) |
+| Windows x64 (Windows 10 or 11) | [ZIP](https://github.com/milovate/motifs/releases/download/v0.4.3/motifs-0.4.3-windows-x64.zip) | Extract the `motifs` folder and follow [Windows setup](docs/windows.md). Needs the .NET 8 Desktop Runtime. |
+
+Or build from source: [macOS](INSTALL.md) · [Windows](docs/windows.md).
+
 ## Get started
 
 **The current build needs a local OpenCode V2 project with the Motifs plugin
-loaded.** The plugin prepares every composer destination, including Claude,
-Codex, Clipboard, and Save to folder. Claude and Codex handoff is available on
-macOS with the corresponding desktop app installed.
-
-| Platform | Requirements | Setup |
-| --- | --- | --- |
-| macOS | Apple Silicon, macOS 14 or later | [Install Motifs](INSTALL.md) and [grant capture permissions](docs/macos-permissions.md) |
-| Windows | Windows 10 or 11 in a local desktop session | [Build and set up the Windows helper](docs/windows.md) |
-
-If you’re using the macOS DMG, open `Install Motifs.txt` on the mounted disk.
+loaded.** Each download contains the plugin folder and its native helper, not a
+standalone app. The plugin prepares every composer destination, including
+Claude, Codex, Clipboard, and Save to folder. Claude and Codex handoff is
+available on macOS with the corresponding desktop app installed.
 
 After setup, run `/motifs-start` in OpenCode if the helper isn’t running.
 Use `/motifs` when you want OpenCode to use a saved capture, or
