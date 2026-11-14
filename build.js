@@ -54,7 +54,16 @@ writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encodi
 <key>NSMicrophoneUsageDescription</key><string>Transcribe your description when you click Dictate. Nothing is sent until you click Send.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>Convert your spoken description into an editable draft using on-device recognition.</string>
 </dict></plist>`);
-execFileSync("/usr/bin/xcrun", ["swiftc", "-parse-as-library", "-O", "-module-cache-path", "/tmp/motifs-swift-cache", "-target", "arm64-apple-macosx14.0", ...["Motifs.swift", "AccessibilityReader.swift", "AnnotationEditor.swift", "Composer.swift", "ComposerUI.swift", "CaptureBundle.swift", "ComposerMentions.swift", "ComposerSpeech.swift", "SessionHandoff.swift", "HandoffFocus.swift", "StatusBarIcon.swift", "RegionCapture.swift", "ScreenshotAttachments.swift", "SystemContext.swift", "UserEvents.swift", "BrowserBridge.swift", "ReplayRecorder.swift", "RecordingUI.swift", "ClipReview.swift", "ContextPicker.swift", "Recents.swift", "PermissionGuide.swift"].map(file => path.join(root, file)), "-o", path.join(app, "Contents/MacOS/Motifs")], { stdio: "inherit" });
+execFileSync("/usr/bin/xcrun", ["swiftc", "-parse-as-library", "-O", "-module-cache-path", "/tmp/motifs-swift-cache", "-target", "arm64-apple-macosx14.0", ...["Motifs.swift", "AccessibilityReader.swift", "AnnotationEditor.swift", "Composer.swift", "ComposerUI.swift", "CaptureBundle.swift", "ComposerMentions.swift", "ComposerSpeech.swift", "SessionHandoff.swift", "HandoffFocus.swift", "StatusBarIcon.swift", "RegionCapture.swift", "ScreenshotAttachments.swift", "SystemContext.swift", "UserEvents.swift", "BrowserBridge.swift", "ReplayRecorder.swift", "RecordingUI.swift", "ClipReview.swift", "ContextPicker.swift", "Recents.swift", "PermissionGuide.swift", "OpenCodePlugin.swift"].map(file => path.join(root, file)), "-o", path.join(app, "Contents/MacOS/Motifs")], { stdio: "inherit" });
+// Motifs.app installs this copy of the OpenCode plugin when it runs from Applications.
+const bundledPlugin = path.join(resources, "plugin");
+rmSync(bundledPlugin, { recursive: true, force: true });
+const pluginFiles = execFileSync("git", ["ls-files", "-z", "--", ":(top,glob)*.js", "package.json", "LICENSE", "README.md", "browser-extension/"], { cwd: root, encoding: "utf8" })
+  .split("\0").filter(file => file && file !== "build.js");
+for (const file of pluginFiles) {
+  mkdirSync(path.dirname(path.join(bundledPlugin, file)), { recursive: true });
+  copyFileSync(path.join(root, file), path.join(bundledPlugin, file));
+}
 // The hardened runtime stops other processes from injecting code that would inherit
 // this app's Screen Recording and Accessibility grants. Dictation needs audio input;
 // no entitlement may relax library validation or allow DYLD environment variables.

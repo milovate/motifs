@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -38,14 +38,24 @@ function fileDigest(file) {
   return { sha256: createHash("sha256").update(readFileSync(file)).digest("hex"), bytes: statSync(file).size };
 }
 
-function checkDiskImage({ diskImage, mountpoint, checkout, verifier, signer, sign }) {
+function checkDiskImage({ diskImage, mountpoint, version, signer, sign }) {
   execFileSync("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-noautoopen", "-readonly", "-mountpoint", mountpoint, diskImage], { stdio: "inherit" });
   try {
-    statSync(path.join(mountpoint, "Install Motifs.txt"));
-    const packageRoot = path.join(mountpoint, "motifs");
-    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", path.join(packageRoot, "Motifs.app")], { stdio: "inherit" });
-    execFileSync(process.execPath, [verifier, packageRoot], { cwd: checkout, stdio: "inherit" });
-    if (sign) execFileSync(process.execPath, [signer, packageRoot], { cwd: checkout, stdio: "inherit" });
+    for (const name of [".background.tiff", ".DS_Store"]) statSync(path.join(mountpoint, name));
+    if (readlinkSync(path.join(mountpoint, "Applications")) !== "/Applications") throw new Error("The DMG has no Applications link.");
+    const app = path.join(mountpoint, "Motifs.app");
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
+    const appVersion = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", path.join(app, "Contents/Info.plist")], { encoding: "utf8" }).trim();
+    const arch = execFileSync("/usr/bin/lipo", ["-archs", path.join(app, "Contents/MacOS/Motifs")], { encoding: "utf8" }).trim();
+    const plugin = path.join(app, "Contents/Resources/plugin");
+    const pluginVersion = JSON.parse(readFileSync(path.join(plugin, "package.json"), "utf8")).version;
+    if (appVersion !== version || pluginVersion !== version || arch !== "arm64") {
+      throw new Error(`The DMG's Motifs.app reports ${appVersion} (${arch}) with plugin ${pluginVersion}, expected ${version} (arm64).`);
+    }
+    execFileSync(process.execPath, ["--input-type=module", "-e",
+      `const { default: plugin } = await import(${JSON.stringify(pathToFileURL(path.join(plugin, "index.js")).href)}); if (typeof plugin?.setup !== "function") throw new Error("The bundled OpenCode plugin has no setup entry point.");`,
+    ], { stdio: "inherit" });
+    if (sign) execFileSync(process.execPath, [signer, mountpoint], { stdio: "inherit" });
   } finally {
     execFileSync("/usr/bin/hdiutil", ["detach", "-quiet", mountpoint], { stdio: "inherit" });
   }
@@ -112,7 +122,7 @@ function main() {
       if (sign) execFileSync(process.execPath, [signer, "--disk-image", file], { cwd: checkout, env, stdio: "inherit" });
       const mountpoint = path.join(scratch, "volume");
       mkdirSync(mountpoint);
-      checkDiskImage({ diskImage: file, mountpoint, checkout, verifier, signer, sign });
+      checkDiskImage({ diskImage: file, mountpoint, version, signer, sign });
       diskImage = { file, name, ...fileDigest(file) };
     }
 

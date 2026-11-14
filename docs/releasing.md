@@ -9,17 +9,25 @@ against `package.json`.
 From a clean checkout, run `npm run build` followed by `npm run package:local`
 to make a versioned ZIP in `dist/` for Apple Silicon macOS or x64 Windows.
 The ZIP contains the OpenCode plugin and its native helper. On macOS the same
-command also makes `motifs-<version>-macos-arm64.dmg`. The DMG's volume is
-named `Motifs` and holds the `motifs` plugin folder and
-[`Install Motifs.txt`](../packaging/macos/Install%20Motifs.txt), which refers to
-`/Volumes/Motifs`. The local macOS build uses ad hoc signing. See [INSTALL.md](INSTALL.md#9-procedure-update-the-plugin)
+command also makes `motifs-<version>-macos-arm64.dmg`: `Motifs.app` and an
+Applications link on a styled background. `npm run build` bundles the OpenCode
+plugin inside `Motifs.app`, and the app installs it on first launch. The local
+macOS build uses ad hoc signing.
+
+The DMG layout lives in `packaging/macos/dmg`. Regenerate `background.tiff` with
+`make-background.swift` and `tiffutil -cathidpicheck`. `DS_Store` holds the
+Finder window size and icon positions and points at `.background.tiff` on a
+volume named `Motifs`, so keep that name. To change the layout, build a
+throwaway DMG with [dmgbuild](https://dmgbuild.readthedocs.io/) using the same
+window (640 × 428), icon size (112) and icon centres as the background script,
+then copy its `.DS_Store`. See [INSTALL.md](INSTALL.md#9-procedure-update-the-plugin)
 for how to upgrade a ZIP installation.
 
 Run `npm run release:check` on Apple Silicon macOS and x64 Windows to check a
 release candidate locally. Check out the same commit on both machines. The
 command builds, tests, and packages `HEAD` in a temporary checkout. It extracts
 the ZIP and checks the plugin entry point, helper version, and architecture.
-On macOS it also mounts the DMG and runs the same checks on its plugin folder.
+On macOS it also mounts the DMG and checks its layout files, Applications link, app version, architecture, and the bundled plugin.
 Each run saves the packages, a `.sha256` checksum file for each, and a `release-check.json`
 report in `dist/` with the commit, platform, version, and test counts. Run the Windows desktop checks in
 [docs/windows.md](docs/windows.md) with the resulting Windows package.
