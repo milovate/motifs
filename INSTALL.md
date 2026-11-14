@@ -87,8 +87,10 @@ Use this procedure instead of section 4 if the user downloaded a release.
 2. Tell the user to open `motifs-<version>-macos-arm64.dmg` and to drag
    **Motifs** to **Applications**.
 3. Tell the user to open **Motifs** from Applications.
-4. If macOS cannot verify the app, the user must click **Open Anyway** in
-   **System Settings → Privacy & Security**. A preview release is not notarized.
+4. If macOS says **"Motifs" Not Opened**, the user must click **Done** and then
+   **Open Anyway** in **System Settings → Privacy & Security**. A preview
+   release is not notarized. Refer to
+   [Open a downloaded preview](docs/macos-permissions.md#open-a-downloaded-preview).
    An agent must not remove the quarantine attribute.
 5. Motifs asks to connect to OpenCode. Tell the user to click **Connect**. Motifs
    copies its plugin to the plugin folder and links `Motifs.app` in it. Later,
