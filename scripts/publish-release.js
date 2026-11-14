@@ -31,7 +31,7 @@ export function releaseNotes({ version, commit, signed, assets }) {
     "",
     "| Platform | Download | Install |",
     "| --- | --- | --- |",
-    `| macOS (Apple silicon, 14+) | [DMG](${download(dmg)}) · [ZIP](${download(macZip)}) | Open the DMG and follow \`Install Motifs.txt\`. |`,
+    `| macOS (Apple silicon, 14+) | [DMG](${download(dmg)}) · [ZIP](${download(macZip)}) | Drag Motifs to Applications, open it, and choose **Connect** so OpenCode loads it. |`,
     `| Windows x64 (10 or 11) | [ZIP](${download(windowsZip)}) | Extract the \`motifs\` folder and follow [Windows setup](https://github.com/${repository}/blob/v${version}/docs/windows.md). Needs the .NET 8 Desktop Runtime. |`,
     "",
   );

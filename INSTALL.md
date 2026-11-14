@@ -84,18 +84,22 @@ helper, use section 4.1.
 Use this procedure instead of section 4 if the user downloaded a release.
 
 1. Do steps 1 and 2 of section 4.
-2. Tell the user to open `motifs-<version>-macos-arm64.dmg`. The disk name is
-   `Motifs`.
-3. Make the plugins directory. Run `mkdir -p ~/.config/opencode/plugins`.
-4. Copy the plugin. Run
-   `ditto /Volumes/Motifs/motifs ~/.config/opencode/plugins/motifs`.
-5. Make sure that `Motifs.app` is in the plugin folder.
-6. Tell the user to open `Motifs.app` in the plugin folder one time.
-7. If macOS cannot verify the app, the user must click **Open Anyway** in
+2. Tell the user to open `motifs-<version>-macos-arm64.dmg` and to drag
+   **Motifs** to **Applications**.
+3. Tell the user to open **Motifs** from Applications.
+4. If macOS cannot verify the app, the user must click **Open Anyway** in
    **System Settings → Privacy & Security**. A preview release is not notarized.
    An agent must not remove the quarantine attribute.
+5. Motifs asks to connect to OpenCode. Tell the user to click **Connect**. Motifs
+   copies its plugin to the plugin folder and links `Motifs.app` in it. Later,
+   use **Motifs → Connect to OpenCode…** in the menu bar.
+6. Make sure that `index.js` and the `Motifs.app` link are in the plugin folder.
 
-For a ZIP, extract it. Then copy the `motifs` folder in the same way.
+Motifs never replaces a plugin folder that it did not install. A newer
+`Motifs.app` refreshes the copy that it installed.
+
+For a ZIP, extract it. Then copy the extracted `motifs` folder to the plugin
+folder. Keep the whole folder together.
 
 ## 5. Procedure: connect the plugin to OpenCode
 

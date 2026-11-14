@@ -19,7 +19,7 @@ struct Motifs {
         NSApplication.shared.setActivationPolicy(.accessory)
         installMotifsEditMenu()
         if !args.contains("--capture") && !args.contains("--insert-latest") && !args.contains("--annotate-latest") && !args.contains("--annotate-clipboard") && !args.contains("--open-session-draft") {
-            let watcher = Watcher(output: output)
+            let watcher = Watcher(output: output, launchedByPlugin: args.contains("--watch"))
             NSApplication.shared.delegate = watcher
             withExtendedLifetime(watcher) { NSApplication.shared.run() }
             return
@@ -98,7 +98,13 @@ struct Motifs {
     var controlsTimer: Timer?
     weak var recordingComposer: MotifComposer?
 
-    init(output: String) { self.output = output }
+    let launchedByPlugin: Bool
+    static let declinedOpenCodeKey = "declinedOpenCodeConnection"
+
+    init(output: String, launchedByPlugin: Bool) {
+        self.output = output
+        self.launchedByPlugin = launchedByPlugin
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -109,7 +115,7 @@ struct Motifs {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon()
         let menu = NSMenu()
-        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording… (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Permission setup", #selector(permissions)), ("Quit Motifs", #selector(quit))] {
+        for (title, action) in [("Capture and compose (⌥G)", #selector(composeShot)), ("Start screen recording… (⌥⇧G)", #selector(toggleRecording)), ("Capture, annotate, and insert into current draft", #selector(takeShot)), ("Capture and insert without annotation", #selector(quickShot)), ("Annotate latest capture", #selector(annotateLatest)), ("Annotate clipboard image", #selector(annotateClipboard)), ("Insert latest capture into OpenCode", #selector(insertLatest)), ("Open captures folder", #selector(openFolder)), ("Connect to OpenCode…", #selector(connectOpenCode)), ("Permission setup", #selector(permissions)), ("Quit Motifs", #selector(quit))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
             entry.target = self
             menu.addItem(entry)
@@ -171,6 +177,61 @@ struct Motifs {
         let recordStatus = handlerStatus == noErr ? RegisterEventHotKey(UInt32(kVK_ANSI_G), UInt32(optionKey | shiftKey), EventHotKeyID(signature: 0x43535444, id: 2), eventTarget, 0, &recordHotkey) : handlerStatus
         if status != noErr { updateStatusIcon(.warning); item?.button?.toolTip = "Motifs — shortcut unavailable. Use the capture menu." }
         saveStatus(output: output, phase: "ready", details: ["hotkeyStatus": status, "recordHotkeyStatus": recordStatus, "hotkeyHandlerStatus": handlerStatus, "shortcutCount": 0, "lastShortcutAt": "", "hotkeyTarget": "dispatcher", "shortcut": "Option + G"])
+        DispatchQueue.main.async { [weak self] in self?.offerOpenCodeConnection(automatic: true) }
+    }
+
+    @objc func connectOpenCode() { offerOpenCodeConnection(automatic: false) }
+
+    // Opened from Applications, Motifs asks once before installing its OpenCode plugin.
+    // Started by the plugin, it only refreshes a copy it installed earlier.
+    func offerOpenCodeConnection(automatic: Bool) {
+        guard let installer = OpenCodePluginInstaller.forRunningApp() else {
+            if !automatic { showOpenCodeAlert("This copy of Motifs has no bundled OpenCode plugin", "Install the plugin from a release or a Git checkout instead.") }
+            return
+        }
+        let state = installer.state()
+        if automatic && launchedByPlugin && state != .outdated { return }
+        switch state {
+        case .installed:
+            if !automatic { showOpenCodeAlert("Motifs is connected to OpenCode", "OpenCode loads Motifs from \(installer.destination.path).") }
+        case .outdated:
+            do { try installer.install() } catch { if !automatic { NSAlert(error: error).runModal() } }
+        case .foreign:
+            if !automatic { showOpenCodeAlert("OpenCode already has a Motifs plugin", "Motifs leaves the copy at \(installer.destination.path) as it is. To use this app's copy, move that folder out of the plugins folder and try again.") }
+        case .unavailable(let message):
+            showOpenCodeAlert("Move Motifs to Applications", message)
+        case .notInstalled:
+            if automatic && UserDefaults.standard.bool(forKey: Self.declinedOpenCodeKey) { return }
+            let alert = NSAlert()
+            alert.messageText = "Connect Motifs to OpenCode?"
+            var details = "Motifs adds its OpenCode plugin at \(installer.destination.path). OpenCode needs it to prepare drafts for OpenCode, Claude, Codex, and the clipboard."
+            let legacy = installer.legacyFolders()
+            if !legacy.isEmpty {
+                details += "\n\nAn older Capture Studio plugin is also installed (\(legacy.map(\.lastPathComponent).joined(separator: ", "))). Move it out of the plugins folder so OpenCode loads only one copy."
+            }
+            alert.informativeText = details
+            alert.addButton(withTitle: "Connect")
+            alert.addButton(withTitle: "Not Now")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                if automatic { UserDefaults.standard.set(true, forKey: Self.declinedOpenCodeKey) }
+                return
+            }
+            do {
+                try installer.install()
+                showOpenCodeAlert("Motifs is connected", "Quit and reopen OpenCode to load Motifs. Then press Option+G to capture.")
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
+    func showOpenCodeAlert(_ title: String, _ message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -485,7 +546,9 @@ struct Motifs {
 
     @objc func connectBrowserExtension() {
         let alert = NSAlert()
-        let folder = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("browser-extension")
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("plugin/browser-extension")
+        let folder = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            ?? Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("browser-extension")
         do {
             guard let executable = Bundle.main.executablePath else { throw captureError("Could not locate the Motifs executable.") }
             let support = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
