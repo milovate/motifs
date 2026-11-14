@@ -28,6 +28,7 @@ export async function writeContextFile(bundle) {
  * @typedef {{ id: string, label: string, detail?: string }} Target
  * @typedef {"ready" | "not-installed" | "needs-auth" | "not-running"} DestinationStatus
  * @typedef {{ action: "opencode-draft", sessionID: string, title: string, directory: string, draftText: string }
+ *   | { action: "desktop-draft", app: "claude" | "codex", draftText: string, directory?: string }
  *   | { action: "copy-text", text: string, message: string }
  *   | { action: "reveal-folder", path: string, message: string }} HandoffResult
  * @typedef {{
@@ -42,7 +43,7 @@ export async function writeContextFile(bundle) {
  * }} Destination
  */
 
-export const HANDOFF_ACTIONS = ["opencode-draft", "copy-text", "reveal-folder"];
+export const HANDOFF_ACTIONS = ["opencode-draft", "desktop-draft", "copy-text", "reveal-folder"];
 const STATUSES = ["ready", "not-installed", "needs-auth", "not-running"];
 
 export function validateDestination(destination) {
@@ -62,6 +63,10 @@ export function validateHandoff(result) {
   switch (result?.action) {
     case "opencode-draft":
       if (typeof result.sessionID !== "string" || typeof result.draftText !== "string") break;
+      return result;
+    case "desktop-draft":
+      if (!["claude", "codex"].includes(result.app) || typeof result.draftText !== "string" || !result.draftText.trim()) break;
+      if (result.app === "codex" && (typeof result.directory !== "string" || !path.isAbsolute(result.directory))) break;
       return result;
     case "copy-text":
       if (typeof result.text !== "string" || typeof result.message !== "string") break;
@@ -137,6 +142,29 @@ export function clipboardDestination() {
       const clips = bundle.videos.length;
       const parts = [count ? `${count} screenshot path${count === 1 ? "" : "s"}` : "", clips === 1 ? "the recording path" : clips ? `${clips} recording paths` : ""].filter(Boolean);
       return { action: "copy-text", text, message: `Copied Markdown${parts.length ? ` with ${parts.join(" and ")}` : ""}.` };
+    },
+  };
+}
+
+function desktopDestination(app, directory) {
+  const label = app === "claude" ? "Claude" : "Codex";
+  const target = directory
+    ? { id: directory, label: path.basename(directory) || directory, detail: directory }
+    : { id: "new-chat", label: "New chat" };
+  return {
+    id: app,
+    label,
+    accepts: { image: false, video: false },
+    status: async () => "ready",
+    targets: async () => [target],
+    actionLabel: () => `Review in ${label}`,
+    hint: () => "Opens a draft with local capture paths.",
+    async prepare(bundle, _target, { note }) {
+      const text = draftText(bundle, note, await writeContextFile(bundle), { attachImages: false });
+      if (app === "claude" && text.length > 14_000) {
+        throw new Error("This draft is too long for Claude Desktop. Shorten the note and try again.");
+      }
+      return { action: "desktop-draft", app, draftText: text, ...(directory ? { directory } : {}) };
     },
   };
 }
@@ -232,6 +260,7 @@ function exportedShot(capture, screenshot, includeText) {
   return shot;
 }
 
-export function builtinDestinations(ctx, options = {}) {
-  return [opencodeDestination(ctx), clipboardDestination(), folderDestination(options.exportDirectory)].map(validateDestination);
+export function builtinDestinations(ctx, options = {}, platform = process.platform) {
+  const desktop = platform === "darwin" ? [desktopDestination("claude"), desktopDestination("codex", ctx.location.directory)] : [];
+  return [opencodeDestination(ctx), ...desktop, clipboardDestination(), folderDestination(options.exportDirectory)].map(validateDestination);
 }

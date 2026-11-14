@@ -57,7 +57,7 @@ installation without planning that permission step.
    Each region stays a separate screenshot; up to eight can be attached. Each image
    must be under 15 MB and the collection under 30 MB. Region capture does not read
    accessibility text from outside the selected rectangle or save a whole-display image.
-3. Choose where to send: **OpenCode**, **Clipboard**, or **Save to folder** (see
+3. Choose **OpenCode**, **Claude**, **Codex**, **Clipboard**, or **Save to folder** (see
    [Destinations](#destinations)), then a target. For OpenCode the target is a connected
    project: a location with this plugin loaded in the local OpenCode service, not
    every folder on disk. The footer and send button show the destination's action,
@@ -110,18 +110,23 @@ helpers cannot auto-run prompts.
 
 ### Destinations
 
-A destination is where a prepared capture goes. Each one only places the bundle
-somewhere you then act on; none sends, submits, pastes, or runs anything for you.
+A destination prepares a capture for review. You submit the draft from the destination app.
 
 | Destination | Target | What happens |
 | --- | --- | --- |
 | OpenCode | A loaded project | Creates an empty session and fills its unsent input |
+| Claude (Mac) | A new chat | Prefills a draft in Claude Desktop |
+| Codex (Mac) | A loaded project | Prefills a new Codex draft in the selected project |
 | Clipboard | Markdown | Copies a short summary: the note, screenshot and recording paths, console errors, failed requests, device, and the path of the full-context file. Nothing is pasted |
 | Save to folder | `~/Documents/Appshots` | Writes `screenshot-N.png`, `README.md` and `bundle.json` to a new owner-only folder, then reveals it in Finder |
 
 Change the export folder with the plugin option `{ "exportDirectory": "/absolute/path" }`.
 A relative path makes Save to folder unavailable.
 Exports contain only the included context and never paths into the private captures folder.
+
+Claude and Codex need their desktop apps installed. Their drafts contain the
+full note and paths to local capture and context files. Attach any files you
+want to include directly in the chat.
 
 Destinations are JavaScript modules loaded by the OpenCode plugin process
 (`destinations.js`). Each is a plain object, checked once by `validateDestination`:
@@ -138,6 +143,7 @@ interface Destination {
   // Must never submit. Returns one of the handoff actions below.
   prepare(bundle, target, { note, requestID }): Promise<
     | { action: "opencode-draft"; sessionID; title; directory; draftText }
+    | { action: "desktop-draft"; app: "claude" | "codex"; draftText; directory? }
     | { action: "copy-text"; text; message }
     | { action: "reveal-folder"; path; message }
   >;
@@ -149,7 +155,7 @@ label and hint. `POST /prepare` accepts optional `destination` and `target` fiel
 without them it prepares an OpenCode draft as before. The helper performs the
 returned action: it opens the draft, writes the clipboard, or reveals the folder.
 The helper refuses any other action. Because destinations run inside the plugin,
-Clipboard and Save to folder are also only available while OpenCode has the
+all destinations are available only while OpenCode has the
 plugin loaded.
 
 ### Bundles and recent captures

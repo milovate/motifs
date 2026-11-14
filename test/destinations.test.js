@@ -32,7 +32,7 @@ async function fixture(t, bundle = {}) {
     },
   };
   const exports = path.join(directory, "exports");
-  const destinations = builtinDestinations(ctx, { exportDirectory: exports });
+  const destinations = builtinDestinations(ctx, { exportDirectory: exports }, "darwin");
   return { directory, manifest, shot, ctx, created, prompts, exports, destinations, input: { requestID: randomUUID(), text: "Checkout button overlaps\nmore detail", skills: [], manifest } };
 }
 
@@ -84,19 +84,24 @@ test("destination contract rejects incomplete plugins and unknown handoff action
   assert.throws(() => validateHandoff({ action: "send-message" }), /unknown handoff action/);
   assert.throws(() => validateHandoff({ action: "reveal-folder", path: "relative", message: "x" }), /incomplete/);
   assert.throws(() => validateHandoff({ action: "copy-text", message: "x" }), /incomplete/);
+  assert.throws(() => validateHandoff({ action: "desktop-draft", app: "unknown", draftText: "test" }), /incomplete/);
+  assert.throws(() => validateHandoff({ action: "desktop-draft", app: "codex", draftText: "test", directory: "relative" }), /incomplete/);
 });
 
 test("built-in destinations describe status, targets, action labels and hints", async (t) => {
   const f = await fixture(t);
   const described = await describeDestinations(f.destinations);
-  assert.deepEqual(described.map((d) => d.id), ["opencode", "clipboard", "folder"]);
+  assert.deepEqual(described.map((d) => d.id), ["opencode", "claude", "codex", "clipboard", "folder"]);
   assert.ok(described.every((d) => d.status === "ready" && d.targets.length === 1));
   assert.equal(described[0].targets[0].id, "/fixture/project");
   assert.equal(described[0].targets[0].label, "project");
   assert.equal(described[0].targets[0].actionLabel, "Review in OpenCode");
   assert.match(described[0].targets[0].hint, /You press Enter/);
-  assert.equal(described[1].targets[0].actionLabel, "Copy Markdown");
-  assert.equal(described[2].targets[0].detail, f.exports);
+  assert.equal(described[1].targets[0].actionLabel, "Review in Claude");
+  assert.equal(described[2].targets[0].actionLabel, "Review in Codex");
+  assert.equal(described[3].targets[0].actionLabel, "Copy Markdown");
+  assert.equal(described[4].targets[0].detail, f.exports);
+  assert.deepEqual(builtinDestinations(f.ctx, {}, "win32").map((d) => d.id), ["opencode", "clipboard", "folder"]);
   const offline = { ...clipboardDestination(), id: "linear", label: "Linear", status: async () => "needs-auth", targets: async () => { throw new Error("must not list targets"); } };
   const [linear] = await describeDestinations([offline]);
   assert.deepEqual([linear.status, linear.targets], ["needs-auth", []]);
@@ -194,13 +199,32 @@ test("bridge lists destinations and routes prepare by destination without sendin
   assert.equal((await fetch(base + "/destinations")).status, 403);
   assert.equal((await fetch(base + "/destinations", { headers: { ...headers, Origin: "https://example.com" } })).status, 403);
   const { destinations } = await (await fetch(base + "/destinations", { headers })).json();
-  assert.deepEqual(destinations.map((d) => d.id), ["opencode", "clipboard", "folder"]);
+  assert.deepEqual(destinations.map((d) => d.id), ["opencode", "claude", "codex", "clipboard", "folder"]);
   const response = await fetch(base + "/prepare", { method: "POST", headers, body: JSON.stringify({ ...f.input, destination: "clipboard", target: "markdown" }) });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).action, "copy-text");
   const legacy = await (await fetch(base + "/prepare", { method: "POST", headers, body: JSON.stringify({ ...f.input, requestID: randomUUID() }) })).json();
   assert.equal(legacy.action, "opencode-draft");
   assert.equal(f.created.length, 1);
+  assert.equal(f.prompts.length, 0);
+});
+
+test("Claude and Codex handoffs preserve the note and reference local captures without sending", async (t) => {
+  const f = await fixture(t);
+  const note = "Full prompt + symbols & Unicode ✨\n" + "Details ".repeat(30);
+  for (const [app, target] of [["claude", "new-chat"], ["codex", "/fixture/project"]]) {
+    const result = await submitComposer(f.ctx, f.directory, { ...f.input, text: note, destination: app, target }, f.destinations);
+    assert.equal(result.action, "desktop-draft");
+    assert.equal(result.app, app);
+    assert.equal(result.directory, app === "codex" ? target : undefined);
+    assert.ok(result.draftText.startsWith(note.trim() + "\n"));
+    assert.ok(result.draftText.includes(f.shot.screenshot));
+    assert.ok(result.draftText.includes(f.manifest.replace(/\.json$/, "-context.md")));
+    assert.ok(!result.draftText.includes("(attached)"));
+    assert.ok(!result.draftText.includes("Untrusted window text"));
+  }
+  await assert.rejects(submitComposer(f.ctx, f.directory, { ...f.input, text: "a".repeat(14_001), destination: "claude" }, f.destinations), /too long for Claude Desktop/);
+  assert.equal(f.created.length, 0);
   assert.equal(f.prompts.length, 0);
 });
 

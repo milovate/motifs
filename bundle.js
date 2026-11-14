@@ -408,15 +408,16 @@ export const contextFilePath = (bundle) => bundle.manifest.replace(/\.json$/, "-
 
 // The prompt handed to OpenCode: the note, what was captured, and where the files
 // are. Screenshots and key frames are attached; everything else is read on demand.
-export function draftText(bundle, note, contextFile) {
+export function draftText(bundle, note, contextFile, { attachImages = true } = {}) {
   const lines = [];
   const media = bundle.media;
   media.forEach((shot, index) => {
-    lines.push(`- Screenshot ${index + 1} of ${media.length} (attached): ${shot.screenshot} · ${shot.app || "App"} · ${JSON.stringify(shot.title || "Untitled")}${shot.annotatedAt ? " · annotated" : ""}`);
+    lines.push(`- Screenshot ${index + 1} of ${media.length}${attachImages ? " (attached)" : ""}: ${shot.screenshot} · ${shot.app || "App"} · ${JSON.stringify(shot.title || "Untitled")}${shot.annotatedAt ? " · annotated" : ""}`);
   });
   let nextFrame = media.length + 1;
   for (const video of bundle.videos ?? []) {
-    const frames = video.frames.length ? ` · key frames attached as images ${nextFrame}–${nextFrame + video.frames.length - 1}: ${video.frames.map((frame) => frame.screenshot).join(", ")}` : "";
+    const frameLabel = attachImages ? `key frames attached as images ${nextFrame}–${nextFrame + video.frames.length - 1}` : "key frames";
+    const frames = video.frames.length ? ` · ${frameLabel}: ${video.frames.map((frame) => frame.screenshot).join(", ")}` : "";
     lines.push(`- ${videoLabel(video, bundle)}: ${video.video} · ${formatSeconds(video.durationSeconds)} of ${videoScope(video)}${frames}`);
     nextFrame += video.frames.length;
   }

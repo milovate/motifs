@@ -359,6 +359,32 @@ struct ComposerDestination: Equatable {
     var targets: [ComposerTarget]
 }
 
+enum DesktopDraftApp: String {
+    case claude, codex
+
+    var label: String { self == .claude ? "Claude" : "Codex" }
+    var bundleID: String { self == .claude ? "com.anthropic.claudefordesktop" : "com.openai.codex" }
+
+    func draftURL(text: String, directory: String?) -> URL? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var link = URLComponents()
+        link.scheme = rawValue
+        switch self {
+        case .claude:
+            link.host = "claude.ai"
+            link.path = "/new"
+            link.queryItems = [URLQueryItem(name: "q", value: text)]
+        case .codex:
+            guard let directory, directory.hasPrefix("/") else { return nil }
+            link.host = "threads"
+            link.path = "/new"
+            link.queryItems = [URLQueryItem(name: "prompt", value: text), URLQueryItem(name: "path", value: directory)]
+        }
+        link.percentEncodedQuery = link.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return link.url
+    }
+}
+
 // Each loaded OpenCode project serves the same destination list. Targets are
 // merged by id and remember the first endpoint that offered them.
 func mergeDestinations(_ responses: [(endpoint: Int, destinations: [[String: Any]])]) -> [ComposerDestination] {
