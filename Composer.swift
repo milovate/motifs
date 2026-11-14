@@ -970,7 +970,7 @@ struct ComposerEndpoint: Decodable {
     func discoverProjects() {
         projects.isEnabled = false
         microphone.isEnabled = false
-        status.stringValue = "Finding connected OpenCode projects…"
+        status.stringValue = "Connecting to OpenCode…"
         let candidates = endpoints
         Task { @MainActor in
             let live = await withTaskGroup(of: (Int, [[String: Any]])?.self, returning: [(Int, [[String: Any]])].self) { group in
@@ -996,7 +996,7 @@ struct ComposerEndpoint: Decodable {
 
     func loadSkills() {
         guard let endpoint = selectedEndpoint else {
-            status.stringValue = endpoints.isEmpty ? "Open a project in OpenCode with the Motifs plugin loaded." : "\(selectedDestination?.label ?? "This destination") is not available right now."
+            status.stringValue = endpoints.isEmpty ? "Open an OpenCode project with Motifs loaded, then reopen this draft from Recents." : "\(selectedDestination?.label ?? "This destination") is unavailable. Choose another destination."
             refreshSendAvailability()
             return
         }
@@ -1025,7 +1025,7 @@ struct ComposerEndpoint: Decodable {
                 }
             } catch {
                 guard skillLoadID == loadID else { return }
-                status.stringValue = "Could not connect. Open this project in OpenCode and reopen the composer. " + error.localizedDescription
+                status.stringValue = "OpenCode disconnected. Reopen the project, then open this draft from Recents."
             }
         }
     }

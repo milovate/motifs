@@ -399,7 +399,7 @@ internal sealed class ComposerForm : Form
 
     async Task Discover()
     {
-        status.Text = "Finding connected OpenCode projects…";
+        status.Text = "Connecting to OpenCode…";
         var found = ComposerFiles.Endpoints(output);
         var live = new List<(ComposerEndpoint Endpoint, JsonArray Destinations)>();
         foreach (var endpoint in found)
@@ -511,7 +511,7 @@ internal sealed class ComposerForm : Form
         var target = CurrentTarget;
         if (target == null || target.Endpoint < 0 || target.Endpoint >= endpoints.Count)
         {
-            status.Text = endpoints.Count == 0 ? "Open a project in OpenCode with the Capture Studio plugin loaded." : "This destination is not available right now.";
+            status.Text = endpoints.Count == 0 ? "Open an OpenCode project with Motifs loaded, then reopen this draft from Recents." : "This destination is unavailable. Choose another destination.";
             return;
         }
         try
@@ -530,10 +530,10 @@ internal sealed class ComposerForm : Form
             note.SetSkills(skills.Select(skill => skill.Id).ToList());
             status.Text = Current?.Id == "opencode" ? "" : CurrentTarget?.Hint ?? "";
         }
-        catch (Exception error)
+        catch
         {
             if (generation != skillGeneration) return;
-            status.Text = "Could not connect. Open this project in OpenCode and reopen the composer. " + error.Message;
+            status.Text = "OpenCode disconnected. Reopen the project, then open this draft from Recents.";
         }
         RefreshSend();
     }
