@@ -37,7 +37,7 @@ export function releaseNotes({ version, commit, signed, assets }) {
   );
   if (!signed) {
     lines.push(
-      "On macOS, approve the helper once: after the first launch is blocked, open **System Settings → Privacy & Security** and click **Open Anyway**.",
+      `On macOS, if you see **"Motifs" Not Opened**, click **Done**, then open **System Settings → Privacy & Security**, scroll to **Security** and click **Open Anyway**. [Step-by-step](https://github.com/${repository}/blob/v${version}/docs/macos-permissions.md#open-a-downloaded-preview).`,
       "On Windows, SmartScreen may say \"Windows protected your PC\". Choose **More info → Run anyway** only for a download whose checksum matches `SHA256SUMS`.",
       "",
     );

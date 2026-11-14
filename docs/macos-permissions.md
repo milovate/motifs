@@ -26,16 +26,38 @@ secrets are replaced with `[redacted]` before captured text leaves the Mac; an
 optional secret-check model must run on this Mac (see the reference's [Secret redaction](reference.md#secret-redaction)
 section). Screenshots and recordings are not redacted.
 
-## 1. Build and find the helper
+## Open a downloaded preview
 
-Complete the [installation](../INSTALL.md) first. For the default path:
+Preview releases are not signed with an Apple Developer ID or notarized by
+Apple. The first time you open Motifs from a download, macOS shows
+**"Motifs" Not Opened: Apple could not verify "Motifs" is free of malware…**
+Approve it once:
+
+1. Click **Done**. Do not click **Move to Trash**.
+2. Open Apple menu → **System Settings** → **Privacy & Security**.
+3. Scroll down to **Security**. Next to **"Motifs" was blocked to protect your
+   Mac**, click **Open Anyway**.
+4. Enter your password or use Touch ID.
+5. Open **Motifs** from Applications again. If macOS asks once more, click **Open**.
+
+**Open Anyway** appears for about an hour after the blocked launch. If you don't
+see it, open Motifs again and go back to step 2. Approve only a download from
+[the Motifs releases page](https://github.com/milovate/motifs/releases) whose
+checksum matches the release's `SHA256SUMS` (`shasum -a 256 <file>`). You don't
+need to do this for a build you made yourself with `npm run build`.
+
+## 1. Find the helper
+
+Complete the [installation](../INSTALL.md) first. If you installed from the DMG,
+the helper is **Motifs** in Applications, and the plugin folder links to it. For
+a Git or ZIP installation at the default path:
 
 ```sh
 open -R "$HOME/.config/opencode/plugins/motifs/Motifs.app"
 ```
 
 Finder reveals **Motifs.app**. The app's display name is **Motifs**.
-Keep it inside the plugin directory.
+In a Git or ZIP installation, keep it inside the plugin directory.
 
 From the Motifs menu bar, choose **Permission setup**. Select **Set up** next to
 the permission you want. Drag the Motifs app tile into the permission list, then

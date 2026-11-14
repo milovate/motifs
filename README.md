@@ -39,6 +39,11 @@ approve the helper once. Check downloads against the release's `SHA256SUMS`.
 
 Or build from source: [macOS](INSTALL.md) · [Windows](docs/windows.md).
 
+**If macOS says "Motifs" Not Opened**, click **Done**, not Move to Trash. Then
+open **System Settings → Privacy & Security**, scroll to **Security**, click
+**Open Anyway** next to "Motifs" was blocked, and open Motifs again.
+[Details](docs/macos-permissions.md#open-a-downloaded-preview).
+
 ## Get started
 
 **The current build needs a local OpenCode V2 project with the Motifs plugin
