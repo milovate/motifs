@@ -722,4 +722,3 @@ internal sealed class Preview : Forms.Form
         catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Could not copy the image"); }
     }
 }
-
