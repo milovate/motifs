@@ -1,6 +1,6 @@
 import { addEntry, addStep, createBuffers, LIMITS, networkEntry, sanitizeConsole, sanitizeStep, windowSnapshots } from "./buffer.js";
 
-const HOST = "local.opencode.capturestudio";
+const HOST = "local.motifs";
 let buffers = createBuffers();
 // Page steps are kept only between the helper's steps-start and steps-stop.
 let steps = { active: false, startedAt: 0, entries: [] };

@@ -275,7 +275,7 @@ export function decisionJudge(raw, { fetch = globalThis.fetch, model } = {}) {
   };
 }
 
-// The judge the user chose in Capture Studio's menu, if any.
+// The judge the user chose in Motifs' menu, if any.
 export async function configuredJudge(captures, options = {}) {
   try {
     const settings = JSON.parse(await readFile(path.join(captures, "settings.json"), "utf8"));

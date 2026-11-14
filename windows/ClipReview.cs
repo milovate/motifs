@@ -11,7 +11,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal enum ClipMarkerKind { Click, Step, Error, Warning }
 

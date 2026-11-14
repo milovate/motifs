@@ -39,11 +39,13 @@ macOS with the corresponding desktop app installed.
 
 If you’re using the macOS DMG, open `Install Motifs.txt` on the mounted disk.
 
-After setup, run `/capture-studio-start` in OpenCode if the helper isn’t running.
-Use `/capture-studio` when you want OpenCode to use a saved capture, or
-`/capture-studio-annotate` to edit it first. See the
+After setup, run `/motifs-start` in OpenCode if the helper isn’t running.
+Use `/motifs` when you want OpenCode to use a saved capture, or
+`/motifs-annotate` to edit it first. See the
 [command and capture reference](docs/reference.md) for the full workflow.
-Run `/capture-studio-update` in OpenCode to check for a newer stable release.
+Run `/motifs-update` in OpenCode to check for a newer stable release.
+If you're updating from Capture Studio, follow
+[Update from Capture Studio](INSTALL.md#91-update-from-capture-studio).
 
 ## Troubleshooting
 
@@ -52,7 +54,7 @@ Run `/capture-studio-update` in OpenCode to check for a newer stable release.
 | The composer can’t connect to OpenCode | Open or reopen a local OpenCode V2 project with Motifs loaded, then reopen the composer. Your capture stays in Recents. To share a screenshot or recording now, right-click its thumbnail. |
 | The capture has no browser errors | Connect the bundled browser extension, reload the tab, reproduce the issue, and check **Context → Console** and **Network**. [Browser setup](docs/reference.md#browser-extension-chrome-brave-edge-arc-chromium) |
 | The capture has no native app errors | Motifs reads recent errors from macOS Unified Log or the Windows Application log. If the app writes to a file, choose it under **Custom log files** and capture again. |
-| The Mac shortcut doesn’t capture | Start the helper with `/capture-studio-start` and check [Screen Recording permission](docs/macos-permissions.md). |
+| The Mac shortcut doesn’t capture | Start the helper with `/motifs-start` and check [Screen Recording permission](docs/macos-permissions.md). |
 
 ## Standalone direction
 

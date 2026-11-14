@@ -111,7 +111,7 @@ var hostSeconds: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 final class ReplayPipeline {
     static let replayWindow: TimeInterval = 30
     static let recordingLimit: TimeInterval = 300
-    let queue = DispatchQueue(label: "local.opencode.capturestudio.replay")
+    let queue = DispatchQueue(label: "local.motifs.replay")
     let replay = ReplayBuffer(window: ReplayPipeline.replayWindow)
     let recording = ReplayBuffer(window: .infinity, maxBytes: 400_000_000)
     var replayEnabled = false
@@ -454,7 +454,7 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
     func stream(_ stream: SCStream, didStopWithError error: Error) { onStop?(error) }
 }
 
-// One ScreenCaptureKit stream feeding one pipeline. Capture Studio's own
+// One ScreenCaptureKit stream feeding one pipeline. Motifs' own
 // windows are excluded from display and area streams; a window stream shows only that window.
 @MainActor final class ReplayStream {
     let stream: SCStream
@@ -504,7 +504,7 @@ final class ReplayStreamSink: NSObject, SCStreamOutput, SCStreamDelegate {
         let sink = ReplayStreamSink(pipeline: pipeline)
         sink.onStop = { _ in Task { @MainActor in onStop() } }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: sink)
-        try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: DispatchQueue(label: "local.opencode.capturestudio.replay-stream"))
+        try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: DispatchQueue(label: "local.motifs.replay-stream"))
         try await stream.startCapture()
         return ReplayStream(stream: stream, sink: sink)
     }

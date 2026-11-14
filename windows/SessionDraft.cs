@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using Forms = System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal sealed class DraftUnconfirmedException : Exception
 {

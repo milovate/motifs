@@ -78,7 +78,7 @@ function main() {
     mkdirSync(unpacked);
     if (mac) {
       execFileSync("/usr/bin/ditto", ["-x", "-k", archive, unpacked], { stdio: "inherit" });
-      const bundle = path.join(packageRoot, "Capture Studio.app");
+      const bundle = path.join(packageRoot, "Motifs.app");
       execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle], { stdio: "inherit" });
     } else {
       execFileSync("tar.exe", ["-xf", archive, "-C", unpacked], { stdio: "inherit" });

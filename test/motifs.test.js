@@ -23,7 +23,7 @@ test("registers a direct, permission-scoped tool and slash command", async () =>
   const fetch = globalThis.fetch;
   globalThis.fetch = async () => ({ status: 404, ok: false, json: async () => ({}) });
   try {
-    await commands["capture-studio-update"].execute({ sessionID: "fixture-session" });
+    await commands["motifs-update"].execute({ sessionID: "fixture-session" });
   } finally {
     globalThis.fetch = fetch;
   }
@@ -31,14 +31,15 @@ test("registers a direct, permission-scoped tool and slash command", async () =>
   assert.equal(synthetic.resume, false);
   assert.match(synthetic.text, /No stable Motifs release has been published yet/);
   assert.equal(prompt, undefined);
-  assert.equal(registered.length, 1);
-  assert.equal(registered[0].name, "capture_studio");
-  assert.equal(registered[0].options.permission, "capture_studio");
-  assert.equal(registered[0].options.codemode, false);
-  assert.equal(typeof commands["capture-studio-start"].execute, "function");
-  assert.equal(typeof commands["capture-studio-insert"].execute, "function");
-  assert.equal(typeof commands["capture-studio-annotate"].execute, "function");
-  await commands["capture-studio"].execute({ sessionID: "fixture-session", delivery: "queue", prompt: { text: "explain this", attachments: [] } });
+  assert.deepEqual(registered.map((tool) => [tool.name, tool.options.permission, tool.options.codemode]), [["motifs", "motifs", false], ["capture_studio", "capture_studio", false]]);
+  assert.match(registered[1].description, /^Deprecated alias of the motifs tool\./);
+  for (const name of ["motifs", "motifs-start", "motifs-insert", "motifs-annotate", "motifs-update"]) {
+    const legacy = commands[name.replace(/^motifs/, "capture-studio")];
+    assert.equal(typeof commands[name].execute, "function");
+    assert.equal(legacy.execute, commands[name].execute, `${legacy.name} runs the same command as ${name}`);
+    assert.match(legacy.description, new RegExp(`^Deprecated: use /${name}\\. `));
+  }
+  await commands["motifs"].execute({ sessionID: "fixture-session", delivery: "queue", prompt: { text: "explain this", attachments: [] } });
   assert.match(prompt.text, /source=latest/);
   assert.match(prompt.text, /explain this$/);
   assert.equal(prompt.sessionID, "fixture-session");
@@ -54,7 +55,7 @@ test("starts the shortcut as a macOS app with its own permission identity", asyn
   }, platformConfig("darwin"));
   assert.equal(launch[0], "/usr/bin/open");
   assert.deepEqual(launch[1].slice(0, 2), ["-g", "-a"]);
-  assert.match(launch[1][2], /Capture Studio\.app$/);
+  assert.match(launch[1][2], /Motifs\.app$/);
   assert.deepEqual(launch[1].slice(3, 6), ["--args", "--watch", "--output"]);
 });
 
@@ -64,7 +65,7 @@ test("latest capture includes the actual image bytes in model content", async ()
   assert.match(result.content[0].text, /not live state/);
   assert.match(result.content[0].text, /untrusted/);
   assert.ok(result.content[0].text.endsWith(selectedTextGuidance));
-  assert.ok(result.content[0].text.indexOf(selectedTextGuidance) > result.content[0].text.indexOf("</appshot_accessibility_text>"));
+  assert.ok(result.content[0].text.indexOf(selectedTextGuidance) > result.content[0].text.indexOf("</motif_accessibility_text>"));
   assert.match(result.content[0].text, /AXStaticText: fixture/);
   assert.equal(result.content[1].uri, `data:image/png;base64,${io.png.toString("base64")}`);
   for (const content of result.content) Schema.decodeUnknownSync(Tool.Content)(content);

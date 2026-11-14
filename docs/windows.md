@@ -17,7 +17,7 @@ npm run build
 npm test
 ```
 
-The build creates `windows/dist/Appshots.exe` and accompanying runtime files.
+The build creates `windows/dist/Motifs.exe` and accompanying runtime files.
 Keep that entire folder together. No npm runtime dependencies, administrator
 privileges, PowerShell execution-policy changes, or macOS permissions are needed.
 The helper runs as the current user and never requests elevation or `uiAccess`.
@@ -37,7 +37,7 @@ needed, warn about interrupting active work before `opencode service restart`.
 
 ## Capture and use
 
-1. Run `/capture-studio-start` if the Capture Studio system tray icon is missing.
+1. Run `/motifs-start` if the Motifs system tray icon is missing.
    The plugin also starts a private loopback bridge, the same one macOS uses, so
    the helper can list destinations and prepare a draft.
 2. Press **Control+Alt+Shift+A**. The screen dims. **Drag** a region, **click** a
@@ -87,7 +87,7 @@ needed, warn about interrupting active work before `opencode service restart`.
    handoffs also returns to the previous app. None of these presses Enter or
    clicks Send.
 5. Review the result and send it yourself. If handoff fails, the bundle remains
-   in the captures folder. `/capture-studio` can still read the latest window capture.
+   in the captures folder. `/motifs` can still read the latest window capture.
 
 **Control+Alt+Shift+R** starts a screen recording. The same chooser appears: drag a
 region, click a window, or press Enter for the display under the pointer. Escape
@@ -115,13 +115,13 @@ frames from the selection. The original file stays in the captures folder.
 
 **Keep instant replay (last 30 s)** stays off until you turn it on from the tray.
 The choice is saved in `settings.json` and restored the next time the watcher
-starts. While it is on, Capture Studio keeps the last 30 seconds of the display
+starts. While it is on, Motifs keeps the last 30 seconds of the display
 under the pointer in memory: about 8 frames a second, long side at most 1280
 pixels, and at most 150 MB. **Ctrl+Alt+Shift+A** copies that buffer before the
 chooser opens. After you confirm a screenshot, it writes an H.264 MP4 plus key
 frames and attaches the clip with the screenshot. Cancelling the chooser leaves
 the buffer in memory. Turning replay off or quitting the watcher discards it.
-The sample is visible pixels. Capture Studio windows set display affinity so capture
+The sample is visible pixels. Motifs windows set display affinity so capture
 APIs that honor it leave them out. The recording bar and the area outline are also
 hidden for each frame grab. There is no audio. Sampling pauses while the chooser is open and while a
 screen recording is in progress.
@@ -131,7 +131,7 @@ is on, the last 10 minutes of clicks and app switches stay in memory (300 at
 most). A screen recording collects steps even when that item is off: clicks,
 scrolls, drags, selected text (up to 200 characters), and which field you typed
 into. The key you pressed is never stored. Password fields keep only their role.
-Clicks on Capture Studio itself are left out. Quitting the watcher, or turning
+Clicks on Motifs itself are left out. Quitting the watcher, or turning
 the item off while nothing is recording, discards the memory buffer.
 
 **Custom log files** in the tray accepts up to 4 files. A capture reads the last
@@ -157,7 +157,7 @@ the composer opens. A screen recording asks the extension to record page steps
 and collects them when the recording stops. Stopping a recording of a browser
 window, or a region or display recording while a browser is in front, also
 asks for that tab's console and failed requests. The helper and the host accept only each other:
-the peer must be this same `Appshots.exe`. Nothing is written to disk on the way.
+the peer must be this same `Motifs.exe`. Nothing is written to disk on the way.
 
 **Local secret-check model…** saves an `http://127.0.0.1`, `localhost`, or `::1`
 address and an optional model name. Hosted addresses are ignored. Save and test
@@ -165,7 +165,7 @@ asks that address to score one sample value. Known secret formats are still
 redacted without a model, and values that only might be secrets are redacted
 when the model does not answer.
 
-The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. Hovering it says **capture and compose**, or how to stop a recording, or that instant replay is keeping the last 30 seconds. A failed insert says the capture was saved and can be read with `/capture-studio`. The strokes are black on a light taskbar and white on a dark one.
+The tray icon is the capture frame and speech bubble. A filled dot means a recording is in progress, a ring means instant replay is on, a small dot means the last capture succeeded, and a mark in the bubble means the shortcut or a capture failed. Hovering it says **capture and compose**, or how to stop a recording, or that instant replay is keeping the last 30 seconds. A failed insert says the capture was saved and can be read with `/motifs`. The strokes are black on a light taskbar and white on a dark one.
 
 The tray menu follows the macOS menu. **Recent bundles** reopens a saved capture and shows when that capture was created.
 **Default destination** chooses OpenCode, Clipboard, Save to folder, or another
@@ -178,14 +178,14 @@ opens the editor, and inserts when you choose **Insert into OpenCode**.
 open the editor. **Annotate latest capture** and **Annotate clipboard image**
 open the editor. The tray can also open an empty composer, start or stop a
 recording, show the composer button, open the captures folder, or quit the watcher.
-`/capture-studio-insert` inserts the latest capture into the current draft.
-`/capture-studio-annotate` opens that capture in the editor.
+`/motifs-insert` inserts the latest capture into the current draft.
+`/motifs-annotate` opens that capture in the editor.
 Only one watcher runs per capture directory in the current desktop session.
 `{ "hotkey": false }` in plugin options disables automatic watcher startup.
 Quitting the watcher does not stop explicitly requested live tool captures.
 
 For live capture, ask the agent to capture a running process, e.g.
-`appshot({ "app": "chrome.exe" })` or `appshot({ "app": "notepad" })`.
+`motifs({ "app": "chrome.exe" })` or `motifs({ "app": "notepad" })`.
 Names match process names exactly, case-insensitively (not window titles or macOS
 bundle IDs). If several windows match, the foreground matching window is used;
 otherwise capture fails and asks you to focus the intended window. `source=live`
@@ -261,12 +261,12 @@ error rather than replacing the saved capture.
   whatever is on screen there. The composer says which kind you took.
 - Screen recording also captures visible pixels, including a clicked window's
   rectangle, and does not record audio. It stops at 5 minutes. The control bar and
-  the dashed area outline are hidden for each frame grab. Capture Studio windows
+  the dashed area outline are hidden for each frame grab. Motifs windows
   set display affinity so capture APIs that honor it leave them out.
 - Instant replay is off by default. While the tray item is checked, the last 30
   seconds of the display under the pointer stay in memory, capped at 150 MB. A
   confirmed capture writes that buffer. Cancelling the chooser leaves it in
-  memory. The sample is visible pixels and can include Capture Studio's own
+  memory. The sample is visible pixels and can include Motifs' own
   windows. There is no audio.
 - Record recent clicks is off by default. The buffer is memory only. Screen
   recordings add scrolls, drags, selections, and the field that received typing.
@@ -277,7 +277,7 @@ error rather than replacing the saved capture.
   Console messages, failed requests, and page steps stay in the browser until a
   capture or the end of a recording asks for them. The named pipe allows the
   current user and SYSTEM, and the helper refuses any peer that is not
-  `Appshots.exe`.
+  `Motifs.exe`.
 - The composer button is on by default and only appears over the capture chooser.
   Hiding it is saved. Dictate uses the installed Windows speech language, keeps
   no audio file, and has no cloud fallback. The secret-check model must be an
@@ -292,14 +292,14 @@ error rather than replacing the saved capture.
   and shortcut captures run in an isolated process with a 25-second timeout.
 - Minimized, elevated, protected/DRM, secure-desktop, and some hardware-accelerated
   windows cannot be captured reliably. Some apps produce a blank image despite
-  reporting success. **Always review the result.** Do not elevate Appshots to work
+  reporting success. **Always review the result.** Do not elevate Motifs to work
   around an application's security boundary.
 - Draft insertion depends on OpenCode exposing an editable UI Automation element
   named `Prompt`. It refuses ambiguous OpenCode windows and stops if focus changes.
   A paste request is not proof of attachment success: inspect the draft before
   sending or retrying. Clipboard formats may not all round-trip through Windows.
 
-Storage defaults to `%LOCALAPPDATA%\opencode\capture-studio`, overridable with
+Storage defaults to `%LOCALAPPDATA%\opencode\motifs`, overridable with
 `XDG_DATA_HOME`. The helper restricts the capture directory to the current user and
 SYSTEM. The plugin does the same for the composer endpoint file, the context file
 beside a bundle, and a Save to folder export. PNG files and `latest.json` persist until you delete them; cancellation
@@ -329,7 +329,7 @@ from the macOS development environment. Before calling Windows support verified:
   **Insert latest capture** pastes without opening the editor. **Capture and insert
   without annotation** captures the focused window and pastes it. **Capture,
   annotate, and insert** opens the editor first.
-- Cancel a preview and confirm no draft change; use `/capture-studio` for the saved image.
+- Cancel a preview and confirm no draft change; use `/motifs` for the saved image.
 - Draw each object type, select/move/resize/edit it, undo/redo, save, reopen, and
   confirm exported marks agree with the editor on mixed-DPI monitors. Crop with C,
   apply, and confirm the PNG is only that rectangle and the window text is omitted

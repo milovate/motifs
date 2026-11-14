@@ -3,9 +3,9 @@ import Darwin
 import Security
 
 let browserExtensionID = "ffjgcjgbehaoabcniapiljdcpeehoocd"
-let nativeHostName = "local.opencode.capturestudio"
+let nativeHostName = "local.motifs"
 
-// Connects capture to the Capture Studio browser extension. Chrome launches this
+// Connects capture to the Motifs browser extension. Chrome launches this
 // same executable as a native messaging host; the menu-bar helper asks it for
 // the extension's buffer only when the user captures a browser window, and turns
 // page-step recording on and off around a screen recording. The two
@@ -28,7 +28,7 @@ enum BrowserBridge {
     }
 
     static func socketDirectory(home: String = NSHomeDirectory()) -> URL {
-        URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/Capture Studio/browser")
+        URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/Motifs/browser")
     }
 
     // One socket per running host: "<browser index>.<host pid>". Short names keep
@@ -38,7 +38,7 @@ enum BrowserBridge {
     }
 
     static func hostManifest(executable: String) -> [String: Any] {
-        ["name": nativeHostName, "description": "Capture Studio browser context", "path": executable, "type": "stdio", "allowed_origins": ["chrome-extension://\(browserExtensionID)/"]]
+        ["name": nativeHostName, "description": "Motifs browser context", "path": executable, "type": "stdio", "allowed_origins": ["chrome-extension://\(browserExtensionID)/"]]
     }
 
     static func installHostManifests(executable: String, supportDirectory: URL) throws -> [String] {

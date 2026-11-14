@@ -170,6 +170,6 @@ func feed(_ pipeline: ReplayPipeline, from start: Double, seconds: Double, fps: 
         let firstTrimmed = try Data(contentsOf: URL(fileURLWithPath: trimmedFrames[0]["screenshot"] as! String))
         precondition(trimmedFrames.count == 2 && brightness(firstTrimmed) > brightness(images[0]), "key frames come from the selected range")
         do { _ = try await ReplayWriter.trim(video, from: 3, to: 3.2, frameCount: 6); preconditionFailure("tiny selections are refused") } catch {}
-        print("Capture Studio replay buffer, recording, MP4 writer and key frame checks passed")
+        print("Motifs replay buffer, recording, MP4 writer and key frame checks passed")
     }
 }

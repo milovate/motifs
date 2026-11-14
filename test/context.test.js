@@ -22,7 +22,7 @@ const CONTEXT = {
 };
 
 async function bundleWith(t, overrides = {}) {
-  const directory = await mkdtemp(path.join(tmpdir(), "capture-studio-context-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "motifs-context-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const screenshot = path.join(directory, "shot.png");
   await writeFile(screenshot, PNG);
@@ -46,7 +46,7 @@ test("every context source is normalized from the bundle and rendered in the dra
     "Thermal state: fair",
   ]);
   const draft = contextDocument(bundle);
-  assert.match(draft, /<appshot_context source="console" title="Console \(2\)">\n\[2026-10-29T10:00:00Z\] ERROR page: TypeError: cart is undefined/);
+  assert.match(draft, /<motif_context source="console" title="Console \(2\)">\n\[2026-10-29T10:00:00Z\] ERROR page: TypeError: cart is undefined/);
   assert.match(draft, /FAULT com\.example\.sync: XPC connection lost/);
   assert.match(draft, /POST 500 https:\/\/api\.shop\.test\/cart\?token=\[redacted\] \(xmlhttprequest\)/);
   assert.match(draft, /Clicked button "Checkout" in Google Chrome/);
@@ -170,7 +170,7 @@ test("page steps keep descriptive fields only and only while recording", () => {
 });
 
 test("page elements are described for Playwright without reading typed text", () => {
-  const { describe, isEditable } = globalThis.CaptureStudioSteps;
+  const { describe, isEditable } = globalThis.MotifsSteps;
   const element = (tag, attributes = {}, options = {}) => {
     const node = {
       nodeType: 1,
@@ -243,7 +243,7 @@ test("extension manifest pins the ID the helper trusts", async () => {
 test("helper is signed with the hardened runtime and no entitlement that weakens it", async () => {
   const build = await readFile(new URL("../build.js", import.meta.url), "utf8");
   assert.match(build, /"--options", "runtime"/);
-  const entitlements = await readFile(new URL("../CaptureStudio.entitlements", import.meta.url), "utf8");
+  const entitlements = await readFile(new URL("../Motifs.entitlements", import.meta.url), "utf8");
   const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>/g)].map((match) => match[1]);
   assert.deepEqual(keys, ["com.apple.security.device.audio-input"]);
 });

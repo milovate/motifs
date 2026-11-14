@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // What a destination receives besides the note: counts, preview text, and Markdown.
 internal static class ContextReview
@@ -51,8 +51,8 @@ internal static class ContextReview
 
     internal static string EmptyText(string source) => source switch
     {
-        "console" => "No console errors. Native apps: errors and faults from the Application log in the last 5 minutes. Browsers: install the Capture Studio extension from the tray menu.",
-        "network" => "No failed network requests. Browser captures need the Capture Studio extension.",
+        "console" => "No console errors. Native apps: errors and faults from the Application log in the last 5 minutes. Browsers: install the Motifs extension from the tray menu.",
+        "network" => "No failed network requests. Browser captures need the Motifs extension.",
         "events" => "No steps. Screen recordings capture clicks, scrolls, selections and which fields you typed into. For screenshots, turn on “Record recent clicks” in the tray menu.",
         "customLogs" => "No log files. Add up to 4 under “Custom log files” in the tray menu.",
         "windowText" => "No window text was read from the captured app.",

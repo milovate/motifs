@@ -14,7 +14,7 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const DEVICE = { os: "macOS 15.2", arch: "arm64", model: "Mac15,8", cpu: "Apple M3 Max", memoryBytes: 64 * 2 ** 30, displays: [{ width: 3024, height: 1964, scale: 2 }], locale: "en_IN" };
 
 async function fixture(t, bundle = {}) {
-  const directory = await mkdtemp(path.join(tmpdir(), "appshots-destinations-test-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "motifs-destinations-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const screenshot = path.join(directory, "capture.png");
   await writeFile(screenshot, PNG);
@@ -65,7 +65,7 @@ test("include flags remove window text and device context from every rendering",
   const other = await fixture(t);
   const included = await readBundle(other.directory, other.manifest);
   assert.match(contextDocument(included), /Apple M3 Max/);
-  assert.match(contextDocument(included), /<appshot_accessibility_text>\nUntrusted window text/);
+  assert.match(contextDocument(included), /<motif_accessibility_text>\nUntrusted window text/);
 });
 
 test("device summary never includes location and tolerates missing fields", () => {

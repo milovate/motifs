@@ -73,7 +73,7 @@ enum CapturePermission: Int, CaseIterable {
         let frame = NSRect(x: 0, y: 0, width: 340, height: 164)
         let setup = ComposerPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         setup.title = "Motifs Permissions"
-        setup.identifier = NSUserInterfaceItemIdentifier("capture-studio-permissions")
+        setup.identifier = NSUserInterfaceItemIdentifier("motifs-permissions")
         setup.isReleasedWhenClosed = false
         setup.hidesOnDeactivate = false
         setup.isOpaque = false
@@ -165,7 +165,7 @@ enum CapturePermission: Int, CaseIterable {
         let guide = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         guide.title = "Add Motifs"
-        guide.identifier = NSUserInterfaceItemIdentifier("capture-studio-permission-guide")
+        guide.identifier = NSUserInterfaceItemIdentifier("motifs-permission-guide")
         guide.isFloatingPanel = true
         guide.level = .floating
         guide.hidesOnDeactivate = false

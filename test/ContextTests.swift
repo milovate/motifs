@@ -2,7 +2,7 @@ import AppKit
 import os
 
 func captureError(_ message: String) -> NSError { NSError(domain: "ContextTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
-let helperBundleID = "local.opencode.capturestudio.tests"
+let helperBundleID = "local.motifs.tests"
 struct ComposerEndpoint { let directory: String }
 
 @main struct ContextTests {
@@ -44,11 +44,11 @@ struct ComposerEndpoint { let directory: String }
         precondition(parsed[0]["level"] as? String == "fault" && (parsed[0]["message"] as? String)?.count == 2000, "levels are lowercased and messages capped")
         let all = ConsoleContext.parse(ndjson: Data(ndjson.utf8), limit: 10)
         precondition(all.count == 3 && all[0]["subsystem"] as? String == "com.example" && all.allSatisfy { $0["source"] as? String == "app" }, "malformed and empty lines are skipped")
-        Logger(subsystem: "local.capturestudio.tests", category: "context").fault("capture-studio-test-fault")
+        Logger(subsystem: "local.motifs.tests", category: "context").fault("motifs-test-fault")
         let started = Date()
         let live = await ConsoleContext.unifiedLog(pid: ProcessInfo.processInfo.processIdentifier, minutes: 1)
         precondition(Date().timeIntervalSince(started) < 10, "unified log queries are bounded")
-        precondition(live.contains { ($0["message"] as? String)?.contains("capture-studio-test-fault") == true }, "the captured process's faults are read from the unified log")
+        precondition(live.contains { ($0["message"] as? String)?.contains("motifs-test-fault") == true }, "the captured process's faults are read from the unified log")
 
         let logs = temporary.appendingPathComponent("logs")
         try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
@@ -112,7 +112,7 @@ struct ComposerEndpoint { let directory: String }
         precondition(BrowserBridge.isChromium("com.google.Chrome") && BrowserBridge.isChromium("com.brave.Browser") && !BrowserBridge.isChromium("com.apple.Safari"), "Chromium browsers are recognised")
         let framed = try BrowserBridge.encodeMessage(["type": "snapshot", "requestID": "r"])
         precondition(BrowserBridge.decodeLength(framed.prefix(4)) == framed.count - 4 && BrowserBridge.decodeLength(Data([1, 2])) == nil, "native messages are length-prefixed")
-        precondition(BrowserBridge.socketPath(directory: BrowserBridge.socketDirectory(home: "/Users/x"), browser: 2, pid: 4321) == "/Users/x/Library/Application Support/Capture Studio/browser/2.4321", "one socket per host in a fixed private folder")
+        precondition(BrowserBridge.socketPath(directory: BrowserBridge.socketDirectory(home: "/Users/x"), browser: 2, pid: 4321) == "/Users/x/Library/Application Support/Motifs/browser/2.4321", "one socket per host in a fixed private folder")
         precondition(PeerSocket.address("/" + String(repeating: "a", count: 200)) == nil, "overlong socket paths are refused")
 
         let windows: [[String: Any]] = [
@@ -138,7 +138,7 @@ struct ComposerEndpoint { let directory: String }
 
         let support = temporary.appendingPathComponent("Application Support")
         try FileManager.default.createDirectory(at: support.appendingPathComponent("Google/Chrome"), withIntermediateDirectories: true)
-        let installed = try BrowserBridge.installHostManifests(executable: "/Applications/Capture Studio.app/Contents/MacOS/CaptureStudio", supportDirectory: support)
+        let installed = try BrowserBridge.installHostManifests(executable: "/Applications/Motifs.app/Contents/MacOS/Motifs", supportDirectory: support)
         precondition(installed == ["Google Chrome"], "manifests are written only for installed browsers")
         let manifestURL = support.appendingPathComponent("Google/Chrome/NativeMessagingHosts/\(nativeHostName).json")
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any] ?? [:]
@@ -195,6 +195,6 @@ struct ComposerEndpoint { let directory: String }
         close(server)
         precondition(BrowserBridge.query(path: socketPath, timeout: 1).isEmpty && !FileManager.default.fileExists(atPath: socketPath), "sockets of exited hosts are cleaned up")
 
-        print("Capture Studio system, console, custom log, event buffer and browser bridge checks passed")
+        print("Motifs system, console, custom log, event buffer and browser bridge checks passed")
     }
 }

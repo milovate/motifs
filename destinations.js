@@ -13,7 +13,7 @@ export async function writeContextFile(bundle) {
   const file = contextFilePath(bundle);
   const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
   try {
-    await handle.writeFile(`# Appshot context\n\n${body}\n`);
+    await handle.writeFile(`# Motif context\n\n${body}\n`);
   } finally {
     await handle.close();
   }
@@ -117,7 +117,7 @@ export function opencodeDestination(ctx) {
       if (chosen.id !== target.id) throw new Error("This OpenCode project is no longer loaded. Reopen the composer.");
       const contextFile = await writeContextFile(bundle);
       const session = await ctx.session.create({
-        title: `Appshot: ${request.note.trim().split("\n")[0].slice(0, 80) || "Capture"} [${request.requestID.slice(-8)}]`,
+        title: `Motif: ${request.note.trim().split("\n")[0].slice(0, 80) || "Capture"} [${request.requestID.slice(-8)}]`,
         location: { directory, ...(ctx.location.workspaceID ? { workspaceID: ctx.location.workspaceID } : {}) },
       });
       return { action: "opencode-draft", sessionID: session.id, title: session.title, directory, draftText: draftText(bundle, request.note, contextFile) };
@@ -169,7 +169,7 @@ function desktopDestination(app, directory) {
   };
 }
 
-export function folderDestination(exportRoot = path.join(os.homedir(), "Documents", "Appshots")) {
+export function folderDestination(exportRoot = path.join(os.homedir(), "Documents", "Motifs")) {
   const target = { id: "exports", label: path.basename(exportRoot) || exportRoot, detail: exportRoot };
   return {
     id: "folder",

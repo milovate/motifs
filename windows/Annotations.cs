@@ -8,7 +8,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal sealed record Vec(float X, float Y)
 {

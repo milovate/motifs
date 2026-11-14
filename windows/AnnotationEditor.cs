@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using Forms = System.Windows.Forms;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 internal sealed class AnnotationCanvas : Forms.Control
 {
@@ -367,7 +367,7 @@ internal sealed class AnnotationCanvas : Forms.Control
     internal void Apply(Action action)
     {
         try { action(); }
-        catch (Exception error) { Forms.MessageBox.Show(FindForm(), error.Message, "Appshots"); }
+        catch (Exception error) { Forms.MessageBox.Show(FindForm(), error.Message, "Motifs"); }
         RefreshState();
     }
     internal bool Key(Forms.Keys key)
@@ -667,7 +667,7 @@ internal sealed class Preview : Forms.Form
             if (returnOnly) { Result = exported; DialogResult = Forms.DialogResult.OK; }
             Close();
         }
-        catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Capture Studio"); }
+        catch (Exception error) { Forms.MessageBox.Show(this, error.Message, "Motifs"); }
     }
 
     async Task InsertIntoOpenCode(Snapshot shot, string output)

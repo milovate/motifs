@@ -9,7 +9,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Windows.Automation;
 
-namespace OpenCode.Appshots;
+namespace Motifs;
 
 // Memory-only click history. Outside a recording it is opt-in and keeps clicks and
 // app switches. A screen recording also keeps scrolls, drags, selected text, and

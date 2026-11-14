@@ -1,4 +1,4 @@
-# Install Capture Studio and connect it to OpenCode
+# Install Motifs and connect it to OpenCode
 
 This guide uses ASD-STE100 Simplified Technical English. It is for persons and
 for AI agents. Do the procedures in sequence. Each step has one instruction.
@@ -10,9 +10,9 @@ refer to [docs/windows.md](docs/windows.md). This guide is for macOS.
 
 | Word | Meaning |
 | --- | --- |
-| Plugin folder | `~/.config/opencode/plugins/capture-studio` |
-| Captures folder | `~/.local/share/opencode/capture-studio`. If `XDG_DATA_HOME` has a value, it is `$XDG_DATA_HOME/opencode/capture-studio`. |
-| Helper | `Capture Studio.app` in the plugin folder. Its bundle ID is `local.opencode.capturestudio`. Its process name is `CaptureStudio`. |
+| Plugin folder | `~/.config/opencode/plugins/motifs` |
+| Captures folder | `~/.local/share/opencode/motifs`. If `XDG_DATA_HOME` has a value, it is `$XDG_DATA_HOME/opencode/motifs`. |
+| Helper | `Motifs.app` in the plugin folder. Its bundle ID is `local.motifs`. Its process name is `Motifs`. |
 | OpenCode config | `~/.config/opencode/opencode.json` or `~/.config/opencode/opencode.jsonc` |
 | User | The person who owns the Mac. |
 
@@ -52,28 +52,28 @@ Make sure that these conditions are true:
 If the Command Line Tools are not available, run `xcode-select --install`. This
 opens an installer for the user. Wait until the user completes it.
 
-Capture Studio does not operate with OpenCode V1. It does not operate with a
+Motifs does not operate with OpenCode V1. It does not operate with a
 remote OpenCode server or with Linux.
 
 ## 4. Procedure: install the plugin
 
-1. Examine the plugin folder. Run `ls ~/.config/opencode/plugins/capture-studio`.
+1. Examine the plugin folder. Run `ls ~/.config/opencode/plugins/motifs`.
 2. If the plugin folder exists, stop. Ask the user what to do. Do not
    overwrite it.
 3. Make the plugins directory. Run `mkdir -p ~/.config/opencode/plugins`.
 4. Clone the repository:
 
    ```sh
-   git clone https://github.com/milovate/motifs.git ~/.config/opencode/plugins/capture-studio
+   git clone https://github.com/milovate/motifs.git ~/.config/opencode/plugins/motifs
    ```
 
-5. Go to the plugin folder. Run `cd ~/.config/opencode/plugins/capture-studio`.
+5. Go to the plugin folder. Run `cd ~/.config/opencode/plugins/motifs`.
 6. Install the development dependencies. Run `npm ci --ignore-scripts`.
 7. Run the tests. Run `npm test`.
 8. If a test fails, stop. Report each failure to the user. Do not skip or
    change a test.
 9. Build the helper. Run `npm run build`.
-10. Make sure that `Capture Studio.app` is in the plugin folder.
+10. Make sure that `Motifs.app` is in the plugin folder.
 
 `npm ci` installs only test dependencies. The runtime code has no npm
 dependencies. The build signs the helper ad hoc on this Mac. This repository
@@ -83,21 +83,21 @@ does not supply a prebuilt helper.
 
 OpenCode V2 automatically loads each plugin folder in
 `~/.config/opencode/plugins/`. Thus a plugin in the plugin folder needs no
-config entry. Do not add an MCP server for Capture Studio.
+config entry. Do not add an MCP server for Motifs.
 
 1. Make sure that the OpenCode config does not contain a second copy of
-   Capture Studio in `plugins`. Search for `capture-studio` or `motifs` only.
+   Motifs in `plugins`. Search for `motifs` or `motifs` only.
    Do not show the other lines.
 2. If a second copy is in the config, stop. Ask the user which copy to keep.
 3. Reload OpenCode. Close the OpenCode window and open it again.
 4. In OpenCode, type `/capture`. Make sure that these commands are in the list:
-   `/capture-studio`, `/capture-studio-start`, `/capture-studio-insert`,
-   `/capture-studio-annotate` and `/capture-studio-update`.
+   `/motifs`, `/motifs-start`, `/motifs-insert`,
+   `/motifs-annotate` and `/motifs-update`.
 5. If the commands are not in the list, tell the user about the caution for
    `opencode service restart`. Then, with the approval of the user, run
    `opencode service restart`. Open OpenCode again.
 6. Make sure that a bridge descriptor exists. Run
-   `ls ~/.local/share/opencode/capture-studio/composers/`. One `.json` file
+   `ls ~/.local/share/opencode/motifs/composers/`. One `.json` file
    is necessary for each project with the plugin loaded.
 7. Do not show the contents of a descriptor file. It contains a bearer token.
 
@@ -126,13 +126,13 @@ WARNING: The user must do this procedure. An agent can only show the
 instructions and wait.
 
 1. Show the helper in Finder. Run
-   `open -R ~/.config/opencode/plugins/capture-studio/"Capture Studio.app"`.
+   `open -R ~/.config/opencode/plugins/motifs/"Motifs.app"`.
 2. Tell the user to open **System Settings → Privacy & Security → Screen &
    System Audio Recording**.
-3. Tell the user to add `Capture Studio.app` and to set the switch to on.
+3. Tell the user to add `Motifs.app` and to set the switch to on.
 4. Tell the user to open **System Settings → Privacy & Security →
    Accessibility**.
-5. Tell the user to add `Capture Studio.app` and to set the switch to on.
+5. Tell the user to add `Motifs.app` and to set the switch to on.
 6. Stop. Wait until the user confirms the two permissions.
 
 For more data and for problems, refer to
@@ -143,9 +143,9 @@ For more data and for problems, refer to
 CAUTION: Do not send a draft during the test. Only the user pushes Enter in
 OpenCode.
 
-1. Tell the user to run `/capture-studio-start` in OpenCode.
-2. Make sure that the helper operates. Run `ps -axo pid,comm | grep 'CaptureStudio$'`.
-3. Read `~/.local/share/opencode/capture-studio/status.json`.
+1. Tell the user to run `/motifs-start` in OpenCode.
+2. Make sure that the helper operates. Run `ps -axo pid,comm | grep 'Motifs$'`.
+3. Read `~/.local/share/opencode/motifs/status.json`.
 4. Make sure that `accessibility` is `true` and `screenRecording` is `true`.
 5. Make sure that `hotkeyStatus` is `0` and `hotkeyHandlerStatus` is `0`.
 6. Tell the user to open a window with no private data.
@@ -162,8 +162,8 @@ key event.
 
 - Capture only when the user asks for screen or app context.
 - For a capture that the user made with Option+G, use
-  `capture_studio` with `{ "source": "latest" }`.
-- For a named app, use `capture_studio` with `{ "app": "Google Chrome" }`. A
+  `motifs` with `{ "source": "latest" }`.
+- For a named app, use `motifs` with `{ "app": "Google Chrome" }`. A
   bundle ID is also correct.
 - Do not capture the front app without a request. If OpenCode is in front,
   the capture shows OpenCode.
@@ -174,10 +174,10 @@ key event.
 
 ## 9. Procedure: update the plugin
 
-Run `/capture-studio-update` to see whether a newer stable release exists and
+Run `/motifs-update` to see whether a newer stable release exists and
 which ZIP matches this computer.
 
-For a ZIP installation, quit Capture Studio and OpenCode. Extract the new ZIP
+For a ZIP installation, quit Motifs and OpenCode. Extract the new ZIP
 and replace the old plugin folder with the extracted `motifs` folder at the
 same path. Keep the whole folder together so the plugin can locate the helper.
 Move any backup outside OpenCode's plugin discovery folder before you restart
@@ -197,21 +197,52 @@ For an installation from a Git checkout:
 8. Tell the user to choose **Quit Motifs** in the menu bar.
 9. Run `npm run build`.
 10. Reload OpenCode.
-11. Tell the user to run `/capture-studio-start`.
-12. If a permission is off, tell the user to remove the old `Capture Studio.app`
+11. Tell the user to run `/motifs-start`.
+
+### 9.1 Update from Capture Studio
+
+Versions before the rename were called Capture Studio. The update changes these
+names:
+
+| Before | After |
+| --- | --- |
+| `Capture Studio.app`, bundle ID `local.opencode.capturestudio` | `Motifs.app`, bundle ID `local.motifs` |
+| `windows/dist/Appshots.exe` | `windows/dist/Motifs.exe` |
+| Tool `capture_studio` | Tool `motifs` |
+| `/capture-studio`, `/capture-studio-start`, `-insert`, `-annotate`, `-update` | `/motifs`, `/motifs-start`, `-insert`, `-annotate`, `-update` |
+| Captures in `opencode/capture-studio` | Captures in `opencode/motifs` |
+| **Save to folder** default `~/Documents/Appshots` | `~/Documents/Motifs` |
+
+The old tool and command names continue to operate for one release. Change
+your prompts and OpenCode permission rules to the new names.
+
+1. Tell the user to choose **Quit Capture Studio** in the menu bar or the
+   system tray. If the old helper operates, it can write to the old captures
+   folder after the move.
+2. Do the update procedure above.
+3. Run `/motifs-start`. The plugin moves the old captures folder to the new
+   path. It does this only if the new folder does not exist.
+4. On macOS, tell the user that the new app has a new identity. The user must
+   give Screen Recording and Accessibility again. Refer to section 6.
+5. If the user uses the browser extension, tell the user to choose
+   **Connect browser extension…** again in the Motifs menu.
+6. Tell the user that old exports stay in `~/Documents/Appshots`.
+7. If `Capture Studio.app` or `windows/dist/Appshots.exe` is still in the
+   plugin folder, tell the user that it is safe to delete it.
+12. If a permission is off, tell the user to remove the old `Motifs.app`
     entries. Then do the procedure in section 6 again.
 
 ## 10. Procedure: remove the plugin
 
 1. Tell the user to choose **Quit Motifs** in the menu bar.
-2. If the user added a `plugins` entry for Capture Studio, remove only that entry.
+2. If the user added a `plugins` entry for Motifs, remove only that entry.
 3. Delete the plugin folder.
 4. Ask the user about the captures folder. It contains screenshots, window text
    and notes. Delete it only with the approval of the user.
-5. Tell the user to remove `Capture Studio.app` from **Screen & System Audio
+5. Tell the user to remove `Motifs.app` from **Screen & System Audio
    Recording** and from **Accessibility**.
 6. If the user connected the browser extension, remove the extension in the
-   browser. Then delete each `local.opencode.capturestudio.json` file in the
+   browser. Then delete each `local.motifs.json` file in the
    `NativeMessagingHosts` folders of the browsers.
 7. Reload OpenCode.
 
@@ -221,7 +252,7 @@ For an installation from a Git checkout:
 | --- | --- | --- |
 | The commands are not in OpenCode. | OpenCode did not load the plugin. | Do section 5 again. Make sure that `index.js` and `package.json` are in the plugin folder. |
 | No file is in `composers/`. | The plugin did not start, or `hotkey` is `false`. | Reload OpenCode. Examine the plugin options in the OpenCode config. |
-| Option+G does nothing. | The helper does not operate. | Run `/capture-studio-start`. |
+| Option+G does nothing. | The helper does not operate. | Run `/motifs-start`. |
 | `screenRecording` is `false`. | The permission is off or is for an old build. | Do section 6 again. Remove the old entry first. |
 | The capture has no window text. | Accessibility is off. | Do section 6 again. |
 | The draft does not go into OpenCode. | The OpenCode desktop app is closed, or Accessibility is off. | Open the OpenCode desktop app. Examine Accessibility. |

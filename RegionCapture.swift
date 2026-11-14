@@ -31,7 +31,7 @@ enum ScreenChoice: Equatable {
     case display(CGDirectDisplayID, scale: CGFloat, size: CGSize)
 }
 
-// Visible app windows, front to back, excluding Capture Studio's own.
+// Visible app windows, front to back, excluding Motifs' own.
 func visibleWindows() -> [ScreenWindow] {
     let own = ProcessInfo.processInfo.processIdentifier
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
@@ -152,7 +152,7 @@ func overlayRect(_ global: CGRect, screenFrame: CGRect, primaryHeight: CGFloat) 
         for screen in NSScreen.screens {
             guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
             let panel = RegionSelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            panel.identifier = NSUserInterfaceItemIdentifier("appshot-region")
+            panel.identifier = NSUserInterfaceItemIdentifier("motifs-region")
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = false
