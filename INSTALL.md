@@ -91,8 +91,8 @@ config entry. Do not add an MCP server for Capture Studio.
 2. If a second copy is in the config, stop. Ask the user which copy to keep.
 3. Reload OpenCode. Close the OpenCode window and open it again.
 4. In OpenCode, type `/capture`. Make sure that these commands are in the list:
-   `/capture-studio`, `/capture-studio-start`, `/capture-studio-insert` and
-   `/capture-studio-annotate`.
+   `/capture-studio`, `/capture-studio-start`, `/capture-studio-insert`,
+   `/capture-studio-annotate` and `/capture-studio-update`.
 5. If the commands are not in the list, tell the user about the caution for
    `opencode service restart`. Then, with the approval of the user, run
    `opencode service restart`. Open OpenCode again.
@@ -173,6 +173,9 @@ key event.
 - Do not change the tool approval policy of OpenCode.
 
 ## 9. Procedure: update the plugin
+
+Run `/capture-studio-update` to see whether a newer stable release exists and
+which ZIP matches this computer.
 
 For a ZIP installation, quit Capture Studio and OpenCode. Extract the new ZIP
 and replace the old plugin folder with the extracted `motifs` folder at the

@@ -1,7 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, realpath, stat } from "node:fs/promises";
-import { platformConfig, helperCommand } from "./platform.js";
+import { platformConfig, helperCommand, releaseTarget } from "./platform.js";
+import { checkForUpdates, updateMessage } from "./updates.js";
 import { startComposerBridge } from "./composer-bridge.js";
 import { configuredJudge, createSession, redactText, redactionSummary } from "./redact.js";
 import path from "node:path";
@@ -55,6 +56,18 @@ export default {
         },
       });
       commands.add({
+        name: "capture-studio-update",
+        description: "Check GitHub for a newer stable Motifs release. It does not download or install anything.",
+        execute: async (request) => {
+          await ctx.session.synthetic({
+            sessionID: request.sessionID,
+            description: "Motifs update check",
+            text: await updateCheckText(),
+            resume: false,
+          });
+        },
+      });
+      commands.add({
         name: "capture-studio",
         description: "Use a shortcut capture or capture a named app",
         execute: async (request) => {
@@ -75,7 +88,7 @@ export default {
 // The helper reads composer descriptors from the captures folder. Both desktops
 // get the same loopback bridge; it prepares drafts and never starts a model.
 export async function startDesktopServices(ctx, target, io = { run, mkdir, spawnHelper }) {
-  if (!target) throw new Error("Capture Studio requires macOS or Windows.");
+  if (!target) throw new Error("Motifs requires macOS or Windows.");
   const stopComposer = await startComposerBridge(ctx, target.captures);
   try {
     await startHotkey(io, target);
@@ -84,6 +97,15 @@ export async function startDesktopServices(ctx, target, io = { run, mkdir, spawn
     throw error;
   }
   return stopComposer;
+}
+
+export async function updateCheckText(io = { readFile, fetch: globalThis.fetch }, target = releaseTarget()) {
+  const { version } = JSON.parse(await io.readFile(path.join(root, "package.json"), "utf8"));
+  try {
+    return updateMessage(await checkForUpdates({ current: version, target, fetch: io.fetch }));
+  } catch (error) {
+    return `Motifs ${version} could not check for updates: ${error.message}`;
+  }
 }
 
 async function spawnHelper(executable, args) {

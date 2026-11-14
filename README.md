@@ -88,6 +88,7 @@ The `<captures>` folder is `~/.local/share/opencode/capture-studio`. If
 | `/capture-studio-start` | Command | Starts the helper. It does not call a model. |
 | `/capture-studio-insert` | Command | Puts the latest capture into the current draft. |
 | `/capture-studio-annotate` | Command | Opens the latest capture in the editor. Then it puts the result into the current draft. |
+| `/capture-studio-update` | Command | Asks GitHub for the latest stable Motifs release and shows the installed version, the latest version, and the ZIP for this computer. It does not call a model, download, or install anything. |
 
 ## 5. Plugin options
 
@@ -103,6 +104,8 @@ You can set plugin options in the OpenCode configuration.
 - Capture Studio captures only when you push the shortcut or ask the agent.
 - Capture Studio never sends a draft. You send it.
 - Captures stay in the `<captures>` folder on your Mac.
+- The plugin contacts GitHub only when you run `/capture-studio-update`. That
+  request sends no capture data.
 - The plugin replaces values that look like secrets with `[redacted]`. It does
   this before text goes to OpenCode, the clipboard or a folder.
 - Screenshots and recordings are not redacted.

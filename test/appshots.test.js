@@ -10,12 +10,27 @@ test("registers a direct, permission-scoped tool and slash command", async () =>
   const registered = [];
   const commands = {};
   let prompt;
+  let synthetic;
   await plugin.setup({
     options: { hotkey: false },
     tool: { transform: async (callback) => callback({ add: (tool) => registered.push(tool) }) },
     command: { transform: async (callback) => callback({ add: (command) => { commands[command.name] = command; } }) },
-    session: { prompt: async (request) => { prompt = request; } },
+    session: {
+      prompt: async (request) => { prompt = request; },
+      synthetic: async (request) => { synthetic = request; },
+    },
   });
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ status: 404, ok: false, json: async () => ({}) });
+  try {
+    await commands["capture-studio-update"].execute({ sessionID: "fixture-session" });
+  } finally {
+    globalThis.fetch = fetch;
+  }
+  assert.equal(synthetic.sessionID, "fixture-session");
+  assert.equal(synthetic.resume, false);
+  assert.match(synthetic.text, /No stable Motifs release has been published yet/);
+  assert.equal(prompt, undefined);
   assert.equal(registered.length, 1);
   assert.equal(registered[0].name, "capture_studio");
   assert.equal(registered[0].options.permission, "capture_studio");
