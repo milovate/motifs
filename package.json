@@ -13,6 +13,7 @@
     "package:local": "npm run verify:version && node scripts/package-local.js",
     "release:check": "node scripts/release-check.js",
     "release:verify": "node scripts/verify-release-pair.js",
+    "release:publish": "node scripts/publish-release.js",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {

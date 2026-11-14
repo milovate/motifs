@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const source = fileURLToPath(new URL("../", import.meta.url));
-const packaged = process.argv[2];
+const diskImage = process.argv[2] === "--disk-image" ? path.resolve(process.argv[3] ?? "") : undefined;
+const packaged = diskImage ? undefined : process.argv[2];
 const root = packaged ? path.resolve(packaged) : source;
 
 function setting(name) {
@@ -18,7 +19,26 @@ function run(command, args) {
   return execFileSync(command, args, { stdio: "inherit" });
 }
 
-if (process.platform === "darwin") {
+function notarize(file, profile) {
+  const response = JSON.parse(execFileSync("/usr/bin/xcrun", [
+    "notarytool", "submit", file, "--keychain-profile", profile, "--wait", "--output-format", "json",
+  ], { encoding: "utf8" }));
+  if (response.status !== "Accepted") {
+    throw new Error(`Apple notarization ${response.status} for submission ${response.id}.`);
+  }
+}
+
+if (diskImage) {
+  if (!process.argv[3]) throw new Error("Pass the DMG path after --disk-image.");
+  if (process.platform !== "darwin") throw new Error("Sign the disk image on macOS.");
+  const identity = setting("MOTIFS_MACOS_SIGNING_IDENTITY");
+  const profile = setting("MOTIFS_MACOS_NOTARY_PROFILE");
+  run("/usr/bin/codesign", ["--force", "--timestamp", "--sign", identity, diskImage]);
+  notarize(diskImage, profile);
+  run("/usr/bin/xcrun", ["stapler", "staple", diskImage]);
+  run("/usr/bin/xcrun", ["stapler", "validate", diskImage]);
+  run("/usr/sbin/spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", diskImage]);
+} else if (process.platform === "darwin") {
   const bundle = path.join(root, "Capture Studio.app");
   const team = setting("MOTIFS_MACOS_TEAM_ID");
   if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error("Expected a 10-character Apple Team ID.");
@@ -40,12 +60,7 @@ if (process.platform === "darwin") {
     try {
       const archive = path.join(temp, "Capture Studio.zip");
       run("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", bundle, archive]);
-      const response = JSON.parse(execFileSync("/usr/bin/xcrun", [
-        "notarytool", "submit", archive, "--keychain-profile", profile, "--wait", "--output-format", "json",
-      ], { encoding: "utf8" }));
-      if (response.status !== "Accepted") {
-        throw new Error(`Apple notarization ${response.status} for submission ${response.id}.`);
-      }
+      notarize(archive, profile);
       run("/usr/bin/xcrun", ["stapler", "staple", bundle]);
     } finally {
       rmSync(temp, { recursive: true, force: true });
